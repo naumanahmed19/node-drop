@@ -1,1 +1,1 @@
-export { SwitchNode } from "./SwitchExample.node";
+export { SwitchNode } from "./Switch.node";

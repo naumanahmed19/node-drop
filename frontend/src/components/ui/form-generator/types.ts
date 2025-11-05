@@ -27,7 +27,8 @@ export interface FormFieldConfig {
   | "autocomplete"
   | "credential"
   | "custom"
-  | "conditionRow";
+  | "conditionRow"
+  | "keyValueRow";
   required?: boolean;
   default?: any;
   description?: string;

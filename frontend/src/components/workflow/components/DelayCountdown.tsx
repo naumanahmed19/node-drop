@@ -11,7 +11,7 @@ interface DelayCountdownProps {
   timeUnit: 'seconds' | 'minutes' | 'hours'
 }
 
-export function DelayCountdown({ totalMs, startTime, isRunning, timeUnit }: DelayCountdownProps) {
+export function DelayCountdown({ totalMs, isRunning, timeUnit }: DelayCountdownProps) {
   const [remainingMs, setRemainingMs] = useState(totalMs)
   const [localStartTime, setLocalStartTime] = useState<number | null>(null)
 

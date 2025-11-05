@@ -15,10 +15,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { CalendarDays, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { ConditionRow } from './ConditionRow'
+import { KeyValueRow } from './KeyValueRow'
 import { getCustomComponent } from './customComponentRegistry'
 import { DynamicAutocomplete } from './DynamicAutocomplete'
 import { ExpressionInput } from './ExpressionInput'
 import { RepeatingField } from './RepeatingField'
+import { SimpleRepeater } from './SimpleRepeater'
 import { FormFieldRendererProps } from './types'
 
 export function FieldRenderer({
@@ -44,6 +46,23 @@ export function FieldRenderer({
     if (onBlur) {
       onBlur(value)
     }
+  }
+
+  // Handle SimpleRepeater component
+  if (field.component === 'SimpleRepeater') {
+    const operations = field.componentProps?.operations || field.options?.map(opt => ({
+      name: opt.name,
+      value: opt.value
+    }))
+    
+    return (
+      <SimpleRepeater
+        value={Array.isArray(value) ? value : []}
+        onChange={handleChange}
+        placeholder={field.componentProps?.placeholder}
+        operations={operations}
+      />
+    )
   }
 
   // Custom field component - support both inline and registry-based components
@@ -150,17 +169,34 @@ export function FieldRenderer({
     const buttonText = field.typeOptions?.multipleValueButtonText || 'Add Item'
     const titleField = field.componentProps?.titleField // Get titleField from componentProps
     
+    // Normalize value to ensure it has the correct structure
+    // Handle backward compatibility: convert old format to new format
+    const normalizedValue = Array.isArray(value) 
+      ? value.map((item, index) => {
+          // If item already has id and values, use it as-is
+          if (item && typeof item === 'object' && 'id' in item && 'values' in item) {
+            return item
+          }
+          // Otherwise, wrap it in the expected structure
+          return {
+            id: item?.id || `item_${Date.now()}_${index}`,
+            values: item || {}
+          }
+        })
+      : []
+    
     return (
       <RepeatingField
         displayName={field.displayName}
         fields={nestedFields}
-        value={Array.isArray(value) ? value : []}
+        value={normalizedValue}
         onChange={handleChange}
         addButtonText={buttonText}
         titleField={titleField}
         disabled={disabled}
         minItems={field.validation?.min}
         maxItems={field.validation?.max}
+        compact={field.componentProps?.compact}
       />
     )
   }
@@ -526,6 +562,20 @@ export function FieldRenderer({
           keyPlaceholder={field.componentProps?.keyPlaceholder}
           valuePlaceholder={field.componentProps?.valuePlaceholder}
           expressionPlaceholder={field.componentProps?.expressionPlaceholder}
+        />
+      )
+
+    case 'keyValueRow':
+      return (
+        <KeyValueRow
+          value={value || { key: '', value: '' }}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          disabled={disabled || field.disabled}
+          error={error}
+          nodeId={nodeId}
+          keyPlaceholder={field.componentProps?.keyPlaceholder}
+          valuePlaceholder={field.componentProps?.valuePlaceholder}
         />
       )
 

@@ -169,14 +169,6 @@ export const FormGeneratorNode = memo(function FormGeneratorNode({
     }
   }, [isSubmitting, isExecuting, id, parameters, formValues, updateNode, executeWorkflow])
 
-  // Header info
-  const headerInfo = useMemo(() =>
-    formFieldConfigs.length > 0
-      ? `${formFieldConfigs.length} field${formFieldConfigs.length !== 1 ? 's' : ''}`
-      : 'No fields configured',
-    [formFieldConfigs.length]
-  )
-
   // Collapsed content
   // const collapsedContent = useMemo(() => (
   //   <>

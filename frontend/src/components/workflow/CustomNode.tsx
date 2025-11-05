@@ -68,16 +68,51 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     return data.color || data.nodeTypeDefinition?.color || '#666'
   }, [data.color, data.nodeTypeDefinition?.color])
 
+  // For Switch nodes, compute dynamic outputs from parameters
+  const computedOutputs = useMemo(() => {
+    if (data.nodeType === 'switch' && data.parameters?.outputs) {
+      const outputs = data.parameters.outputs as any[]
+      if (Array.isArray(outputs) && outputs.length > 0) {
+        const computed = outputs.map((output: any, index: number) => {
+          // Handle RepeatingField format: { id, values: { rule: { key, expression, value } } }
+          const outputConfig = output.values || output
+          const rule = outputConfig.rule || {}
+          // Use the key field, or fallback to a numbered output
+          const key = rule.key?.trim()
+          return key || `output${index + 1}`
+        })
+        // Only return if we have valid outputs
+        if (computed.length > 0) {
+          return computed
+        }
+      }
+    }
+    return data.outputs
+  }, [data.nodeType, data.parameters?.outputs, data.outputs])
+
+  // Calculate dynamic height based on number of outputs
+  // Each handle needs ~30px of space, with a minimum of 60px for the node
+  const dynamicHeight = useMemo(() => {
+    const outputCount = computedOutputs?.length || 1
+    if (outputCount <= 3) {
+      return undefined // Use default height
+    }
+    // Calculate height: base height (60px) + additional space for extra outputs
+    const minHeight = Math.max(60, outputCount * 20)
+    return `${minHeight}px`
+  }, [computedOutputs?.length])
+
   // Memoize nodeConfig object to prevent recreation
   const nodeConfig = useMemo(() => ({
     icon: nodeIcon,
     color: nodeColor,
     isTrigger,
     inputs: data.inputs,
-    outputs: data.outputs,
+    outputs: computedOutputs,
     imageUrl: data.parameters?.imageUrl as string,
     nodeType: data.nodeType,  // Pass nodeType for file: icon resolution
-  }), [nodeIcon, nodeColor, isTrigger, data.inputs, data.outputs, data.parameters?.imageUrl, data.nodeType])
+    dynamicHeight,  // Pass dynamic height to node config
+  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
 
   // Render node enhancements (badges, overlays, etc.) using the registry
   const nodeEnhancements = useMemo(() => {
@@ -88,7 +123,7 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
       isExecuting: nodeExecutionState.isExecuting,
       executionResult: data.executionResult,
     })
-    
+
     return enhancements
   }, [id, data.nodeType, data.parameters, nodeExecutionState.isExecuting, data.executionResult])
 
@@ -101,6 +136,12 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
   const customMetadata = useMemo(() => (
     <NodeMetadata nodeVisualState={nodeVisualState} />
   ), [nodeVisualState])
+
+  // Show output labels for nodes with multiple outputs (branches)
+  const shouldShowOutputLabels = useMemo(() => {
+    const outputCount = computedOutputs?.length || 0
+    return outputCount > 1
+  }, [computedOutputs?.length])
 
   return (
     <BaseNodeWrapper
@@ -115,6 +156,7 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
       customMetadata={customMetadata}
       toolbar={toolbarConfig}
       nodeEnhancements={nodeEnhancements}
+      showOutputLabels={shouldShowOutputLabels}
     />
   )
 })

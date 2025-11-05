@@ -7,10 +7,10 @@
 
 export const IfNode: NodeDefinition = {
   type: BuiltInNodeTypes.IF,
-  displayName: "IF x",
+  displayName: "IF",
   name: "if",
   group: ["transform"],
-  version: 1,
+  version: 2,
   description: "Route data based on conditional logic",
   icon: "fa:code-branch",
   color: "#f0752eff",
@@ -34,8 +34,7 @@ export const IfNode: NodeDefinition = {
         expression: "equal",
         value: "",
       },
-      description:
-        "Define the condition to evaluate. Use {{json.fieldName}} to reference input data.",
+      description: "Define the condition to evaluate.",
       options: [
         { name: "Equal", value: "equal" },
         { name: "Not Equal", value: "notEqual" },
@@ -52,9 +51,9 @@ export const IfNode: NodeDefinition = {
         { name: "Regex", value: "regex" },
       ],
       componentProps: {
-        keyPlaceholder: "Key 1 (e.g., {{json.fieldName}})",
-        valuePlaceholder: "Value 2 (e.g., {{json.fieldName}})",
-        expressionPlaceholder: "Select operation",
+        keyPlaceholder: "Field (e.g., status or user.role)",
+        valuePlaceholder: "Value to compare",
+        expressionPlaceholder: "Select condition",
       },
     },
   ],

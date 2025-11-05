@@ -22,9 +22,9 @@ export interface ConditionRowProps {
   error?: string
   nodeId?: string
   expressionOptions?: Array<{ name: string; value: string }>
+  expressionPlaceholder?: string
   keyPlaceholder?: string
   valuePlaceholder?: string
-  expressionPlaceholder?: string
 }
 
 export function ConditionRow({
@@ -49,9 +49,9 @@ export function ConditionRow({
     { name: 'Is Not Empty', value: 'isNotEmpty' },
     { name: 'Regex', value: 'regex' },
   ],
+  expressionPlaceholder = 'Select condition',
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
-  expressionPlaceholder = 'Select operation',
 }: ConditionRowProps) {
   const handleKeyChange = (newKey: string) => {
     onChange({ ...value, key: newKey })
@@ -70,51 +70,66 @@ export function ConditionRow({
 
   return (
     <div className="space-y-2">
-      <div className={cn(
-        'grid gap-2',
-        shouldHideValue ? 'grid-cols-[1fr_200px]' : 'grid-cols-[1fr_200px_1fr]'
-      )}>
-        {/* Key Field */}
-        <ExpressionInput
-          value={value.key || ''}
-          onChange={handleKeyChange}
-          onBlur={onBlur}
-          placeholder={keyPlaceholder}
-          disabled={disabled}
-          error={!!error}
-          nodeId={nodeId}
-        />
+      <div className="flex gap-2 items-start">
+        <div className={cn(
+          'flex-1 flex items-center border rounded-md bg-background overflow-visible focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+          error && 'border-destructive'
+        )}>
+          {/* Key Field */}
+          <div className="flex-1 relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible">
+            <ExpressionInput
+              value={value.key || ''}
+              onChange={handleKeyChange}
+              onBlur={onBlur}
+              placeholder={keyPlaceholder}
+              disabled={disabled}
+              error={false}
+              nodeId={nodeId}
+              singleLine={true}
+              hideHelperText={true}
+            />
+          </div>
 
-        {/* Expression/Operation Dropdown */}
-        <Select
-          value={value.expression || ''}
-          onValueChange={handleExpressionChange}
-          disabled={disabled}
-        >
-          <SelectTrigger className={cn(error && 'border-destructive')}>
-            <SelectValue placeholder={expressionPlaceholder} />
-          </SelectTrigger>
-          <SelectContent>
-            {expressionOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <div className="h-6 w-px bg-border shrink-0" />
 
-        {/* Value Field - Hidden for isEmpty/isNotEmpty */}
-        {!shouldHideValue && (
-          <ExpressionInput
-            value={value.value || ''}
-            onChange={handleValueChange}
-            onBlur={onBlur}
-            placeholder={valuePlaceholder}
+          {/* Expression/Operation Dropdown */}
+          <Select
+            value={value.expression || ''}
+            onValueChange={handleExpressionChange}
             disabled={disabled}
-            error={!!error}
-            nodeId={nodeId}
-          />
-        )}
+          >
+            <SelectTrigger className="w-[140px] border-0 focus:ring-0 focus:ring-offset-0 rounded-none">
+              <SelectValue placeholder={expressionPlaceholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {expressionOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Value Field - Hidden for isEmpty/isNotEmpty */}
+          {!shouldHideValue && (
+            <>
+              <div className="h-6 w-px bg-border shrink-0" />
+              <div className="flex-1 relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible">
+                <ExpressionInput
+                  value={value.value || ''}
+                  onChange={handleValueChange}
+                  onBlur={onBlur}
+                  placeholder={valuePlaceholder}
+                  disabled={disabled}
+                  error={false}
+                  nodeId={nodeId}
+                  singleLine={true}
+                  hideHelperText={true}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </div>
       {error && (
         <p className="text-sm font-medium text-destructive">{error}</p>

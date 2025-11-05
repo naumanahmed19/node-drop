@@ -79,6 +79,7 @@ export interface BaseNodeWrapperProps {
     outputs?: string[]
     imageUrl?: string
     nodeType?: string  // Added to support file: icons
+    dynamicHeight?: string  // Added to support dynamic height based on outputs
   }
 
   /** Custom metadata to render below node (like NodeMetadata component) */
@@ -123,6 +124,9 @@ export interface BaseNodeWrapperProps {
 
   /** Node enhancements (badges, overlays, etc.) from enhancement registry */
   nodeEnhancements?: ReactNode[]
+
+  /** Whether to show labels on output handles */
+  showOutputLabels?: boolean
 }
 
 /**
@@ -176,6 +180,7 @@ export function BaseNodeWrapper({
   canExpand = true,
   nodeConfig,
   nodeEnhancements,
+  showOutputLabels = false,
 }: BaseNodeWrapperProps) {
   // Use node actions hook for context menu functionality
   const {
@@ -216,10 +221,7 @@ export function BaseNodeWrapper({
   } = useNodeExecution(id, data.nodeType)
 
   // Get execution state from store for toolbar
-  const { executionState, getNodeExecutionResult } = useWorkflowStore()
-
-  // Get node execution result for start time (for countdown timer)
-  const nodeExecutionResult = getNodeExecutionResult(id)
+  const { executionState } = useWorkflowStore()
 
   // Get compact mode from UI store
   const { compactMode } = useReactFlowUIStore()
@@ -254,8 +256,9 @@ export function BaseNodeWrapper({
   const [hoveredOutput, setHoveredOutput] = React.useState<string | null>(null)
 
   // Get inputs/outputs from data or use defaults
-  const nodeInputs = data.inputs || (showInputHandle ? ['main'] : [])
-  const nodeOutputs = data.outputs || (showOutputHandle ? ['main'] : [])
+  // If nodeConfig has outputs, use those (for dynamic outputs like Switch node)
+  const nodeInputs = nodeConfig?.inputs || data.inputs || (showInputHandle ? ['main'] : [])
+  const nodeOutputs = nodeConfig?.outputs || data.outputs || (showOutputHandle ? ['main'] : [])
   const isTrigger = data.executionCapability === 'trigger'
 
   // Calculate node width based on compact mode
@@ -277,7 +280,10 @@ export function BaseNodeWrapper({
                       onDoubleClick={handleDoubleClick}
                       className={`relative bg-card rounded-lg border shadow-sm transition-all duration-200 hover:shadow-md ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
                         } ${className}`}
-                      style={{ width: effectiveCollapsedWidth }}
+                      style={{
+                        width: effectiveCollapsedWidth,
+                        minHeight: nodeConfig?.dynamicHeight
+                      }}
                     >
                       {/* Dynamic Handles */}
                       <NodeHandles
@@ -290,6 +296,7 @@ export function BaseNodeWrapper({
                         onOutputMouseLeave={() => setHoveredOutput(null)}
                         onOutputClick={handleOutputClick}
                         readOnly={isReadOnly}
+                        showOutputLabels={showOutputLabels}
                       />
 
                       {/* Node Toolbar - Always show like CustomNode */}
@@ -312,8 +319,8 @@ export function BaseNodeWrapper({
                       {customContent ? (
                         customContent
                       ) : nodeConfig ? (
-                        <div className="relative">
-                          <div className={`flex items-center ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
+                        <div className="relative h-full flex items-center">
+                          <div className={`flex items-center w-full ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
                             <NodeIcon
                               config={nodeConfig}
                               isExecuting={nodeExecutionState.isExecuting}
@@ -411,7 +418,10 @@ export function BaseNodeWrapper({
 
               className={`relative bg-card rounded-lg ${compactMode ? 'border-2' : 'border'} shadow-sm transition-all duration-200 hover:shadow-md ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
                 } ${className}`}
-              style={{ width: effectiveCollapsedWidth }}
+              style={{
+                width: effectiveCollapsedWidth,
+                minHeight: nodeConfig?.dynamicHeight
+              }}
             >
               {/* Dynamic Handles */}
               <NodeHandles
@@ -424,6 +434,7 @@ export function BaseNodeWrapper({
                 onOutputMouseLeave={() => setHoveredOutput(null)}
                 onOutputClick={handleOutputClick}
                 readOnly={isReadOnly}
+                showOutputLabels={showOutputLabels}
               />
 
               {/* Node Toolbar - Always show like CustomNode */}
@@ -446,8 +457,8 @@ export function BaseNodeWrapper({
               {customContent ? (
                 customContent
               ) : nodeConfig ? (
-                <div className="relative">
-                  <div className={`flex items-center ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
+                <div className="relative h-full flex items-center">
+                  <div className={`flex items-center w-full ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
                     <NodeIcon
                       config={nodeConfig}
                       isExecuting={nodeExecutionState.isExecuting}
@@ -536,7 +547,10 @@ export function BaseNodeWrapper({
 
             className={`relative bg-card rounded-lg ${compactMode ? 'border-2' : 'border'} shadow-lg transition-all duration-200 hover:shadow-xl ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
               } ${className}`}
-            style={{ width: effectiveExpandedWidth }}
+            style={{
+              width: effectiveExpandedWidth,
+              minHeight: nodeConfig?.dynamicHeight
+            }}
           >
             {/* Dynamic Handles */}
             <NodeHandles
@@ -549,6 +563,7 @@ export function BaseNodeWrapper({
               onOutputMouseLeave={() => setHoveredOutput(null)}
               onOutputClick={handleOutputClick}
               readOnly={isReadOnly}
+              showOutputLabels={showOutputLabels}
             />
 
             {/* Node Toolbar - Always show like CustomNode */}

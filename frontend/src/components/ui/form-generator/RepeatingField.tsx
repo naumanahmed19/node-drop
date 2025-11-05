@@ -100,6 +100,11 @@ export interface RepeatingFieldProps {
    * Collapsed by default (default: false)
    */
   collapsedByDefault?: boolean
+
+  /**
+   * Compact mode - no collapse/expand, always show fields inline (default: false)
+   */
+  compact?: boolean
 }
 
 export function RepeatingField({
@@ -121,6 +126,7 @@ export function RepeatingField({
   className = '',
   showItemNumbers = true,
   collapsedByDefault = false,
+  compact = false,
 }: RepeatingFieldProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(
     collapsedByDefault ? new Set(value.map((item) => item.id)) : new Set()
@@ -252,6 +258,57 @@ export function RepeatingField({
       {value.length === 0 ? (
         <div className="text-xs text-gray-500 py-2">
           No items added yet.
+        </div>
+      ) : compact ? (
+        // Compact mode - no collapse, inline display, no container
+        <div className="space-y-2">
+          {value.map((item) => {
+            const itemErrors = errors[item.id] || {}
+
+            return (
+              <div key={item.id} className="flex gap-2 items-start">
+                <div className="flex-1">
+                  <FormGenerator
+                    fields={fields}
+                    values={item.values}
+                    errors={itemErrors}
+                    onChange={(fieldName, fieldValue) =>
+                      handleFieldChange(item.id, fieldName, fieldValue)
+                    }
+                    disabled={disabled}
+                    disableAutoValidation={true}
+                    showRequiredIndicator={true}
+                  />
+                </div>
+                <div className="flex items-start gap-1 pt-2">
+                  {/* Duplicate */}
+                  {allowDuplicate && !disabled && canAdd && (
+                    <button
+                      type="button"
+                      onClick={() => handleDuplicate(item)}
+                      className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                      title="Duplicate"
+                      aria-label="Duplicate item"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {/* Delete */}
+                  {canDelete && !disabled && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      title="Delete"
+                      aria-label="Delete item"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       ) : (
         <div className="space-y-1.5">

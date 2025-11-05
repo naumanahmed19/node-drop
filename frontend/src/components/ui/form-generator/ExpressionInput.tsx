@@ -23,6 +23,9 @@ interface ExpressionInputProps {
   disabled?: boolean
   error?: boolean
   nodeId?: string // Optional: node ID to fetch input data from connected nodes
+  className?: string // Optional: additional CSS classes
+  singleLine?: boolean // Optional: disable auto-expanding and keep single line
+  hideHelperText?: boolean // Optional: hide the helper text below the input
 }
 
 export function ExpressionInput({
@@ -33,6 +36,9 @@ export function ExpressionInput({
   disabled,
   error,
   nodeId,
+  className,
+  singleLine = false,
+  hideHelperText = false,
 }: ExpressionInputProps) {
   // Determine initial mode: if value contains {{...}}, start in expression mode
   const hasExpression = typeof value === 'string' && value.includes('{{')
@@ -56,8 +62,8 @@ export function ExpressionInput({
   
   const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null)
 
-  // Always use textarea for auto-expanding input
-  const isMultiline = true
+  // Use textarea for auto-expanding input unless singleLine is true
+  const isMultiline = !singleLine
 
   // Fetch variables on mount
   useEffect(() => {
@@ -767,7 +773,8 @@ export function ExpressionInput({
 
   const inputClassName = cn(
     error ? 'border-destructive' : '',
-    mode === 'expression' ? 'font-mono text-sm' : ''
+    mode === 'expression' ? 'font-mono text-sm' : '',
+    className
   )
 
   return (
@@ -795,9 +802,9 @@ export function ExpressionInput({
             disabled={disabled}
             rows={1}
             style={{
-              minHeight: '40px',
-              maxHeight: '120px',
-              overflow: autoHeight && autoHeight >= 120 ? 'auto' : 'hidden',
+              minHeight: singleLine ? '40px' : '40px',
+              maxHeight: singleLine ? '40px' : '120px',
+              overflow: singleLine ? 'hidden' : (autoHeight && autoHeight >= 120 ? 'auto' : 'hidden'),
               resize: 'none',
               background: 'transparent',
               position: 'relative',
@@ -852,7 +859,7 @@ export function ExpressionInput({
       </div>
 
       {/* Helper Text */}
-      {mode === 'expression' && (
+      {mode === 'expression' && !hideHelperText && (
         <div className="mt-1 text-xs text-muted-foreground">
           Use <code className="px-1 py-0.5 bg-muted rounded">$local</code> or{' '}
           <code className="px-1 py-0.5 bg-muted rounded">$vars</code> for variables,{' '}
