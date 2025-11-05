@@ -3,19 +3,23 @@ import { Button } from '@/components/ui/button'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useNodeConfigDialogStore, useWorkflowStore } from '@/stores'
 import { useNodeTypesStore } from '@/stores/nodeTypes'
 import { WorkflowNode } from '@/types'
 import {
-    Copy,
-    Database,
-    Edit,
-    Pin,
-    PinOff
+  Copy,
+  Database,
+  Edit,
+  Pin,
+  PinOff,
+  Table as TableIcon
 } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { ImagePreviewOutput } from './output-components/ImagePreviewOutput'
 import { getOutputComponent } from './output-components/OutputComponentRegistry'
+import { TableView } from './output-components/TableView'
 
 interface OutputColumnProps {
   node: WorkflowNode
@@ -23,6 +27,7 @@ interface OutputColumnProps {
 }
 
 export function OutputColumn({ node }: OutputColumnProps) {
+  const [viewMode, setViewMode] = useState<'json' | 'table'>('json')
   const { getNodeExecutionResult } = useWorkflowStore()
   const { getNodeTypeById } = useNodeTypesStore()
   const {
@@ -38,12 +43,12 @@ export function OutputColumn({ node }: OutputColumnProps) {
 
   const nodeExecutionResult = getNodeExecutionResult(node.id)
   const nodeTypeDefinition = getNodeTypeById(node.type)
-  
+
   // Get custom output component if defined
   // Temporary: Check node type directly until database migration is complete
-  const CustomOutputComponent = nodeTypeDefinition?.outputComponent 
+  const CustomOutputComponent = nodeTypeDefinition?.outputComponent
     ? getOutputComponent(nodeTypeDefinition.outputComponent)
-    : node.type === 'image-preview' 
+    : node.type === 'image-preview'
       ? ImagePreviewOutput
       : undefined
 
@@ -70,7 +75,7 @@ export function OutputColumn({ node }: OutputColumnProps) {
       // Handle the new standardized format from backend
       if (nodeExecutionResult?.data?.main || nodeExecutionResult?.data?.branches) {
         const { main, branches, metadata } = nodeExecutionResult.data;
-        
+
         // For branching nodes (like IF), return the branches structure for separate display
         if (metadata?.hasMultipleBranches && branches) {
           return {
@@ -79,7 +84,7 @@ export function OutputColumn({ node }: OutputColumnProps) {
             metadata: metadata
           };
         }
-        
+
         // For regular nodes, extract the JSON data from main
         if (main && main.length > 0) {
           // If main contains objects with 'json' property, extract that
@@ -90,20 +95,20 @@ export function OutputColumn({ node }: OutputColumnProps) {
           return main[0];
         }
       }
-      
+
       // Fallback for legacy format handling
       if (nodeExecutionResult?.data?.[0]?.main?.[0]?.json) {
         return nodeExecutionResult.data[0].main[0].json;
       }
-      
+
       if (Array.isArray(nodeExecutionResult?.data) && nodeExecutionResult.data.length > 0) {
         return nodeExecutionResult.data[0];
       }
-      
+
       if (nodeExecutionResult?.data && typeof nodeExecutionResult.data === 'object') {
         return nodeExecutionResult.data;
       }
-      
+
       return null;
     } catch (error) {
       console.warn('Failed to extract node output data:', error);
@@ -112,8 +117,8 @@ export function OutputColumn({ node }: OutputColumnProps) {
   }
 
   // Determine what data to show - mock data if pinned and available, otherwise execution result
-  const displayData = mockDataPinned && mockData 
-    ? mockData 
+  const displayData = mockDataPinned && mockData
+    ? mockData
     : extractNodeOutputData(nodeExecutionResult)
   const isShowingMockData = mockDataPinned && mockData
   const isBranchingNode = displayData?.type === 'branches'
@@ -126,7 +131,7 @@ export function OutputColumn({ node }: OutputColumnProps) {
           <Database className="h-4 w-4 text-muted-foreground" />
           <h3 className="font-semibold text-sm">Output Data</h3>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {/* Edit Button */}
           <Button
@@ -175,30 +180,30 @@ export function OutputColumn({ node }: OutputColumnProps) {
               </div>
             </div>
           )}
-       
+
         </div>
       </div>
-      
+
       <div className="flex-1 overflow-hidden">
         {/* Mock Data Editor - Full Width/Height when open */}
         {mockDataEditor.isOpen ? (
           <div className="h-full flex flex-col bg-card">
             {/* Editor Header */}
-         
-          
+
+
             {/* Editor Content */}
             <div className="flex-1  flex flex-col min-h-0">
               <JsonEditor
                 value={mockDataEditor.content}
                 onValueChange={updateMockDataContent}
                 placeholder='{\n  "message": "Hello World",\n  "data": {\n    "success": true\n  }\n}'
-   
+
 
                 className="flex-1"
                 required
               />
             </div>
-            
+
             {/* Editor Actions */}
             <div className="p-4 border-t bg-muted/10">
               <div className="flex gap-2">
@@ -255,17 +260,16 @@ export function OutputColumn({ node }: OutputColumnProps) {
                           {/* Branch Header */}
                           <div className="flex items-center justify-between p-3 bg-muted/50 border-b rounded-t-lg">
                             <div className="flex items-center gap-2">
-                              <div className={`w-3 h-3 rounded-full ${
-                                branchName === 'true' ? 'bg-green-500' : 
+                              <div className={`w-3 h-3 rounded-full ${branchName === 'true' ? 'bg-green-500' :
                                 branchName === 'false' ? 'bg-red-500' : 'bg-blue-500'
-                              }`} />
+                                }`} />
                               <span className="font-medium text-sm capitalize">{branchName} Path</span>
                             </div>
                             <Badge variant="outline" className="text-xs">
                               {Array.isArray(branchData) ? branchData.length : 0} items
                             </Badge>
                           </div>
-                          
+
                           {/* Branch Content */}
                           <div className="p-3">
                             {Array.isArray(branchData) && branchData.length > 0 ? (
@@ -287,41 +291,73 @@ export function OutputColumn({ node }: OutputColumnProps) {
                 ) : (
                   /* Regular Node Display - Single output */
                   <div className="flex flex-col h-full space-y-4">
-                    <div className="flex items-center justify-between flex-shrink-0">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <Database className="h-4 w-4" />
-                          <h3 className="text-sm font-medium">
-                            {isShowingMockData ? 'Mock Data Output' : 'Execution Output'}
-                          </h3>
-                        </div>
-                        <Badge 
-                          variant={isShowingMockData ? "secondary" : "default"}
-                          className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
-                        >
-                          {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Render custom output component if available, otherwise show JSON */}
+                    {/* Render custom output component if available, otherwise show JSON/Table tabs */}
                     {CustomOutputComponent ? (
-                      <div className="flex-1 min-h-0">
-                        <CustomOutputComponent 
-                          data={displayData}
-                          nodeType={node.type}
-                          executionStatus={nodeExecutionResult?.status}
-                        />
-                      </div>
+                      <>
+                        <div className="flex items-center justify-between flex-shrink-0">
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <Database className="h-4 w-4" />
+                              <h3 className="text-sm font-medium">
+                                {isShowingMockData ? 'Mock Data Output' : 'Execution Output'}
+                              </h3>
+                            </div>
+                            <Badge
+                              variant={isShowingMockData ? "secondary" : "default"}
+                              className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
+                            >
+                              {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-h-0">
+                          <CustomOutputComponent
+                            data={displayData}
+                            nodeType={node.type}
+                            executionStatus={nodeExecutionResult?.status}
+                          />
+                        </div>
+                      </>
                     ) : (
-                      /* Regular JSON output for nodes without custom output component */
-                      <div className="rounded-md border bg-muted/30 p-3 flex-1 min-h-0">
-                        <ScrollArea className="h-full w-full">
-                          <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                            {JSON.stringify(displayData, null, 2)}
-                          </pre>
-                        </ScrollArea>
-                      </div>
+                      /* Regular JSON/Table output for nodes without custom output component */
+                      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'json' | 'table')} className="flex-1 flex flex-col min-h-0">
+                        <div className="flex items-center justify-between flex-shrink-0">
+                          <TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-auto">
+                            <TabsTrigger value="json" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                              <Database className="h-3 w-3 mr-1" />
+                              JSON
+                            </TabsTrigger>
+                            <TabsTrigger value="table" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                              <TableIcon className="h-3 w-3 mr-1" />
+                              Table
+                            </TabsTrigger>
+                          </TabsList>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={isShowingMockData ? "secondary" : "default"}
+                              className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
+                            >
+                              {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <TabsContent value="json" className="flex-1 min-h-0 mt-0 p-3">
+                          <div className="rounded-md border bg-muted/30 p-3 h-full">
+                            <ScrollArea className="h-full w-full">
+                              <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                                {JSON.stringify(displayData, null, 2)}
+                              </pre>
+                            </ScrollArea>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="table" className="flex-1 min-h-0 mt-0 p-3">
+                          <div className="rounded-md border bg-muted/30 h-full">
+                            <TableView data={displayData} />
+                          </div>
+                        </TabsContent>
+                      </Tabs>
                     )}
                   </div>
                 )

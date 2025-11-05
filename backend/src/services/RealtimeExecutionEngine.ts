@@ -354,7 +354,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
         if (upstreamNodes.length === 0) {
             return context.triggerData
                 ? { main: [[context.triggerData]] }
-                : undefined;
+                : { main: [[]] };
         }
 
         // Collect output from upstream nodes
@@ -366,7 +366,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
             }
         });
 
-        return inputs.length > 0 ? { main: inputs } : undefined;
+        // Always return an object structure, even if empty
+        return inputs.length > 0 ? { main: inputs } : { main: [] };
     }
 
     /**

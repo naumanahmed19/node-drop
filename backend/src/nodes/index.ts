@@ -10,10 +10,12 @@ export * from "./HttpRequest";
 export * from "./PostgreSQL/PostgreSQL.node";
 // export * from "./If";
 export * from "./Json";
+export * from "./Loop";
 export * from "./ManualTrigger";
 export * from "./ScheduleTrigger";
 export * from "./Set";
 export * from "./Switch";
+export * from "./IfElse";
 export * from "./WebhookTrigger";
 export * from "./WorkflowCalled";
 export * from "./WorkflowTrigger";
@@ -21,3 +23,7 @@ export * from "./WorkflowTrigger";
 // AI Nodes
 export * from "./Anthropic";
 export * from "./OpenAI";
+
+// Preview Nodes
+export * from "./ImagePreview";
+export * from "./DataPreview";

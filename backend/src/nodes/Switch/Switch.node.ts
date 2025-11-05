@@ -110,8 +110,8 @@ export const SwitchNode: NodeDefinition = {
               { name: "Regex Match", value: "regex" },
             ],
             componentProps: {
-              keyPlaceholder: "Field (e.g., status or user.role)",
-              valuePlaceholder: "Value to compare",
+              keyPlaceholder: "Key",
+              valuePlaceholder: "Value",
               expressionPlaceholder: "Select condition",
             },
           },

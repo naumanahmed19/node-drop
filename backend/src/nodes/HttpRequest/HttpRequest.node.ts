@@ -117,6 +117,18 @@ export const HttpRequestNode: NodeDefinition = {
         },
       },
     },
+    {
+      displayName: "Response Format",
+      name: "responseFormat",
+      type: "options",
+      required: false,
+      default: "dataOnly",
+      options: [
+        { name: "Data Only", value: "dataOnly" },
+        { name: "Full Response", value: "fullResponse" },
+      ],
+      description: "Choose whether to return only the response data or the complete response including status, headers, etc.",
+    },
   ],
   execute: async function (
     inputData: NodeInputData
@@ -143,6 +155,8 @@ export const HttpRequestNode: NodeDefinition = {
     ) as boolean;
     const maxRedirects =
       (this.getNodeParameter("maxRedirects") as number) || 5;
+    const responseFormat =
+      (this.getNodeParameter("responseFormat") as string) || "dataOnly";
 
     // Get settings from Settings tab
     const continueOnFail = this.settings?.continueOnFail ?? false;
@@ -386,8 +400,8 @@ export const HttpRequestNode: NodeDefinition = {
               responseHeaders[key] = value;
             });
 
-            // Return structured response data
-            return {
+            // Return structured response data based on format preference
+            const fullResponse = {
               status: response.status,
               statusText: response.statusText,
               headers: responseHeaders,
@@ -396,6 +410,9 @@ export const HttpRequestNode: NodeDefinition = {
               url: response.url, // Final URL after redirects
               ok: response.ok,
             };
+
+            // Return only data if dataOnly format is selected
+            return responseFormat === "dataOnly" ? responseData : fullResponse;
           } catch (fetchError) {
             clearTimeout(timeoutId);
 

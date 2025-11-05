@@ -789,9 +789,26 @@ export class ExecutionEngine extends EventEmitter {
         const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
 
         if (sourceOutput) {
-          // sourceOutput is a StandardizedNodeOutput object, not an array
-          const outputItems = (sourceOutput as any).main || [];
-          sourceData.push(...outputItems);
+          // Check if this is a branching node (has branches property)
+          const hasBranches = (sourceOutput as any).branches;
+          
+          if (hasBranches) {
+            // For branching nodes (like IfElse), only use data from the specific output branch
+            const branchName = connection.sourceOutput || "main";
+            const branchData = (sourceOutput as any).branches?.[branchName] || [];
+            
+            logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
+              branchName,
+              itemCount: branchData.length,
+              availableBranches: Object.keys((sourceOutput as any).branches || {}),
+            });
+            
+            sourceData.push(...branchData);
+          } else {
+            // For standard nodes, use main output
+            const outputItems = (sourceOutput as any).main || [];
+            sourceData.push(...outputItems);
+          }
         }
       }
 

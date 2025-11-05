@@ -326,6 +326,29 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         // Ensure workflow has proper metadata
         if (workflow) {
           processedWorkflow = ensureWorkflowMetadata(workflow);
+
+          // Clean up invalid connections to trigger nodes
+          // Triggers are starting points and should not have incoming connections
+          if (processedWorkflow.connections && processedWorkflow.nodes) {
+            const triggerTypes = [
+              "manual-trigger",
+              "webhook-trigger",
+              "schedule-trigger",
+              "workflow-called",
+              "webhook",
+            ];
+            
+            const triggerNodeIds = new Set(
+              processedWorkflow.nodes
+                .filter((node) => triggerTypes.includes(node.type))
+                .map((node) => node.id)
+            );
+
+            // Remove any connections that target trigger nodes
+            processedWorkflow.connections = processedWorkflow.connections.filter(
+              (conn) => !triggerNodeIds.has(conn.targetNodeId)
+            );
+          }
         }
 
         const title =
@@ -2981,6 +3004,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
         // Prevent self-connection
         if (sourceId === targetId) return false;
+
+        // Prevent connections TO trigger nodes (triggers are starting points, they don't accept inputs)
+        const targetNode = workflow.nodes.find((n) => n.id === targetId);
+        if (targetNode) {
+          const triggerTypes = [
+            "manual-trigger",
+            "webhook-trigger",
+            "schedule-trigger",
+            "workflow-called",
+            "webhook",
+          ];
+          if (triggerTypes.includes(targetNode.type)) {
+            return false;
+          }
+        }
 
         // Check if connection already exists
         const existingConnection = workflow.connections.find(

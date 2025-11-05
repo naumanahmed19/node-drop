@@ -24,6 +24,7 @@ import {
   Filter,
   GitBranch,
   Globe,
+  Image,
   Layers,
   LayoutGrid,
   Link,
@@ -35,10 +36,14 @@ import {
   Phone,
   Play,
   RefreshCw,
+  Repeat,
   Send,
   Settings,
   Shuffle,
+  Terminal,
   Timer,
+  Upload,
+  Wand2,
   Webhook,
   Zap,
 } from "lucide-react";
@@ -94,6 +99,7 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   filter: Filter,
   layers: Layers,
   "layout-grid": LayoutGrid,
+  terminal: Terminal,
 
   // Logic icons
   "git-branch": GitBranch,
@@ -106,6 +112,11 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   activity: Activity,
   archive: Archive,
   command: Command,
+  repeat: Repeat,
+  image: Image,
+  upload: Upload,
+  wand2: Wand2,
+  magic: Wand2,
 };
 
 /**
@@ -132,6 +143,7 @@ const FA_TO_LUCIDE_MAP: Record<string, string> = {
   "file-alt": "file-text",
   cog: "settings",
   sliders: "settings",
+  terminal: "terminal",
 
   // Logic icons
   "code-branch": "git-branch",
@@ -149,6 +161,10 @@ const FA_TO_LUCIDE_MAP: Record<string, string> = {
   "exclamation-circle": "alert-circle",
   "check-circle": "check-circle",
   archive: "archive",
+  repeat: "repeat",
+  image: "image",
+  upload: "upload",
+  magic: "magic",
 };
 
 /**

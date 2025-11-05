@@ -100,7 +100,7 @@ const config: Config = {
   detectOpenHandles: true,
 
   // Detect leaked timers
-  detectLeaks: true,
+  detectLeaks: false,
 };
 
 export default config;

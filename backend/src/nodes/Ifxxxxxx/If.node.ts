@@ -51,8 +51,8 @@ export const IfNode: NodeDefinition = {
         { name: "Regex", value: "regex" },
       ],
       componentProps: {
-        keyPlaceholder: "Field (e.g., status or user.role)",
-        valuePlaceholder: "Value to compare",
+        keyPlaceholder: "Key",
+        valuePlaceholder: "Value",
         expressionPlaceholder: "Select condition",
       },
     },
@@ -63,9 +63,6 @@ export const IfNode: NodeDefinition = {
     // Normalize and extract input items first
     const items = this.normalizeInputItems(inputData.main || []);
     const processedItems = this.extractJsonData(items);
-
-    const trueItems: any[] = [];
-    const falseItems: any[] = [];
 
     const evaluateCondition = (
       value1: any,
@@ -125,36 +122,26 @@ export const IfNode: NodeDefinition = {
       }
     };
 
-    // Evaluate each item with its own resolved values
-    for (let i = 0; i < processedItems.length; i++) {
-      const item = processedItems[i];
+    // Get condition parameter once (evaluate condition once, not per item)
+    const condition = (await this.getNodeParameter("condition", 0)) as {
+      key: string;
+      expression: string;
+      value: string;
+    };
 
-      if (!item || typeof item !== "object") {
-        continue;
-      }
+    const conditionResult = evaluateCondition(
+      condition.key,
+      condition.expression,
+      condition.value
+    );
 
-      // Get condition parameter with automatic resolution for this specific item
-      const condition = (await this.getNodeParameter("condition", i)) as {
-        key: string;
-        expression: string;
-        value: string;
-      };
+    // Route all items to either true or false output based on single condition evaluation
+    const wrappedItems = processedItems.map((item) => ({ json: item }));
 
-      const conditionResult = evaluateCondition(
-        condition.key,
-        condition.expression,
-        condition.value
-      );
-
-      const wrappedItem = { json: item };
-
-      if (conditionResult) {
-        trueItems.push(wrappedItem);
-      } else {
-        falseItems.push(wrappedItem);
-      }
+    if (conditionResult) {
+      return [{ true: wrappedItems }, { false: [] }];
+    } else {
+      return [{ true: [] }, { false: wrappedItems }];
     }
-
-    return [{ true: trueItems }, { false: falseItems }];
   },
 };

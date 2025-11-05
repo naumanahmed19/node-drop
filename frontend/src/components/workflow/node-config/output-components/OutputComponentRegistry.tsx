@@ -1,5 +1,6 @@
 import { ComponentType } from 'react'
 import { ImagePreviewOutput } from './ImagePreviewOutput'
+import { DataPreviewOutput } from './DataPreviewOutput'
 
 /**
  * Output Component Registry
@@ -43,6 +44,7 @@ export type OutputComponentRegistry = Record<
  */
 export const outputComponentRegistry: OutputComponentRegistry = {
   ImagePreviewOutput: ImagePreviewOutput,
+  DataPreviewOutput: DataPreviewOutput,
 }
 
 /**

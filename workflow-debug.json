@@ -1,0 +1,131 @@
+{
+  "version": "1.0.0",
+  "exportedAt": "2025-11-04T22:05:49.743Z",
+  "exportedBy": "workflow-editor",
+  "workflow": {
+    "title": "New Workflow",
+    "name": "New Workflow",
+    "description": "",
+    "nodes": [
+      {
+        "id": "node-1762292484273",
+        "name": "IF xx",
+        "type": "if",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": 256.1884119702662,
+          "y": 104.7216595077468
+        },
+        "settings": {},
+        "parameters": {
+          "conditions": [
+            {
+              "id": "condition_1",
+              "values": {
+                "rule": {
+                  "key": "{{$item.index}}",
+                  "value": "",
+                  "expression": "equal"
+                }
+              }
+            }
+          ]
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      },
+      {
+        "id": "node-1762292488960",
+        "name": "HTTP Request",
+        "type": "http-request",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": -10.42085609794756,
+          "y": 336.8711454842033
+        },
+        "settings": {},
+        "parameters": {
+          "url": "https://jsonplaceholder.typicode.com/todos/1",
+          "body": "",
+          "method": "GET",
+          "headers": {},
+          "timeout": 30000,
+          "maxRedirects": 5,
+          "authentication": "",
+          "responseFormat": "dataOnly",
+          "followRedirects": true
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      },
+      {
+        "id": "node-1762293883853",
+        "name": "Anthropic (Claude)",
+        "type": "anthropic",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": 335.0062766737161,
+          "y": 366.0847040109199
+        },
+        "settings": {},
+        "parameters": {
+          "model": "claude-3-5-sonnet-20241022",
+          "maxTokens": 1024,
+          "sessionId": "default",
+          "temperature": 0.7,
+          "userMessage": "{{h",
+          "enableMemory": false,
+          "systemPrompt": "You are a helpful AI assistant.",
+          "authentication": ""
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      }
+    ],
+    "connections": [
+      {
+        "id": "node-1762292488960-node-1762292484273-1762292492063",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762292488960",
+        "sourceOutput": "main",
+        "targetNodeId": "node-1762292484273"
+      },
+      {
+        "id": "node-1762292484273-node-1762293883853-1762293883854",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762292484273",
+        "sourceOutput": "main",
+        "targetNodeId": "node-1762293883853"
+      },
+      {
+        "id": "node-1762292488960-node-1762293883853-1762293891053",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762292488960",
+        "sourceOutput": "main",
+        "targetNodeId": "node-1762293883853"
+      }
+    ],
+    "settings": {
+      "timezone": "UTC",
+      "callerPolicy": "workflowsFromSameOwner",
+      "saveExecutionProgress": true,
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "metadata": {
+      "title": "New Workflow",
+      "lastTitleUpdate": "2025-11-04T22:05:42.276Z",
+      "exportVersion": "1.0.0",
+      "schemaVersion": "1.0.0",
+      "version": 1,
+      "tags": [],
+      "customProperties": {}
+    },
+    "tags": [],
+    "category": null
+  },
+  "checksum": "24b58cda"
+}

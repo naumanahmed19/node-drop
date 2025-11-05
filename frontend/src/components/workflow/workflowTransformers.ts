@@ -174,6 +174,8 @@ export function transformWorkflowNodesToReactFlow(
         ? "chat"
         : node.type === "image-preview"
         ? "image-preview"
+        : node.type === "data-preview"
+        ? "data-preview"
         : node.type === "form-generator"
         ? "form-generator"
         : node.type === "annotation"

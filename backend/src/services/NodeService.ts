@@ -1,3 +1,6 @@
+
+
+
 import { PrismaClient } from "@prisma/client";
 import {
   NodeDefinition,
@@ -636,6 +639,7 @@ export class NodeService {
       "autocomplete", // Support for autocomplete fields
       "credential", // Support for credential selector fields
       "custom", // Support for custom components
+      "conditionRow", // Support for condition row (key-expression-value)
     ];
     if (!validTypes.includes(property.type)) {
       errors.push({
