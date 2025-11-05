@@ -913,6 +913,27 @@ export class FlowExecutionEngine extends EventEmitter {
         dependentState.status === FlowNodeStatus.IDLE &&
         !queue.includes(dependentNodeId)
       ) {
+        // Check if this dependent node will have data from its incoming connections
+        const willHaveData = this.willNodeHaveInputData(
+          dependentNodeId,
+          context,
+          workflow
+        );
+
+        if (!willHaveData) {
+          logger.info("Skipping dependent node - no data from incoming branches", {
+            sourceNodeId: nodeId,
+            dependentNodeId,
+            dependentNodeType: workflow.nodes.find(
+              (n) => n.id === dependentNodeId
+            )?.type,
+            executionId: context.executionId,
+          });
+          // Mark as skipped instead of leaving it idle
+          dependentState.status = FlowNodeStatus.SKIPPED;
+          continue;
+        }
+
         queue.push(dependentNodeId);
         dependentState.status = FlowNodeStatus.QUEUED;
         queuedCount++;
@@ -952,6 +973,59 @@ export class FlowExecutionEngine extends EventEmitter {
     });
   }
 
+  /**
+   * Check if a node will have input data from its incoming connections
+   * Used to skip nodes connected to empty branches (e.g., IfElse false branch when condition is true)
+   */
+  private willNodeHaveInputData(
+    nodeId: string,
+    context: FlowExecutionContext,
+    workflow: Workflow
+  ): boolean {
+    const incomingConnections = workflow.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    );
+
+    // Trigger nodes always have data
+    if (incomingConnections.length === 0) {
+      return true;
+    }
+
+    // Check if any incoming connection has data
+    for (const connection of incomingConnections) {
+      const sourceNodeState = context.nodeStates.get(connection.sourceNodeId);
+
+      if (!sourceNodeState || !sourceNodeState.outputData) {
+        continue;
+      }
+
+      const outputData = sourceNodeState.outputData as any;
+
+      // Check standardized format with branches
+      if (outputData.metadata && outputData.branches) {
+        const branchData = outputData.branches[connection.sourceOutput];
+        if (Array.isArray(branchData) && branchData.length > 0) {
+          return true;
+        }
+      } else if (outputData.metadata) {
+        // Standardized format without branches
+        const sourceOutput = outputData[connection.sourceOutput];
+        if (Array.isArray(sourceOutput) && sourceOutput.length > 0) {
+          return true;
+        }
+      } else {
+        // Legacy format or direct access
+        const sourceOutput = outputData[connection.sourceOutput];
+        if (Array.isArray(sourceOutput) && sourceOutput.length > 0) {
+          return true;
+        }
+      }
+    }
+
+    // No incoming connections have data
+    return false;
+  }
+
   private async collectNodeInputData(
     nodeId: string,
     context: FlowExecutionContext,
@@ -980,10 +1054,32 @@ export class FlowExecutionEngine extends EventEmitter {
         // outputData is now standardized format: { main: [...], metadata: {...}, branches?: {...} }
         const outputData = sourceNodeState.outputData as any;
 
+        logger.info(`[FlowExecutionEngine] Collecting input for node ${nodeId} from ${connection.sourceNodeId}`, {
+          sourceOutput: connection.sourceOutput,
+          hasMetadata: !!outputData.metadata,
+          hasBranches: !!outputData.branches,
+          branchKeys: outputData.branches ? Object.keys(outputData.branches) : [],
+        });
+
         // Check if this is the standardized format (has metadata)
         if (outputData.metadata) {
-          // Standardized format
-          const sourceOutput = outputData[connection.sourceOutput];
+          // Standardized format with branches support
+          let sourceOutput;
+          
+          // For branching nodes, check branches first
+          if (outputData.branches && outputData.branches[connection.sourceOutput]) {
+            sourceOutput = outputData.branches[connection.sourceOutput];
+            logger.info(`[FlowExecutionEngine] Using branch '${connection.sourceOutput}' data`, {
+              itemCount: Array.isArray(sourceOutput) ? sourceOutput.length : 0,
+            });
+          } else {
+            // Fallback to direct property access for non-branching nodes
+            sourceOutput = outputData[connection.sourceOutput];
+            logger.info(`[FlowExecutionEngine] Using direct output '${connection.sourceOutput}'`, {
+              itemCount: Array.isArray(sourceOutput) ? sourceOutput.length : 0,
+            });
+          }
+          
           if (Array.isArray(sourceOutput)) {
             collectedData.push(...sourceOutput);
           } else if (sourceOutput) {

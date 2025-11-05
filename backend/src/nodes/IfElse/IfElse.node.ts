@@ -570,6 +570,13 @@ export const IfElseNode: NodeDefinition = {
         // Route all items to either true or false output
         const wrappedItems = processedItems.map((item) => ({ json: item }));
 
+        // Log the routing decision for debugging
+        this.logger.info(`IfElse routing decision: ${finalResult ? 'TRUE' : 'FALSE'}`, {
+            finalResult,
+            itemCount: wrappedItems.length,
+            mode,
+        });
+
         if (finalResult) {
             return [{ true: wrappedItems }, { false: [] }];
         } else {

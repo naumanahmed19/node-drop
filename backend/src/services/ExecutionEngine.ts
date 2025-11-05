@@ -234,11 +234,11 @@ export class ExecutionEngine extends EventEmitter {
         finishedAt: execution.finishedAt || undefined,
         error: execution.error
           ? {
-              message: (execution.error as any).message,
-              stack: (execution.error as any).stack,
-              nodeId: (execution.error as any).nodeId,
-              timestamp: new Date((execution.error as any).timestamp),
-            }
+            message: (execution.error as any).message,
+            stack: (execution.error as any).stack,
+            nodeId: (execution.error as any).nodeId,
+            timestamp: new Date((execution.error as any).timestamp),
+          }
           : undefined,
       };
     } catch (error) {
@@ -515,8 +515,10 @@ export class ExecutionEngine extends EventEmitter {
       });
 
       // Store output data in context
-      const outputData = result.data ? [{ main: result.data.main }] : [];
-      context.nodeOutputs.set(nodeId, outputData);
+      // Store the full result.data which includes branches for branching nodes
+      if (result.data) {
+        context.nodeOutputs.set(nodeId, result.data as any);
+      }
 
       this.emitExecutionEvent({
         executionId,
@@ -537,6 +539,8 @@ export class ExecutionEngine extends EventEmitter {
       // Emit progress update
       await this.emitExecutionProgress(executionId);
 
+      // Return output data in the expected format for the queue
+      const outputData = result.data ? [{ main: result.data.main }] : [];
       return outputData;
     } catch (error) {
       // Enhanced error handling for manual triggers
@@ -547,7 +551,7 @@ export class ExecutionEngine extends EventEmitter {
         });
         const workflowNodes = workflow?.nodes as unknown as Node[];
         const currentNode = workflowNodes?.find((n) => n.id === nodeId);
-        
+
         if (currentNode && currentNode.type === "manual-trigger") {
           logger.error(`Manual trigger node ${nodeId} execution failed`, {
             executionId,
@@ -708,6 +712,20 @@ export class ExecutionEngine extends EventEmitter {
         continue;
       }
 
+      // Check if this node should be executed based on incoming connections
+      const shouldExecute = this.shouldExecuteNode(nodeId, graph, context);
+
+      if (!shouldExecute) {
+        logger.info(
+          `Skipping node ${nodeId} (${node.type}): No data from incoming branches`,
+          {
+            nodeType: node.type,
+            nodeName: node.name,
+          }
+        );
+        continue;
+      }
+
       logger.info(`Executing node ${nodeId} (${node.type})`, {
         nodeType: node.type,
         nodeName: node.name,
@@ -729,6 +747,92 @@ export class ExecutionEngine extends EventEmitter {
 
       logger.info(`Node ${nodeId} completed execution`);
     }
+  }
+
+  /**
+   * Check if a node should be executed based on incoming branch data
+   */
+  private shouldExecuteNode(
+    nodeId: string,
+    graph: ExecutionGraph,
+    context: ExecutionContext
+  ): boolean {
+    const node = graph.nodes.get(nodeId);
+    logger.info(`[shouldExecuteNode] Checking if node ${nodeId} (${node?.type}) should execute`);
+    
+    // Find all connections that target this node
+    const incomingConnections = graph.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    );
+
+    logger.info(`[shouldExecuteNode] Node ${nodeId} has ${incomingConnections.length} incoming connections`);
+
+    // If no incoming connections, this is a trigger node - always execute
+    if (incomingConnections.length === 0) {
+      logger.info(`[shouldExecuteNode] Node ${nodeId} is a trigger node - EXECUTE`);
+      return true;
+    }
+
+    // Check if any incoming connection has data
+    for (const connection of incomingConnections) {
+      const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+
+      logger.info(`[shouldExecuteNode] Checking connection from ${connection.sourceNodeId} output '${connection.sourceOutput}' to ${nodeId}`);
+
+      if (!sourceOutput) {
+        // Source node hasn't executed yet - this shouldn't happen in topological order
+        logger.warn(`[shouldExecuteNode] Source node ${connection.sourceNodeId} has no output yet`);
+        continue;
+      }
+      
+      logger.info(`[shouldExecuteNode] Source output structure:`, {
+        hasMain: !!(sourceOutput as any).main,
+        hasBranches: !!(sourceOutput as any).branches,
+        mainLength: ((sourceOutput as any).main || []).length,
+        branchKeys: Object.keys((sourceOutput as any).branches || {}),
+      });
+
+      // Check if this is a branching node
+      const hasBranches = (sourceOutput as any).branches;
+
+      if (hasBranches) {
+        // For branching nodes, check if the specific branch has data
+        const branchName = connection.sourceOutput || "main";
+        const branchData = (sourceOutput as any).branches?.[branchName] || [];
+
+        logger.info(
+          `[shouldExecuteNode] Checking branch '${branchName}' for node ${nodeId}`,
+          {
+            sourceNodeId: connection.sourceNodeId,
+            branchName,
+            branchDataLength: branchData.length,
+            allBranches: Object.keys((sourceOutput as any).branches || {}),
+          }
+        );
+
+        if (branchData.length > 0) {
+          // This branch has data, node should execute
+          logger.info(`[shouldExecuteNode] Branch '${branchName}' has ${branchData.length} items - EXECUTE node ${nodeId}`);
+          return true;
+        } else {
+          logger.info(`[shouldExecuteNode] Branch '${branchName}' is empty - checking other connections...`);
+        }
+      } else {
+        // For standard nodes, check if main output has data
+        const outputItems = (sourceOutput as any).main || [];
+
+        logger.info(`[shouldExecuteNode] Standard node output has ${outputItems.length} items`);
+
+        if (outputItems.length > 0) {
+          logger.info(`[shouldExecuteNode] Main output has data - EXECUTE node ${nodeId}`);
+          return true;
+        }
+      }
+    }
+
+    // No incoming connections have data - skip this node
+    logger.info(`[shouldExecuteNode] No incoming connections have data - SKIP node ${nodeId}`);
+    return false;
   }
 
   /**
@@ -791,18 +895,18 @@ export class ExecutionEngine extends EventEmitter {
         if (sourceOutput) {
           // Check if this is a branching node (has branches property)
           const hasBranches = (sourceOutput as any).branches;
-          
+
           if (hasBranches) {
             // For branching nodes (like IfElse), only use data from the specific output branch
             const branchName = connection.sourceOutput || "main";
             const branchData = (sourceOutput as any).branches?.[branchName] || [];
-            
+
             logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
               branchName,
               itemCount: branchData.length,
               availableBranches: Object.keys((sourceOutput as any).branches || {}),
             });
-            
+
             sourceData.push(...branchData);
           } else {
             // For standard nodes, use main output
@@ -932,13 +1036,12 @@ export class ExecutionEngine extends EventEmitter {
     if (shouldRetry) {
       const delay = Math.min(
         this.retryConfig.retryDelay *
-          Math.pow(this.retryConfig.backoffMultiplier, retryCount),
+        Math.pow(this.retryConfig.backoffMultiplier, retryCount),
         this.retryConfig.maxRetryDelay
       );
 
       logger.warn(
-        `Retrying node ${nodeId} execution (attempt ${
-          retryCount + 1
+        `Retrying node ${nodeId} execution (attempt ${retryCount + 1
         }) after ${delay}ms`
       );
 

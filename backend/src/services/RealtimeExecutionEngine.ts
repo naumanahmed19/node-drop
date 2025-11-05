@@ -36,6 +36,7 @@ interface ExecutionContext {
     userId: string;
     triggerData: any;
     nodeOutputs: Map<string, any>;
+    connections: WorkflowConnection[]; // Store connections for branch checking
     status: "running" | "completed" | "failed" | "cancelled";
     startTime: number;
     currentNodeId?: string;
@@ -78,6 +79,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
             userId,
             triggerData,
             nodeOutputs: new Map(),
+            connections, // Store connections for branch checking
             status: "running",
             startTime: Date.now(),
         };
@@ -299,7 +301,22 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // Execute downstream nodes AFTER try-catch
         // This way, if a downstream node fails, it doesn't affect this node's status
         const downstreamNodes = graph.get(nodeId) || [];
+        
+        logger.info(`[RealtimeExecution] Node ${nodeId} has ${downstreamNodes.length} downstream nodes`);
+        
         for (const downstreamNodeId of downstreamNodes) {
+            // Check if downstream node will have data from this connection
+            const willHaveData = this.willNodeHaveData(
+                nodeId,
+                downstreamNodeId,
+                context
+            );
+            
+            if (!willHaveData) {
+                logger.info(`[RealtimeExecution] Skipping downstream node ${downstreamNodeId} - no data from branch`);
+                continue;
+            }
+            
             await this.executeNode(
                 executionId,
                 downstreamNodeId,
@@ -308,6 +325,64 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 context
             );
         }
+    }
+
+    /**
+     * Check if a downstream node will have data from a specific source node
+     * Used to skip nodes connected to empty branches (e.g., IfElse false branch when condition is true)
+     */
+    private willNodeHaveData(
+        sourceNodeId: string,
+        targetNodeId: string,
+        context: ExecutionContext
+    ): boolean {
+        // Find the connection between source and target
+        const connection = context.connections.find(
+            (conn) => conn.sourceNodeId === sourceNodeId && conn.targetNodeId === targetNodeId
+        );
+
+        if (!connection) {
+            logger.warn(`[RealtimeExecution] No connection found between ${sourceNodeId} and ${targetNodeId}`);
+            return false;
+        }
+
+        // Get source node output
+        const sourceOutput = context.nodeOutputs.get(sourceNodeId);
+        if (!sourceOutput) {
+            logger.warn(`[RealtimeExecution] No output data from source node ${sourceNodeId}`);
+            return false;
+        }
+
+        const outputBranch = connection.sourceOutput || "main";
+
+        logger.info(`[RealtimeExecution] Checking if node ${targetNodeId} will have data from ${sourceNodeId}`, {
+            outputBranch,
+            hasMetadata: !!sourceOutput.metadata,
+            hasBranches: !!sourceOutput.branches,
+            branchKeys: sourceOutput.branches ? Object.keys(sourceOutput.branches) : [],
+        });
+
+        // Check if source has branches (like IfElse node)
+        if (sourceOutput.branches) {
+            const branchData = sourceOutput.branches[outputBranch];
+            const hasData = Array.isArray(branchData) && branchData.length > 0;
+            
+            logger.info(`[RealtimeExecution] Branch '${outputBranch}' has ${Array.isArray(branchData) ? branchData.length : 0} items`, {
+                hasData,
+            });
+            
+            return hasData;
+        }
+
+        // For non-branching nodes, check main output
+        const mainData = sourceOutput.main;
+        const hasData = Array.isArray(mainData) && mainData.length > 0;
+        
+        logger.info(`[RealtimeExecution] Main output has ${Array.isArray(mainData) ? mainData.length : 0} items`, {
+            hasData,
+        });
+        
+        return hasData;
     }
 
     /**
@@ -342,32 +417,53 @@ export class RealtimeExecutionEngine extends EventEmitter {
         graph: Map<string, string[]>,
         context: ExecutionContext
     ): any {
-        // Find upstream nodes
-        const upstreamNodes: string[] = [];
-        graph.forEach((downstream, upstream) => {
-            if (downstream.includes(nodeId)) {
-                upstreamNodes.push(upstream);
-            }
-        });
+        // Find connections targeting this node
+        const incomingConnections = context.connections.filter(
+            (conn) => conn.targetNodeId === nodeId
+        );
 
-        // If no upstream nodes, use trigger data
-        if (upstreamNodes.length === 0) {
+        // If no incoming connections, use trigger data
+        if (incomingConnections.length === 0) {
             return context.triggerData
-                ? { main: [[context.triggerData]] }
+                ? { main: [[{ json: context.triggerData }]] }
                 : { main: [[]] };
         }
 
-        // Collect output from upstream nodes
+        // Collect output from upstream nodes based on connections
         const inputs: any[] = [];
-        upstreamNodes.forEach((upstreamId) => {
-            const output = context.nodeOutputs.get(upstreamId);
-            if (output) {
-                inputs.push(output);
+        
+        for (const connection of incomingConnections) {
+            const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+            if (!sourceOutput) continue;
+
+            const outputBranch = connection.sourceOutput || "main";
+
+            logger.info(`[RealtimeExecution] Collecting input for ${nodeId} from ${connection.sourceNodeId}`, {
+                outputBranch,
+                hasBranches: !!sourceOutput.branches,
+            });
+
+            // Check if source has branches (like IfElse node)
+            if (sourceOutput.branches) {
+                const branchData = sourceOutput.branches[outputBranch];
+                if (Array.isArray(branchData) && branchData.length > 0) {
+                    logger.info(`[RealtimeExecution] Using branch '${outputBranch}' data with ${branchData.length} items`);
+                    inputs.push(...branchData);
+                } else {
+                    logger.info(`[RealtimeExecution] Branch '${outputBranch}' is empty`);
+                }
+            } else {
+                // For non-branching nodes, use main output
+                const mainData = sourceOutput.main;
+                if (Array.isArray(mainData) && mainData.length > 0) {
+                    logger.info(`[RealtimeExecution] Using main output with ${mainData.length} items`);
+                    inputs.push(...mainData);
+                }
             }
-        });
+        }
 
         // Always return an object structure, even if empty
-        return inputs.length > 0 ? { main: inputs } : { main: [] };
+        return inputs.length > 0 ? { main: [inputs] } : { main: [[]] };
     }
 
     /**

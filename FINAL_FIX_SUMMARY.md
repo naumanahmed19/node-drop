@@ -1,144 +1,136 @@
-# Final Fix Summary - Webhook Visualization
+# IfElse Branch Execution - FINAL FIX
 
-## Problem
-You weren't seeing the console messages when triggering webhooks with `?test=true`.
+## The Real Problem
+Your workflow is using **RealtimeExecutionEngine** (WebSocket execution), not ExecutionEngine or FlowExecutionEngine! That's why the previous fixes didn't work.
 
-## Root Cause
-The socket events were being emitted to the wrong room. The code was using `emitToUser(workflowId, ...)` which tried to emit to a user room, but we needed to emit to the workflow room instead.
+## The Fix Applied to RealtimeExecutionEngine (WebSocket Execution)
 
-## Solution Applied
+### 1. Added Connections to ExecutionContext
+**Before:** Context only stored node outputs
+**After:** Context also stores connections to check branch information
 
-### Backend Changes
-
-**File: `backend/src/services/TriggerService.ts`**
-
-Changed from:
 ```typescript
-this.socketService.emitToUser(trigger.workflowId, "webhook-test-triggered", {...})
-```
-
-To:
-```typescript
-this.socketService.getServer()
-  .to(`workflow:${trigger.workflowId}`)
-  .emit("webhook-test-triggered", {...})
-```
-
-This ensures the event is emitted to the correct Socket.IO room that the frontend is subscribed to.
-
-### Frontend Changes
-
-**File: `frontend/src/pages/WorkflowEditorPage.tsx`**
-
-Added a new event listener for `webhook-test-triggered`:
-```typescript
-const handleWebhookTestTriggered = async (data: any) => {
-  console.log('🧪 [WorkflowEditor] Webhook test triggered:', data)
-  
-  // Subscribe to this execution to see it in real-time
-  await socketService.subscribeToExecution(data.executionId)
-  console.log('✅ [WorkflowEditor] Subscribed to webhook execution:', data.executionId)
+interface ExecutionContext {
+  // ... other fields
+  connections: WorkflowConnection[]; // Store connections for branch checking
 }
+```
 
-socketService.on('webhook-test-triggered', handleWebhookTestTriggered)
+### 2. Fixed Branch Data Collection (`getNodeInputData`)
+**Before:** Collected data from all upstream nodes without checking branches
+**After:** Checks `sourceOutput.branches[outputBranch]` first for branching nodes
+
+```typescript
+// Check if source has branches (like IfElse node)
+if (sourceOutput.branches) {
+  const branchData = sourceOutput.branches[outputBranch];
+  if (Array.isArray(branchData) && branchData.length > 0) {
+    logger.info(`Using branch '${outputBranch}' data with ${branchData.length} items`);
+    inputs.push(...branchData);
+  }
+}
+```
+
+### 3. Added Branch-Aware Downstream Execution (`willNodeHaveData`)
+New method that checks if a downstream node will have data before executing it:
+
+```typescript
+private willNodeHaveData(
+  sourceNodeId: string,
+  targetNodeId: string,
+  context: ExecutionContext
+): boolean {
+  const connection = context.connections.find(
+    (conn) => conn.sourceNodeId === sourceNodeId && conn.targetNodeId === targetNodeId
+  );
+  
+  const sourceOutput = context.nodeOutputs.get(sourceNodeId);
+  const outputBranch = connection.sourceOutput || "main";
+  
+  // Check if source has branches
+  if (sourceOutput.branches) {
+    const branchData = sourceOutput.branches[outputBranch];
+    return Array.isArray(branchData) && branchData.length > 0;
+  }
+  
+  return true; // Non-branching nodes always pass data
+}
+```
+
+### 4. Modified Downstream Node Execution
+**Before:** Executed all downstream nodes automatically
+**After:** Checks if node will have data, skips if not
+
+```typescript
+for (const downstreamNodeId of downstreamNodes) {
+  const willHaveData = this.willNodeHaveData(
+    nodeId,
+    downstreamNodeId,
+    context
+  );
+  
+  if (!willHaveData) {
+    logger.info(`Skipping downstream node ${downstreamNodeId} - no data from branch`);
+    continue;
+  }
+  
+  await this.executeNode(...);
+}
 ```
 
 ## How It Works Now
 
-1. **User triggers webhook** with `?test=true`
-   ```
-   http://localhost:4000/webhook/8e283f19-c6a7-4a75-ab87-d9c46a64f514?test=true
-   ```
+1. **IfElse Node Executes**
+   - Evaluates condition: `{{json.test}}` ("go") === "xxxxx" → FALSE
+   - Returns: `{ branches: { true: [], false: [{json: {...}}] } }`
 
-2. **Backend receives webhook** and creates execution
+2. **HTTP Request Node (connected to "true" branch)**
+   - `willNodeHaveInputData()` checks: `branches.true.length` → 0
+   - Result: Node is SKIPPED (not queued)
 
-3. **Backend emits to workflow room**
-   ```typescript
-   io.to(`workflow:${workflowId}`).emit("webhook-test-triggered", {...})
-   ```
+3. **Anthropic Node (connected to "false" branch)**
+   - `willNodeHaveInputData()` checks: `branches.false.length` → 1
+   - Result: Node is QUEUED and executes
 
-4. **Frontend receives event** (because it's subscribed to the workflow room)
+## You Must Restart Backend
 
-5. **Frontend subscribes to execution** to see real-time updates
+The changes to `FlowExecutionEngine.ts` require a backend restart.
 
-6. **User sees execution** in the workflow editor with live updates
-
-## Testing
-
-### Quick Test
 ```bash
-# 1. Open workflow editor
-# http://localhost:3000/workflows/cmhc339fl0003ugricrt1qm49/edit
-
-# 2. Open browser console (F12)
-
-# 3. Trigger webhook
-curl "http://localhost:4000/webhook/8e283f19-c6a7-4a75-ab87-d9c46a64f514?test=true"
+# Stop backend (Ctrl+C)
+# Start backend
+cd backend
+npm run dev
 ```
 
-### Expected Console Output
+## Expected Logs After Restart
 
-**Browser Console:**
+When you run your workflow, you should see:
+
 ```
-[WorkflowEditor] Subscribing to workflow: cmhc339fl0003ugricrt1qm49
-🧪 [WorkflowEditor] Webhook test triggered: { executionId: "...", ... }
-✅ [WorkflowEditor] Subscribed to webhook execution: <execution-id>
-🟢 [WorkflowEditor] Execution event received: { type: "started", ... }
-🟢 [WorkflowEditor] Execution event received: { type: "completed", ... }
-```
+[RealtimeExecution] Node node-1762345385129 has 2 downstream nodes
 
-**Backend Console:**
-```
-📨 Webhook received: GET /webhook/8e283f19-c6a7-4a75-ab87-d9c46a64f514
-✅ Webhook processed successfully - Execution ID: <execution-id>
-🧪 Webhook test mode - execution visible in editor
-```
+[RealtimeExecution] Checking if node node-1762292488960 will have data from node-1762345385129
+  outputBranch: 'true'
+  hasBranches: true
+  branchKeys: ['true', 'false']
 
-## Files Modified
+[RealtimeExecution] Branch 'true' has 0 items
+  hasData: false
 
-1. ✅ `backend/src/services/TriggerService.ts` - Fixed socket emission to use workflow room
-2. ✅ `frontend/src/pages/WorkflowEditorPage.tsx` - Added webhook-test-triggered listener
+[RealtimeExecution] Skipping downstream node node-1762292488960 - no data from branch
 
-## Files Created
+[RealtimeExecution] Checking if node node-1762294168092 will have data from node-1762345385129
+  outputBranch: 'false'
+  hasBranches: true
+  branchKeys: ['true', 'false']
 
-1. 📄 `TEST_WEBHOOK_NOW.md` - Step-by-step testing guide
-2. 📄 `QUICK_START_WEBHOOK_TESTING.md` - Quick reference
-3. 📄 `WEBHOOK_TEST_MODE.md` - Complete documentation
-4. 📄 `WEBHOOK_FIXES_SUMMARY.md` - Technical details
-5. 📄 `backend/test-webhook-simple.js` - Simple test script
-6. 📄 `backend/test-webhook-visualize.js` - Full test script
+[RealtimeExecution] Branch 'false' has 1 items
+  hasData: true
 
-## What's Fixed
-
-✅ Execution ID mismatch - Both webhook response and execution use same ID  
-✅ Socket event emission - Events now reach the frontend correctly  
-✅ Webhook visualization - Test mode works as expected  
-✅ Real-time updates - Execution events flow to the editor  
-
-## Usage
-
-### Production Webhooks (Background)
-```
-http://localhost:4000/webhook/YOUR-WEBHOOK-ID
+[RealtimeExecution] Executing node node-1762294168092 (Anthropic (Claude))
 ```
 
-### Test Webhooks (Visible in Editor)
-```
-http://localhost:4000/webhook/YOUR-WEBHOOK-ID?test=true
-```
-
-## Benefits
-
-- 🎯 See webhook executions in real-time
-- 🐛 Debug failing workflows easily
-- 📊 Monitor execution progress live
-- 🎬 Demo webhooks to clients
-- 🔍 Understand workflow behavior better
-
-## Next Steps
-
-1. Restart your backend server if it's running
-2. Open the workflow editor in your browser
-3. Open the browser console (F12)
-4. Trigger a webhook with `?test=true`
-5. Watch the magic happen! ✨
+## Result
+✅ Only the Anthropic node executes (false branch)
+✅ HTTP Request node is skipped (true branch has no data)
