@@ -234,14 +234,20 @@ export const DataPreviewNode: NodeDefinition = {
         // Handle append mode
         let outputMetadata;
         if (appendMode) {
-            // Get existing history from node parameters (stored by frontend)
-            const existingHistory = (this.getNodeParameter("previewHistory") as any[]) || [];
+            // Get existing history from node state (persists across loop iterations)
+            const nodeState = (this.getNodeState?.() || {}) as { previewHistory?: any[] };
+            const existingHistory = nodeState.previewHistory || [];
             
             // Add current preview to the beginning (latest on top)
             const updatedHistory = [currentPreview, ...existingHistory];
             
             // Limit history size
             const trimmedHistory = updatedHistory.slice(0, maxHistoryItems);
+            
+            // Save updated history to node state
+            if (this.setNodeState) {
+                this.setNodeState({ previewHistory: trimmedHistory });
+            }
             
             outputMetadata = {
                 ...currentPreview,
@@ -250,6 +256,11 @@ export const DataPreviewNode: NodeDefinition = {
                 historyCount: trimmedHistory.length,
             };
         } else {
+            // Clear history when not in append mode
+            if (this.setNodeState) {
+                this.setNodeState({});
+            }
+            
             outputMetadata = {
                 ...currentPreview,
                 appendMode: false,

@@ -20,6 +20,7 @@ export interface NodeDefinition {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  outputNames?: string[]; // Optional names for each output
   credentials?: CredentialDefinition[];
   credentialSelector?: CredentialSelectorConfig;
   properties: NodeProperty[] | (() => NodeProperty[]); // Support both static and dynamic properties
@@ -135,6 +136,9 @@ export interface NodeExecutionContext {
   extractJsonData: (items: any[]) => any[];
   wrapJsonData: (items: any[]) => any[];
   normalizeInputItems: (items: any[] | any[][]) => any[];
+  // State management for stateful nodes (like Loop)
+  getNodeState?: () => Record<string, any>;
+  setNodeState?: (state: Record<string, any>) => void;
 }
 
 export interface NodeHelpers {

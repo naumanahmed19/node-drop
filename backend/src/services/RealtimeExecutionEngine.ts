@@ -175,6 +175,12 @@ export class RealtimeExecutionEngine extends EventEmitter {
             return;
         }
 
+        // Check if this is a loop node - handle specially
+        if (node.type === "loop") {
+            await this.executeLoopNode(executionId, nodeId, node, nodeMap, graph, context);
+            return;
+        }
+
         context.currentNodeId = nodeId;
 
         logger.info(`[RealtimeExecution] Executing node ${nodeId} (${node.name})`);
@@ -366,6 +372,200 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 context
             );
         }
+    }
+
+    /**
+     * Execute a loop node with iteration control
+     */
+    private async executeLoopNode(
+        executionId: string,
+        nodeId: string,
+        node: WorkflowNode,
+        nodeMap: Map<string, WorkflowNode>,
+        graph: Map<string, string[]>,
+        context: ExecutionContext
+    ): Promise<void> {
+        logger.info(`[RealtimeExecution] Starting loop node ${nodeId}`);
+
+        // Find connections from this loop node
+        const loopConnections = context.connections.filter(
+            (conn) => conn.sourceNodeId === nodeId && conn.sourceOutput === "loop"
+        );
+        const doneConnections = context.connections.filter(
+            (conn) => conn.sourceNodeId === nodeId && conn.sourceOutput === "done"
+        );
+
+        let loopComplete = false;
+        let iterationCount = 0;
+        const maxIterations = 100000;
+
+        while (!loopComplete && iterationCount < maxIterations) {
+            if (context.status === "cancelled") {
+                logger.info(`[RealtimeExecution] Loop cancelled at iteration ${iterationCount}`);
+                return;
+            }
+
+            iterationCount++;
+            logger.info(`[RealtimeExecution] Loop ${nodeId} - Iteration ${iterationCount}`);
+
+            // Execute the loop node itself
+            context.currentNodeId = nodeId;
+
+            // Emit node started event
+            this.emit("node-started", {
+                executionId,
+                nodeId,
+                nodeName: node.name,
+                nodeType: node.type,
+                iteration: iterationCount,
+                timestamp: new Date(),
+            });
+
+            // Create node execution record
+            const nodeExecution = await this.prisma.nodeExecution.create({
+                data: {
+                    nodeId,
+                    executionId,
+                    status: NodeExecutionStatus.RUNNING,
+                    startedAt: new Date(),
+                },
+            });
+
+            try {
+                // Get input data
+                const inputData = this.getNodeInputData(nodeId, graph, context);
+
+                // Execute the loop node
+                const startTime = Date.now();
+                const result = await this.nodeService.executeNode(
+                    node.type,
+                    node.parameters,
+                    inputData,
+                    undefined,
+                    executionId,
+                    context.userId,
+                    { timeout: 30000, nodeId }, // Pass nodeId for state management
+                    context.workflowId,
+                    node.settings
+                );
+
+                const duration = Date.now() - startTime;
+
+                if (!result.success) {
+                    throw new Error(result.error?.message || "Loop node execution failed");
+                }
+
+                // Store output
+                context.nodeOutputs.set(nodeId, result.data);
+
+                // Update node execution record
+                await this.prisma.nodeExecution.update({
+                    where: { id: nodeExecution.id },
+                    data: {
+                        status: NodeExecutionStatus.SUCCESS,
+                        outputData: result.data as any,
+                        finishedAt: new Date(),
+                    },
+                });
+
+                // Check loop and done outputs
+                const loopData = result.data?.branches?.["loop"] || [];
+                const doneData = result.data?.branches?.["done"] || [];
+
+                logger.info(`[RealtimeExecution] Loop ${nodeId} output:`, {
+                    loopDataLength: loopData.length,
+                    doneDataLength: doneData.length,
+                    iteration: iterationCount,
+                });
+
+                // Emit node completed event
+                this.emit("node-completed", {
+                    executionId,
+                    nodeId,
+                    nodeName: node.name,
+                    nodeType: node.type,
+                    outputData: result.data,
+                    duration,
+                    iteration: iterationCount,
+                    loopDataLength: loopData.length,
+                    doneDataLength: doneData.length,
+                    timestamp: new Date(),
+                });
+
+                // If loop output has data, execute downstream nodes
+                if (loopData.length > 0) {
+                    logger.info(`[RealtimeExecution] Loop has data, executing downstream nodes`);
+
+                    // Execute all nodes connected to loop output
+                    for (const conn of loopConnections) {
+                        await this.executeNode(
+                            executionId,
+                            conn.targetNodeId,
+                            nodeMap,
+                            graph,
+                            context
+                        );
+                    }
+                }
+
+                // If done output has data, loop is complete
+                if (doneData.length > 0) {
+                    logger.info(`[RealtimeExecution] Loop ${nodeId} completed after ${iterationCount} iterations`);
+                    loopComplete = true;
+
+                    // Execute nodes connected to done output
+                    for (const conn of doneConnections) {
+                        await this.executeNode(
+                            executionId,
+                            conn.targetNodeId,
+                            nodeMap,
+                            graph,
+                            context
+                        );
+                    }
+                }
+
+                // If both outputs are empty, loop is stuck
+                if (loopData.length === 0 && doneData.length === 0) {
+                    throw new Error(`Loop node ${nodeId} produced no output - loop is stuck`);
+                }
+            } catch (error: any) {
+                logger.error(`[RealtimeExecution] Loop node ${nodeId} failed:`, error);
+
+                await this.prisma.nodeExecution.update({
+                    where: { id: nodeExecution.id },
+                    data: {
+                        status: NodeExecutionStatus.ERROR,
+                        error: {
+                            message: error.message,
+                            stack: error.stack,
+                        },
+                        finishedAt: new Date(),
+                    },
+                });
+
+                this.emit("node-failed", {
+                    executionId,
+                    nodeId,
+                    nodeName: node.name,
+                    nodeType: node.type,
+                    error: {
+                        message: error.message,
+                        stack: error.stack,
+                    },
+                    iteration: iterationCount,
+                    timestamp: new Date(),
+                });
+
+                throw error;
+            }
+        }
+
+        if (iterationCount >= maxIterations) {
+            throw new Error(`Loop node ${nodeId} exceeded maximum iterations (${maxIterations})`);
+        }
+
+        logger.info(`[RealtimeExecution] Loop node ${nodeId} finished`);
     }
 
     /**

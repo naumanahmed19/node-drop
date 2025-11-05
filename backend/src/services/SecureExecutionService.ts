@@ -27,6 +27,7 @@ export interface SecureExecutionOptions {
   maxOutputSize?: number;
   maxRequestTimeout?: number;
   maxConcurrentRequests?: number;
+  nodeId?: string; // For state management in stateful nodes
 }
 
 export interface CredentialData {
@@ -152,6 +153,9 @@ export class SecureExecutionService {
   /**
    * Create secure execution context with credential injection
    */
+  // Store node state per execution
+  private nodeStates: Map<string, Record<string, any>> = new Map();
+
   async createSecureContext(
     parameters: Record<string, any>,
     inputData: NodeInputData,
@@ -160,9 +164,13 @@ export class SecureExecutionService {
     executionId: string,
     options: SecureExecutionOptions = {},
     workflowId?: string,
-    settings?: Record<string, any>
+    settings?: Record<string, any>,
+    nodeId?: string
   ): Promise<NodeExecutionContext> {
     const limits = this.mergeLimits(options);
+    
+    // Create state key for this node in this execution
+    const stateKey = nodeId ? `${executionId}:${nodeId}` : executionId;
 
     // Pre-resolve all variables in parameters before creating context
     const resolvedParameters: Record<string, any> = {};
@@ -330,6 +338,13 @@ export class SecureExecutionService {
       extractJsonData,
       wrapJsonData,
       normalizeInputItems,
+      // State management for stateful nodes
+      getNodeState: () => {
+        return this.nodeStates.get(stateKey) || {};
+      },
+      setNodeState: (state: Record<string, any>) => {
+        this.nodeStates.set(stateKey, state);
+      },
     };
   }
 

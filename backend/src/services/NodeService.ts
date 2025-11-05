@@ -67,8 +67,37 @@ export class NodeService {
    */
   private standardizeNodeOutput(
     nodeType: string,
-    outputs: NodeOutputData[]
+    outputs: NodeOutputData[],
+    nodeDefinition?: NodeDefinition
   ): StandardizedNodeOutput {
+    // Check if this is a multi-output node (like Loop with multiple outputs)
+    const hasMultipleOutputs = nodeDefinition && nodeDefinition.outputs.length > 1;
+
+    if (hasMultipleOutputs && nodeDefinition) {
+      // Multi-output node: map array outputs to named branches
+      const branches: Record<string, any[]> = {};
+      let mainOutput: any[] = [];
+
+      outputs.forEach((output, index) => {
+        const outputName = nodeDefinition.outputs[index] || `output${index}`;
+        const outputData = output.main || [];
+        branches[outputName] = outputData;
+        
+        // Add to main output for backward compatibility
+        mainOutput = mainOutput.concat(outputData);
+      });
+
+      return {
+        main: mainOutput,
+        branches,
+        metadata: {
+          nodeType,
+          outputCount: outputs.length,
+          hasMultipleBranches: true,
+        },
+      };
+    }
+
     // Detect if this is a branching node by checking if outputs have named branches (not just "main")
     const hasMultipleBranches = outputs.some((output) => {
       const keys = Object.keys(output);
@@ -453,7 +482,8 @@ export class NodeService {
         execId,
         options,
         workflowId,
-        settings
+        settings,
+        options?.nodeId // Pass nodeId for state management
       );
 
       // Execute the node in secure context
@@ -474,7 +504,8 @@ export class NodeService {
       // Standardize the output format for consistent frontend handling
       const standardizedOutput = this.standardizeNodeOutput(
         nodeType,
-        outputValidation.sanitizedData as NodeOutputData[]
+        outputValidation.sanitizedData as NodeOutputData[],
+        nodeDefinition
       );
 
       // Cleanup execution resources

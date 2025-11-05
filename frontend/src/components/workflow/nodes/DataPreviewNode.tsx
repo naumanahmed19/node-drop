@@ -33,15 +33,14 @@ type DataPreviewNodeType = Node<DataPreviewNodeData>
  * - Real-time execution data display
  */
 export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, id }: NodeProps<DataPreviewNodeType>) {
-  const { updateNode, workflow, lastExecutionResult } = useWorkflowStore()
+  const { updateNode, workflow, lastExecutionResult, realTimeResults } = useWorkflowStore()
   const isReadOnly = false
 
   // Track expanded state
   const [isExpanded, setIsExpanded] = useState(data.parameters?.isExpanded ?? false)
   const [previewData, setPreviewData] = useState<any>(null)
   const [copied, setCopied] = useState(false)
-  const [lastProcessedExecutionId, setLastProcessedExecutionId] = useState<string | null>(null)
-  
+
   // Use ref to avoid including data.parameters in useEffect dependencies
   const parametersRef = useRef(data.parameters)
   parametersRef.current = data.parameters
@@ -51,8 +50,27 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
   const showTimestamp = data.parameters?.showTimestamp ?? true
   const appendMode = data.parameters?.appendMode ?? false
 
-  // Get data from execution results
+  // Get data from execution results (real-time updates)
   const getDataFromExecution = useCallback(() => {
+    // First try to get from real-time node execution results
+    const nodeResult = realTimeResults?.get(id)
+
+    if (nodeResult && nodeResult.data) {
+      let execData = nodeResult.data
+
+      // If data has a 'main' output array, get the first item
+      if (execData.main && Array.isArray(execData.main) && execData.main.length > 0) {
+        const mainOutput = execData.main[0]
+        // Look for the json data
+        if (mainOutput.json) {
+          return mainOutput.json
+        }
+      }
+
+      return execData
+    }
+
+    // Fallback to lastExecutionResult for backwards compatibility
     if (!workflow || !lastExecutionResult) {
       return null
     }
@@ -64,52 +82,50 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
 
     if (!nodeExecution || !nodeExecution.data) return null
 
-    // Extract the preview data from the _preview property
+    // Extract the preview data
     let execData = nodeExecution.data
 
     // If data has a 'main' output array, get the first item
     if (execData.main && Array.isArray(execData.main) && execData.main.length > 0) {
       const mainOutput = execData.main[0]
-      // Look for the _preview metadata that we added in the backend
-      if (mainOutput._preview) {
-        return mainOutput._preview
-      }
-      // Fallback to json if no _preview (for backwards compatibility)
       if (mainOutput.json) {
         execData = mainOutput.json
       }
     }
 
     return execData
-  }, [workflow, lastExecutionResult, id])
+  }, [workflow, lastExecutionResult, realTimeResults, id])
 
   // Update preview when execution results change
   useEffect(() => {
-    if (!lastExecutionResult) return
-
-    const executionId = lastExecutionResult.executionId
-    
-    // Don't process the same execution twice
-    if (executionId === lastProcessedExecutionId) return
-
     const execData = getDataFromExecution()
     if (execData) {
-      setPreviewData(execData)
-      
-      // If append mode is enabled, update node parameters with history
-      if (appendMode && execData.previewHistory) {
-        updateNode(id, {
-          parameters: {
-            ...parametersRef.current,
-            previewHistory: execData.previewHistory
-          }
-        })
+      // In append mode, always update immediately (for loop iterations)
+      // Check if data actually changed by comparing history count
+      const newHistoryCount = execData.previewHistory?.length || 0
+      const currentHistoryCount = previewData?.previewHistory?.length || 0
+
+      const shouldUpdate = appendMode
+        ? newHistoryCount !== currentHistoryCount || !previewData
+        : execData.timestamp !== previewData?.timestamp
+
+      if (shouldUpdate) {
+        // Force immediate update by creating new object
+        setPreviewData({ ...execData })
+
+        // If append mode is enabled, update node parameters with history
+        if (appendMode && execData.previewHistory) {
+          updateNode(id, {
+            parameters: {
+              ...parametersRef.current,
+              previewHistory: execData.previewHistory
+            }
+          })
+        }
       }
-      
-      setLastProcessedExecutionId(executionId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastExecutionResult, appendMode, id, lastProcessedExecutionId])
+  }, [realTimeResults, lastExecutionResult, appendMode, id])
 
   // Handle expand/collapse toggle
   const handleToggleExpand = useCallback(() => {
@@ -153,11 +169,11 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
   // Prepare header info text
   const headerInfo = useMemo(() => {
     if (!previewData) return 'Waiting for data'
-    
+
     if (appendMode && previewData.historyCount) {
       return `${previewData.historyCount} ${previewData.historyCount === 1 ? 'preview' : 'previews'}`
     }
-    
+
     const lines = previewData.lineCount || 0
     return `${lines} ${lines === 1 ? 'line' : 'lines'}`
   }, [previewData, appendMode])
@@ -167,8 +183,8 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
     if (!previewData) return null
 
     // In append mode, show the latest preview from history
-    const preview = appendMode && previewData.previewHistory?.[0]?.preview 
-      ? previewData.previewHistory[0].preview 
+    const preview = appendMode && previewData.previewHistory?.[0]?.preview
+      ? previewData.previewHistory[0].preview
       : previewData.preview
 
     if (!preview) return null
@@ -251,7 +267,7 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
         <div className="space-y-2">
           {/* Terminal-style Preview */}
           <div className="  overflow-hidden bg-white shadow-sm">
-    
+
             {/* Terminal Content */}
             <div className="bg-gray-900 text-gray-100 h-[240px] overflow-y-auto">
               <pre className="p-3 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">
@@ -272,25 +288,25 @@ export const DataPreviewNode = memo(function DataPreviewNode({ data, selected, i
                           previewData.format === 'table' ? 'Table' : 'Text'}
                     </span>
 
-                       <div className="flex items-center space-x-2">
-         
-                <Badge variant="secondary" className="text-xs h-5">
-                  {previewData.lineCount || 0} lines
-                </Badge>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleCopy}
-                  className="h-5 w-5 p-0 hover:bg-gray-700"
-                  title="Copy to clipboard"
-                >
-                  {copied ? (
-                    <Check className="w-3 h-3 text-green-400" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </Button>
-              </div>
+                    <div className="flex items-center space-x-2">
+
+                      <Badge variant="secondary" className="text-xs h-5">
+                        {previewData.lineCount || 0} lines
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleCopy}
+                        className="h-5 w-5 p-0 hover:bg-gray-700"
+                        title="Copy to clipboard"
+                      >
+                        {copied ? (
+                          <Check className="w-3 h-3 text-green-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   {previewData.metadata.truncated && (
                     <Badge variant="outline" className="text-xs">

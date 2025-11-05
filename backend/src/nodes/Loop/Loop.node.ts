@@ -5,36 +5,31 @@ import {
 } from "../../types/node.types";
 
 /**
- * Loop Node - Iterate over items and process them
+ * Loop Node - Iterate over items and process them one at a time
  *
- * This node allows you to iterate over an array of items and process each one.
- * It can loop over items from input data, from a specified field, or repeat N times.
+ * This node creates a true workflow loop where each iteration flows through
+ * downstream nodes before moving to the next iteration.
  *
  * How it works:
- * - Takes input items and iterates over them one by one
- * - Can extract an array from a specific field to iterate over
- * - Can repeat a specific number of times (like a for loop)
- * - Outputs each item individually for processing by subsequent nodes
- * - Supports batch processing to group items
+ * - Outputs ONE item at a time through the "loop" output
+ * - Downstream nodes process that single item
+ * - When downstream processing completes, next iteration begins
+ * - When all iterations complete, outputs through "done" output
+ *
+ * Outputs:
+ * - "loop": Outputs current iteration item (connects to nodes that process each iteration)
+ * - "done": Outputs when all iterations complete (connects to nodes that run after loop)
  *
  * Examples:
- * 1. Repeat N times:
- *    Repeat: 100
- *    Output: 100 iterations with { iteration: 1, index: 0, total: 100 }, etc.
+ * 1. Repeat N times with condition:
+ *    Loop (Repeat 100) → If ({{$json.iteration}} == 7) → Stop/Continue
  *
- * 2. Simple iteration:
+ * 2. Process array items one by one:
  *    Input: [{ "id": 1 }, { "id": 2 }, { "id": 3 }]
- *    Output: Each item sent individually to next node
+ *    Each item processed individually through downstream nodes
  *
- * 3. Field extraction:
- *    Input: { "users": [{ "name": "John" }, { "name": "Jane" }] }
- *    Field: "users"
- *    Output: Each user sent individually
- *
- * 4. Batch processing:
- *    Input: [{ "id": 1 }, { "id": 2 }, { "id": 3 }, { "id": 4 }]
- *    Batch Size: 2
- *    Output: [{ "id": 1 }, { "id": 2 }], then [{ "id": 3 }, { "id": 4 }]
+ * 3. API pagination:
+ *    Loop (Repeat 10) → HTTP Request (page={{$json.iteration}}) → Process Data
  */
 export const LoopNode: NodeDefinition = {
     type: "loop",
@@ -42,18 +37,18 @@ export const LoopNode: NodeDefinition = {
     name: "loop",
     group: ["transform"],
     version: 1,
-    description: "Iterate over items and process them individually or in batches",
+    description: "Iterate over items one at a time through downstream nodes",
     icon: "fa:repeat",
     color: "#FF6B6B",
     defaults: {
-        mode: "each",
         loopOver: "items",
         fieldName: "",
         batchSize: 1,
         repeatTimes: 10,
     },
     inputs: ["main"],
-    outputs: ["main"],
+    outputs: ["loop", "done"],
+    outputNames: ["Loop", "Done"],
     properties: [
         {
             displayName: "Loop Over",
@@ -110,35 +105,15 @@ export const LoopNode: NodeDefinition = {
             },
         },
         {
-            displayName: "Mode",
-            name: "mode",
-            type: "options",
-            required: true,
-            default: "each",
-            description: "How to process the items",
-            options: [
-                {
-                    name: "Process Each Item",
-                    value: "each",
-                    description: "Process items one by one",
-                },
-                {
-                    name: "Batch Processing",
-                    value: "batch",
-                    description: "Process items in batches",
-                },
-            ],
-        },
-        {
             displayName: "Batch Size",
             name: "batchSize",
             type: "number",
             required: true,
-            default: 10,
-            description: "Number of items to process in each batch",
+            default: 1,
+            description: "Number of items to process in each iteration (1 = one at a time)",
             displayOptions: {
                 show: {
-                    mode: ["batch"],
+                    loopOver: ["items", "field"],
                 },
             },
         },
@@ -147,109 +122,151 @@ export const LoopNode: NodeDefinition = {
         inputData: NodeInputData
     ): Promise<NodeOutputData[]> {
         const loopOver = (await this.getNodeParameter("loopOver")) as string;
-        const mode = (await this.getNodeParameter("mode")) as string;
+        const batchSize = (await this.getNodeParameter("batchSize")) as number;
 
-        // Get items to process
-        let items = inputData.main || [];
+        // Get or initialize loop state
+        const loopState = (this.getNodeState?.() || {}) as {
+            itemsToLoop?: any[];
+            currentIndex?: number;
+            totalItems?: number;
+        };
 
-        if (items.length === 1 && items[0] && Array.isArray(items[0])) {
-            items = items[0];
+        // First execution - prepare items to loop
+        if (!loopState.itemsToLoop) {
+            let itemsToLoop: any[] = [];
+
+            if (loopOver === "repeat") {
+                // Repeat N times - generate array (ignore input data)
+                const repeatTimes = (await this.getNodeParameter("repeatTimes")) as number;
+
+                if (repeatTimes <= 0) {
+                    throw new Error("Number of iterations must be greater than 0");
+                }
+
+                if (repeatTimes > 100000) {
+                    throw new Error(
+                        "Number of iterations cannot exceed 100,000 for safety"
+                    );
+                }
+
+                // Generate array with iteration numbers
+                itemsToLoop = Array.from({ length: repeatTimes }, (_, i) => ({
+                    iteration: i + 1,
+                    index: i,
+                    total: repeatTimes,
+                }));
+            } else {
+                // For "items" and "field" modes, process input data
+                // Get items to process
+                let items = inputData.main || [];
+
+                if (items.length === 1 && items[0] && Array.isArray(items[0])) {
+                    items = items[0];
+                }
+
+                // Process items - extract json if wrapped
+                const processedItems = items.map((item: any) => {
+                    if (item && typeof item === "object" && "json" in item) {
+                        return item.json;
+                    }
+                    return item;
+                });
+
+                if (loopOver === "items") {
+                    // Loop over all input items
+                    itemsToLoop = processedItems;
+                } else if (loopOver === "field") {
+                // Loop over array in a specific field
+                const fieldName = (await this.getNodeParameter("fieldName")) as string;
+
+                if (!fieldName) {
+                    throw new Error("Field name is required when looping over a field");
+                }
+
+                // Get the first item to extract the field from
+                if (processedItems.length === 0) {
+                    throw new Error("No input items to extract field from");
+                }
+
+                const firstItem = processedItems[0];
+
+                // Resolve nested path
+                const fieldValue = this.resolvePath(firstItem, fieldName);
+
+                if (!Array.isArray(fieldValue)) {
+                    throw new Error(
+                        `Field '${fieldName}' is not an array. Got: ${typeof fieldValue}`
+                    );
+                }
+
+                    itemsToLoop = fieldValue;
+                }
+            }
+
+            if (itemsToLoop.length === 0) {
+                // No items to loop over, output through "done" only
+                return [
+                    { main: [] }, // loop output (empty)
+                    { main: [{ json: { completed: true, totalIterations: 0 } }] }, // done output
+                ];
+            }
+
+            // Initialize loop state
+            loopState.itemsToLoop = itemsToLoop;
+            loopState.currentIndex = 0;
+            loopState.totalItems = itemsToLoop.length;
+
+            // Save state for next iteration
+            this.setNodeState?.(loopState);
         }
 
-        // Process items - extract json if wrapped
-        const processedItems = items.map((item: any) => {
-            if (item && typeof item === "object" && "json" in item) {
-                return item.json;
-            }
-            return item;
+        // Get current batch of items
+        const currentIndex = loopState.currentIndex || 0;
+        const itemsToLoop = loopState.itemsToLoop || [];
+        const totalItems = loopState.totalItems || 0;
+
+        // Check if loop is complete
+        if (currentIndex >= totalItems) {
+            // Clear state
+            this.setNodeState?.({});
+
+            // Output through "done" output only
+            return [
+                { main: [] }, // loop output (empty)
+                { main: [{ json: { completed: true, totalIterations: totalItems } }] }, // done output
+            ];
+        }
+
+        // Get current batch
+        const endIndex = Math.min(currentIndex + batchSize, totalItems);
+        const currentBatch = itemsToLoop.slice(currentIndex, endIndex);
+
+        // Update state for next iteration
+        loopState.currentIndex = endIndex;
+        this.setNodeState?.(loopState);
+
+        // Prepare output items with metadata
+        const outputItems = currentBatch.map((item: any, batchIdx: number) => {
+            const globalIndex = currentIndex + batchIdx;
+            return {
+                json: {
+                    ...item,
+                    $index: globalIndex,
+                    $iteration: globalIndex + 1,
+                    $total: totalItems,
+                    $isFirst: globalIndex === 0,
+                    $isLast: globalIndex === totalItems - 1,
+                    $batchIndex: batchIdx,
+                    $batchSize: currentBatch.length,
+                },
+            };
         });
 
-        let itemsToLoop: any[] = [];
-
-        if (loopOver === "repeat") {
-            // Repeat N times - generate array
-            const repeatTimes = (await this.getNodeParameter("repeatTimes")) as number;
-
-            if (repeatTimes <= 0) {
-                throw new Error("Number of iterations must be greater than 0");
-            }
-
-            if (repeatTimes > 100000) {
-                throw new Error(
-                    "Number of iterations cannot exceed 100,000 for safety"
-                );
-            }
-
-            // Generate array with iteration numbers
-            itemsToLoop = Array.from({ length: repeatTimes }, (_, i) => ({
-                iteration: i + 1,
-                index: i,
-                total: repeatTimes,
-            }));
-        } else if (loopOver === "items") {
-            // Loop over all input items
-            itemsToLoop = processedItems;
-        } else if (loopOver === "field") {
-            // Loop over array in a specific field
-            const fieldName = (await this.getNodeParameter("fieldName")) as string;
-
-            if (!fieldName) {
-                throw new Error("Field name is required when looping over a field");
-            }
-
-            // Get the first item to extract the field from
-            if (processedItems.length === 0) {
-                throw new Error("No input items to extract field from");
-            }
-
-            const firstItem = processedItems[0];
-
-            // Resolve nested path
-            const fieldValue = this.resolvePath(firstItem, fieldName);
-
-            if (!Array.isArray(fieldValue)) {
-                throw new Error(
-                    `Field '${fieldName}' is not an array. Got: ${typeof fieldValue}`
-                );
-            }
-
-            itemsToLoop = fieldValue;
-        }
-
-        if (itemsToLoop.length === 0) {
-            // No items to loop over, return empty result
-            return [{ main: [] }];
-        }
-
-        if (mode === "each") {
-            // Process each item individually
-            // Return all items wrapped in json format
-            const outputItems = itemsToLoop.map((item: any) => ({ json: item }));
-            return [{ main: outputItems }];
-        } else if (mode === "batch") {
-            // Process items in batches
-            const batchSize = (await this.getNodeParameter("batchSize")) as number;
-
-            if (batchSize <= 0) {
-                throw new Error("Batch size must be greater than 0");
-            }
-
-            // Split items into batches
-            const batches: any[][] = [];
-            for (let i = 0; i < itemsToLoop.length; i += batchSize) {
-                batches.push(itemsToLoop.slice(i, i + batchSize));
-            }
-
-            // Return batches as separate items
-            // Each batch is an array of items
-            const outputItems = batches.map((batch: any[]) => ({
-                json: { items: batch, count: batch.length },
-            }));
-
-            return [{ main: outputItems }];
-        }
-
-        // Fallback - should not reach here
-        return [{ main: [] }];
+        // Output through "loop" output (first output)
+        // "done" output remains empty until loop completes
+        return [
+            { main: outputItems }, // loop output
+            { main: [] }, // done output (empty during iteration)
+        ];
     },
 };
