@@ -1107,10 +1107,12 @@ export class ExecutionEngine extends EventEmitter {
       }
     } else {
       // Collect data from source nodes
-      const sourceData: any[] = [];
+      // Keep data from each connection separate for multi-input support (like Merge node)
+      const sourceDataPerConnection: any[][] = [];
 
       for (const connection of incomingConnections) {
         const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+        const connectionData: any[] = [];
 
         if (sourceOutput) {
           // Check if this is a branching node (has branches property)
@@ -1127,21 +1129,35 @@ export class ExecutionEngine extends EventEmitter {
               availableBranches: Object.keys((sourceOutput as any).branches || {}),
             });
 
-            sourceData.push(...branchData);
+            connectionData.push(...branchData);
           } else {
             // For standard nodes, use main output
             const outputItems = (sourceOutput as any).main || [];
-            sourceData.push(...outputItems);
+            connectionData.push(...outputItems);
           }
         }
+        
+        // Add this connection's data as a separate array
+        sourceDataPerConnection.push(connectionData);
       }
 
-      // If no source data, provide empty object
-      if (sourceData.length === 0) {
-        sourceData.push({ json: {} });
+      // For nodes with multiple inputs (like Merge), keep data from each connection separate
+      // For nodes with single input, flatten for backward compatibility
+      if (sourceDataPerConnection.length > 1) {
+        // Multiple connections: keep them separate (2D array)
+        inputData.main = sourceDataPerConnection;
+      } else if (sourceDataPerConnection.length === 1) {
+        // Single connection: use existing format for backward compatibility
+        const singleConnectionData = sourceDataPerConnection[0];
+        // If no source data, provide empty object
+        if (singleConnectionData.length === 0) {
+          singleConnectionData.push({ json: {} });
+        }
+        inputData.main = [singleConnectionData];
+      } else {
+        // No connections
+        inputData.main = [[{ json: {} }]];
       }
-
-      inputData.main = [sourceData];
     }
 
     return inputData;

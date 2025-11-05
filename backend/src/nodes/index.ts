@@ -11,6 +11,7 @@ export * from "./PostgreSQL/PostgreSQL.node";
 // export * from "./If";
 export * from "./Json";
 export * from "./Loop";
+export * from "./Merge";
 export * from "./ManualTrigger";
 export * from "./ScheduleTrigger";
 export * from "./Set";

@@ -952,10 +952,10 @@ export class FlowExecutionEngine extends EventEmitter {
           reason: !dependentState
             ? "no state"
             : dependentState.status !== FlowNodeStatus.IDLE
-            ? `status: ${dependentState.status}`
-            : queue.includes(dependentNodeId)
-            ? "already queued"
-            : "unknown",
+              ? `status: ${dependentState.status}`
+              : queue.includes(dependentNodeId)
+                ? "already queued"
+                : "unknown",
           currentStatus: dependentState?.status,
           executionId: context.executionId,
         });
@@ -1046,9 +1046,12 @@ export class FlowExecutionEngine extends EventEmitter {
       return inputData;
     }
 
-    const collectedData: any[] = [];
+    // Collect data from each connection separately for proper multi-input support
+    const collectedDataPerConnection: any[][] = [];
+
     for (const connection of incomingConnections) {
       const sourceNodeState = context.nodeStates.get(connection.sourceNodeId);
+      const connectionData: any[] = [];
 
       if (sourceNodeState && sourceNodeState.outputData) {
         // outputData is now standardized format: { main: [...], metadata: {...}, branches?: {...} }
@@ -1065,7 +1068,7 @@ export class FlowExecutionEngine extends EventEmitter {
         if (outputData.metadata) {
           // Standardized format with branches support
           let sourceOutput;
-          
+
           // For branching nodes, check branches first
           if (outputData.branches && outputData.branches[connection.sourceOutput]) {
             sourceOutput = outputData.branches[connection.sourceOutput];
@@ -1079,11 +1082,11 @@ export class FlowExecutionEngine extends EventEmitter {
               itemCount: Array.isArray(sourceOutput) ? sourceOutput.length : 0,
             });
           }
-          
+
           if (Array.isArray(sourceOutput)) {
-            collectedData.push(...sourceOutput);
+            connectionData.push(...sourceOutput);
           } else if (sourceOutput) {
-            collectedData.push(sourceOutput);
+            connectionData.push(sourceOutput);
           }
         } else if (Array.isArray(outputData)) {
           // Legacy format: array of output objects [{main: [...]}, {secondary: [...]}]
@@ -1093,25 +1096,34 @@ export class FlowExecutionEngine extends EventEmitter {
           if (output && output[connection.sourceOutput]) {
             const sourceOutput = output[connection.sourceOutput];
             if (Array.isArray(sourceOutput)) {
-              collectedData.push(...sourceOutput);
+              connectionData.push(...sourceOutput);
             } else {
-              collectedData.push(sourceOutput);
+              connectionData.push(sourceOutput);
             }
           }
         } else {
           // Fallback: direct object access
           const sourceOutput = outputData[connection.sourceOutput];
           if (Array.isArray(sourceOutput)) {
-            collectedData.push(...sourceOutput);
+            connectionData.push(...sourceOutput);
           } else if (sourceOutput) {
-            collectedData.push(sourceOutput);
+            connectionData.push(sourceOutput);
           }
         }
       }
+
+      // Add this connection's data as a separate array
+      collectedDataPerConnection.push(connectionData);
     }
 
-    if (collectedData.length > 0) {
-      inputData.main = [collectedData];
+    // For nodes with multiple inputs (like Merge), keep data from each connection separate
+    // For nodes with single input, flatten for backward compatibility
+    if (collectedDataPerConnection.length > 1) {
+      // Multiple connections: keep them separate (2D array)
+      inputData.main = collectedDataPerConnection;
+    } else if (collectedDataPerConnection.length === 1) {
+      // Single connection: use existing format for backward compatibility
+      inputData.main = [collectedDataPerConnection[0]];
     }
 
     return inputData;

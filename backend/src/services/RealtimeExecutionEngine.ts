@@ -671,40 +671,56 @@ export class RealtimeExecutionEngine extends EventEmitter {
         }
 
         // Collect output from upstream nodes based on connections
-        const inputs: any[] = [];
+        // Keep data from each connection separate for multi-input support (like Merge node)
+        const inputsPerConnection: any[][] = [];
 
         for (const connection of incomingConnections) {
             const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
-            if (!sourceOutput) continue;
+            const connectionData: any[] = [];
+            
+            if (sourceOutput) {
+                const outputBranch = connection.sourceOutput || "main";
 
-            const outputBranch = connection.sourceOutput || "main";
+                logger.info(`[RealtimeExecution] Collecting input for ${nodeId} from ${connection.sourceNodeId}`, {
+                    outputBranch,
+                    hasBranches: !!sourceOutput.branches,
+                });
 
-            logger.info(`[RealtimeExecution] Collecting input for ${nodeId} from ${connection.sourceNodeId}`, {
-                outputBranch,
-                hasBranches: !!sourceOutput.branches,
-            });
-
-            // Check if source has branches (like IfElse node)
-            if (sourceOutput.branches) {
-                const branchData = sourceOutput.branches[outputBranch];
-                if (Array.isArray(branchData) && branchData.length > 0) {
-                    logger.info(`[RealtimeExecution] Using branch '${outputBranch}' data with ${branchData.length} items`);
-                    inputs.push(...branchData);
+                // Check if source has branches (like IfElse node)
+                if (sourceOutput.branches) {
+                    const branchData = sourceOutput.branches[outputBranch];
+                    if (Array.isArray(branchData) && branchData.length > 0) {
+                        logger.info(`[RealtimeExecution] Using branch '${outputBranch}' data with ${branchData.length} items`);
+                        connectionData.push(...branchData);
+                    } else {
+                        logger.info(`[RealtimeExecution] Branch '${outputBranch}' is empty`);
+                    }
                 } else {
-                    logger.info(`[RealtimeExecution] Branch '${outputBranch}' is empty`);
-                }
-            } else {
-                // For non-branching nodes, use main output
-                const mainData = sourceOutput.main;
-                if (Array.isArray(mainData) && mainData.length > 0) {
-                    logger.info(`[RealtimeExecution] Using main output with ${mainData.length} items`);
-                    inputs.push(...mainData);
+                    // For non-branching nodes, use main output
+                    const mainData = sourceOutput.main;
+                    if (Array.isArray(mainData) && mainData.length > 0) {
+                        logger.info(`[RealtimeExecution] Using main output with ${mainData.length} items`);
+                        connectionData.push(...mainData);
+                    }
                 }
             }
+            
+            // Add this connection's data as a separate array
+            inputsPerConnection.push(connectionData);
         }
 
-        // Always return an object structure, even if empty
-        return inputs.length > 0 ? { main: [inputs] } : { main: [[]] };
+        // For nodes with multiple inputs (like Merge), keep data from each connection separate
+        // For nodes with single input, flatten for backward compatibility
+        if (inputsPerConnection.length > 1) {
+            // Multiple connections: keep them separate (2D array)
+            return { main: inputsPerConnection };
+        } else if (inputsPerConnection.length === 1) {
+            // Single connection: use existing format for backward compatibility
+            return { main: [inputsPerConnection[0]] };
+        } else {
+            // No connections with data
+            return { main: [[]] };
+        }
     }
 
     /**

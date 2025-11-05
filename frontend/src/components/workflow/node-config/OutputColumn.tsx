@@ -89,10 +89,15 @@ export function OutputColumn({ node }: OutputColumnProps) {
         if (main && main.length > 0) {
           // If main contains objects with 'json' property, extract that
           if (main[0]?.json) {
+            // If there are multiple items, return array of unwrapped json
+            if (main.length > 1) {
+              return main.map((item: any) => item.json);
+            }
+            // Single item: return just the json content
             return main[0].json;
           }
-          // Otherwise return the first main item directly
-          return main[0];
+          // Otherwise return the main array directly
+          return main.length > 1 ? main : main[0];
         }
       }
 

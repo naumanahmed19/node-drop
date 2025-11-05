@@ -2,7 +2,7 @@
 
 ## 📊 Current Node Inventory
 
-### ✅ Existing Built-in Nodes (22 nodes)
+### ✅ Existing Built-in Nodes (24 nodes)
 
 #### **Trigger Nodes** (5)
 1. **Manual Trigger** - Manual workflow execution
@@ -13,13 +13,15 @@
 6. **Workflow Called** - Called by other workflows
 7. **Chat** - Interactive chat interface trigger
 
-#### **Data Transformation** (7)
+#### **Data Transformation** (9)
 1. **Set** - Set/modify data values
 2. **Json** - Compose JSON objects
 3. **Code** - Execute JavaScript/Python code
 4. **If** - Conditional routing
 5. **Switch** - Multi-condition routing
-6. **Image Preview** - Image handling and preview
+6. **Loop** - Iterate over items
+7. **Data Preview** - Preview and inspect data
+8. **Image Preview** - Image handling and preview
 
 #### **External Services** (4)
 1. **HTTP Request** - Make HTTP API calls
@@ -206,7 +208,7 @@
     - Parallel processing
     - **Why**: Performance optimization
 
-28. **Loop** ⭐⭐⭐
+28. ~~**Loop**~~ ✅ **NOW AVAILABLE**
     - Iterate over items
     - For-each operations
     - **Why**: Data processing
@@ -388,7 +390,7 @@
 - **Date & Time Node** - Use date-fns/dayjs
 - **CSV Node** - Use papaparse
 - **Merge Node** - Pure logic, no external deps
-- **Loop Node** - Pure logic, no external deps
+- ~~**Loop Node**~~ ✅ **DONE** - Pure logic, no external deps
 
 ### **2. High-Impact Integrations (2-4 weeks each)**
 - **Slack** - Official SDK available
@@ -442,10 +444,10 @@
 ## 📊 Node Category Distribution
 
 ### **Current State**
-- Triggers: 7 nodes (32%)
-- Data Transform: 7 nodes (32%)
-- External Services: 4 nodes (18%)
-- Utilities: 4 nodes (18%)
+- Triggers: 7 nodes (29%)
+- Data Transform: 9 nodes (38%)
+- External Services: 4 nodes (17%)
+- Utilities: 4 nodes (17%)
 
 ### **Recommended State**
 - Triggers: 15-20 nodes (15%)
@@ -487,7 +489,7 @@
 
 ## 📝 Conclusion
 
-Your automation tool has a solid foundation with 22 built-in nodes and 5 custom nodes. However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
+Your automation tool has a solid foundation with 24 built-in nodes (including Loop and Data Preview!) and 5 custom nodes. However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
 
 1. **30-50 more nodes minimum** to be viable
 2. **Email, Slack, and database nodes** are critical gaps
