@@ -249,7 +249,47 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 },
             });
 
-            // Emit node completed event
+            // Find which edges/connections will be activated by this node
+            // For branching nodes (like IfElse), only include connections where the branch has data
+            const allConnections = context.connections.filter((conn) => conn.sourceNodeId === nodeId);
+            const activeConnections: any[] = [];
+
+            for (const conn of allConnections) {
+                const outputBranch = conn.sourceOutput || "main";
+
+                // Check if this branch has data
+                let hasData = false;
+
+                if (result.data?.branches) {
+                    // Branching node - check specific branch
+                    const branchData = result.data.branches[outputBranch];
+                    hasData = Array.isArray(branchData) && branchData.length > 0;
+                } else if (result.data?.main) {
+                    // Non-branching node - check main output
+                    hasData = Array.isArray(result.data.main) && result.data.main.length > 0;
+                } else {
+                    // No data structure, assume has data
+                    hasData = true;
+                }
+
+                if (hasData) {
+                    activeConnections.push({
+                        id: conn.id,
+                        sourceNodeId: conn.sourceNodeId,
+                        targetNodeId: conn.targetNodeId,
+                        sourceOutput: conn.sourceOutput,
+                    });
+                }
+            }
+
+            logger.info(`[RealtimeExecution] Node ${nodeId} completed - active connections:`, {
+                totalConnections: allConnections.length,
+                activeConnectionsCount: activeConnections.length,
+                activeConnections,
+                hasBranches: !!result.data?.branches,
+            });
+
+            // Emit node completed event with active connections
             this.emit("node-completed", {
                 executionId,
                 nodeId,
@@ -258,6 +298,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 outputData: result.data,
                 duration,
                 timestamp: new Date(),
+                activeConnections, // NEW: Include which connections are active
             });
 
             logger.info(
@@ -301,9 +342,9 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // Execute downstream nodes AFTER try-catch
         // This way, if a downstream node fails, it doesn't affect this node's status
         const downstreamNodes = graph.get(nodeId) || [];
-        
+
         logger.info(`[RealtimeExecution] Node ${nodeId} has ${downstreamNodes.length} downstream nodes`);
-        
+
         for (const downstreamNodeId of downstreamNodes) {
             // Check if downstream node will have data from this connection
             const willHaveData = this.willNodeHaveData(
@@ -311,12 +352,12 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 downstreamNodeId,
                 context
             );
-            
+
             if (!willHaveData) {
                 logger.info(`[RealtimeExecution] Skipping downstream node ${downstreamNodeId} - no data from branch`);
                 continue;
             }
-            
+
             await this.executeNode(
                 executionId,
                 downstreamNodeId,
@@ -366,22 +407,22 @@ export class RealtimeExecutionEngine extends EventEmitter {
         if (sourceOutput.branches) {
             const branchData = sourceOutput.branches[outputBranch];
             const hasData = Array.isArray(branchData) && branchData.length > 0;
-            
+
             logger.info(`[RealtimeExecution] Branch '${outputBranch}' has ${Array.isArray(branchData) ? branchData.length : 0} items`, {
                 hasData,
             });
-            
+
             return hasData;
         }
 
         // For non-branching nodes, check main output
         const mainData = sourceOutput.main;
         const hasData = Array.isArray(mainData) && mainData.length > 0;
-        
+
         logger.info(`[RealtimeExecution] Main output has ${Array.isArray(mainData) ? mainData.length : 0} items`, {
             hasData,
         });
-        
+
         return hasData;
     }
 
@@ -431,7 +472,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         // Collect output from upstream nodes based on connections
         const inputs: any[] = [];
-        
+
         for (const connection of incomingConnections) {
             const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
             if (!sourceOutput) continue;

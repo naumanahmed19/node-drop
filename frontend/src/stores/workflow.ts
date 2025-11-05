@@ -2318,6 +2318,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               failedNodes: [],
               queuedNodes: [],
               executionPath: [],
+              activeEdges: new Set(), // NEW: Track active edges
+              completedEdges: new Set(), // NEW: Track completed edges
             });
           }
 
@@ -2485,6 +2487,39 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 outputData: data.data?.outputData || data.data,
               });
 
+              // NEW: Update edge animation state
+              const flowStatus = activeExecutions.get(data.executionId);
+              const activeConnectionsData = data.data?.activeConnections || (data as any).activeConnections;
+              
+              if (flowStatus && activeConnectionsData) {
+                const activeEdges = flowStatus.activeEdges || new Set();
+                const completedEdges = flowStatus.completedEdges || new Set();
+                
+                // Move all currently active edges to completed before adding new ones
+                activeEdges.forEach((edgeId) => {
+                  completedEdges.add(edgeId);
+                });
+                activeEdges.clear();
+                
+                // Add new active edges (these will stay active until the next node completes)
+                activeConnectionsData.forEach((conn: any) => {
+                  activeEdges.add(conn.id);
+                });
+                
+                // Create new Sets to ensure React detects the change
+                flowStatus.activeEdges = new Set(activeEdges);
+                flowStatus.completedEdges = new Set(completedEdges);
+                
+                // Update the map immediately to show new active edges
+                activeExecutions.set(data.executionId, flowStatus);
+                set({
+                  flowExecutionState: {
+                    ...get().flowExecutionState,
+                    activeExecutions: new Map(activeExecutions),
+                  },
+                });
+              }
+
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
                 level: "info",
@@ -2584,6 +2619,33 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               endTime: Date.now(),
               error: data.error?.message,
             });
+
+            // NEW: Move all active edges to completed when execution finishes
+            if (data.executionId) {
+              const flowStatus = activeExecutions.get(data.executionId);
+              if (flowStatus) {
+                const activeEdges = flowStatus.activeEdges || new Set();
+                const completedEdges = flowStatus.completedEdges || new Set();
+                
+                // Move all active edges to completed
+                activeEdges.forEach((edgeId) => {
+                  completedEdges.add(edgeId);
+                });
+                activeEdges.clear();
+                
+                // Create new Sets to ensure React detects the change
+                flowStatus.activeEdges = new Set(activeEdges);
+                flowStatus.completedEdges = new Set(completedEdges);
+                
+                activeExecutions.set(data.executionId, flowStatus);
+                set({
+                  flowExecutionState: {
+                    ...get().flowExecutionState,
+                    activeExecutions: new Map(activeExecutions),
+                  },
+                });
+              }
+            }
 
             if (data.executionId && get().executionManager) {
               get().executionManager.completeExecution(data.executionId);

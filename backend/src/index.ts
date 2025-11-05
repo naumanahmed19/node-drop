@@ -126,7 +126,11 @@ realtimeExecutionEngine.on("node-completed", (data) => {
     executionId: data.executionId,
     type: "node-completed",
     nodeId: data.nodeId,
-    data: { outputData: data.outputData, duration: data.duration },
+    data: { 
+      outputData: data.outputData, 
+      duration: data.duration,
+      activeConnections: data.activeConnections, // NEW: Include active connections for edge animation
+    },
     timestamp: data.timestamp,
   });
 });

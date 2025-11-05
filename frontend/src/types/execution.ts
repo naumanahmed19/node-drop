@@ -94,6 +94,8 @@ export interface ExecutionFlowStatus {
   failedNodes: string[];
   queuedNodes: string[];
   executionPath: string[];
+  activeEdges?: Set<string>; // NEW: Edges currently being traversed
+  completedEdges?: Set<string>; // NEW: Edges that have been traversed
   estimatedTimeRemaining?: number;
 }
 
