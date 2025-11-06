@@ -381,13 +381,13 @@ class WorkflowService {
   }
 
   async getAvailableCategories(): Promise<string[]> {
-    const response = await api.get<{ data: string[] }>("/workflows/categories");
+    const response = await api.get<string[]>("/workflows/categories");
 
     if (!response.success) {
       throw new Error(response.error?.message || "Failed to fetch available categories");
     }
 
-    return response.data?.data || [];
+    return response.data || [];
   }
 
   async createCategory(categoryData: {

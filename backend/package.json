@@ -28,6 +28,8 @@
     "nodes:status": "tsx src/scripts/node-cli.ts status",
     "nodes:activate-all": "tsx src/scripts/node-cli.ts activate-all",
     "nodes:deactivate-all": "tsx src/scripts/node-cli.ts deactivate-all",
+    "jobs:migrate": "tsx src/scripts/migrate-scheduled-jobs.ts",
+    "jobs:test": "tsx test-scheduled-jobs-db.ts",
     "compose:up": "docker-compose up -d",
     "compose:down": "docker-compose down",
     "compose:logs": "docker-compose logs -f"

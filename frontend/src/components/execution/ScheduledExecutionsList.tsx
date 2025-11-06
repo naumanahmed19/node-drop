@@ -6,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSidebarContext } from '@/contexts'
 import { useAuthStore } from '@/stores'
 import { Calendar, Clock, MoreVertical, RefreshCw, Search, Trash2 } from 'lucide-react'
@@ -50,9 +51,11 @@ export function ScheduledExecutionsList() {
   const [jobs, setJobs] = useState<ScheduleJob[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const { token } = useAuthStore()
   const navigate = useNavigate()
   const { setHeaderSlot } = useSidebarContext()
+  const { showConfirm, ConfirmDialog } = useConfirmDialog()
 
   const fetchJobs = async () => {
     if (!token) {
@@ -76,20 +79,45 @@ export function ScheduledExecutionsList() {
     }
   }
 
-  const deleteJob = async (workflowId: string, triggerId: string) => {
-    if (!confirm('Delete this schedule? This will stop all future executions. You can recreate it by editing and saving the workflow.')) return
+  const deleteJob = async (workflowId: string, triggerId: string, workflowName: string) => {
+    const confirmed = await showConfirm({
+      title: 'Delete Schedule',
+      message: `Are you sure you want to delete the schedule for "${workflowName}"?`,
+      confirmText: 'Delete Schedule',
+      cancelText: 'Cancel',
+      severity: 'danger',
+      details: [
+        'This will stop all future scheduled executions',
+        'You can recreate it by editing and saving the workflow',
+        'This action cannot be undone'
+      ]
+    })
+
+    if (!confirmed) return
+
+    setDeleting(true)
     try {
       const jobId = `${workflowId}-${triggerId}`
       const response = await fetch(`http://localhost:4000/api/schedule-jobs/${jobId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
       })
-      if (!response.ok) throw new Error('Failed to delete job')
-      toast.success('Schedule deleted')
-      fetchJobs()
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error?.message || 'Failed to delete schedule')
+      }
+
+      toast.success('Schedule deleted successfully')
+      await fetchJobs()
     } catch (error) {
       console.error('Error deleting job:', error)
-      toast.error('Failed to delete schedule')
+      toast.error(error instanceof Error ? error.message : 'Failed to delete schedule')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -162,11 +190,12 @@ export function ScheduledExecutionsList() {
               className="text-destructive focus:text-destructive"
               onClick={(e) => {
                 e.stopPropagation()
-                deleteJob(job.workflowId, job.triggerId)
+                deleteJob(job.workflowId, job.triggerId, job.workflowName)
               }}
+              disabled={deleting}
             >
               <Trash2 className="h-3.5 w-3.5 mr-2" />
-              Delete Schedule
+              {deleting ? 'Deleting...' : 'Delete Schedule'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -250,10 +279,13 @@ export function ScheduledExecutionsList() {
   }
 
   return (
-    <div className="p-4">
-      <div className="space-y-0">
-        {filteredJobs.map((job) => renderJobCard(job))}
+    <>
+      <ConfirmDialog />
+      <div className="p-4">
+        <div className="space-y-0">
+          {filteredJobs.map((job) => renderJobCard(job))}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

@@ -84,7 +84,7 @@ const realtimeExecutionEngine = new RealtimeExecutionEngine(prisma, nodeService)
 // Import WorkflowService, TriggerService singleton, and ScheduleJobManager
 import { WorkflowService } from "./services/WorkflowService";
 import { initializeTriggerService, getTriggerService } from "./services/triggerServiceSingleton";
-import { ScheduleJobManager } from "./services/ScheduleJobManager";
+import { ScheduleJobManager } from "./scheduled-jobs/ScheduleJobManager";
 
 // Initialize WorkflowService (needed by TriggerService)
 const workflowService = new WorkflowService(prisma);
