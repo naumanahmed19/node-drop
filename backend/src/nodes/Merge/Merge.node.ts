@@ -53,7 +53,7 @@ export const MergeNode: NodeDefinition = {
     group: ["transform"],
     version: 1,
     description: "Merge data from multiple inputs",
-    icon: "fa:code-branch",
+    icon: "svg:merge",
     color: "#9C27B0",
     defaults: {
         mode: "append",

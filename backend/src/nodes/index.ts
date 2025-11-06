@@ -12,6 +12,7 @@ export * from "./PostgreSQL/PostgreSQL.node";
 export * from "./Json";
 export * from "./Loop";
 export * from "./Merge";
+export * from "./Split";
 export * from "./ManualTrigger";
 export * from "./ScheduleTrigger";
 export * from "./Set";

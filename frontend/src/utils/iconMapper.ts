@@ -60,7 +60,9 @@ export type IconType = LucideIcon | string;
  * Note: file: prefix icons are automatically handled via backend API
  */
 const SVG_ICON_REGISTRY: Record<string, string> = {
-  openai: "/src/assets/icons/openai.svg",
+  openai: "/icons/openai.svg",
+  split: "/icons/split.svg",
+  merge: "/icons/merge.svg",
 };
 
 /**

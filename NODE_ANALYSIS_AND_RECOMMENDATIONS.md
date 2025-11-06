@@ -2,7 +2,7 @@
 
 ## 📊 Current Node Inventory
 
-### ✅ Existing Built-in Nodes (24 nodes)
+### ✅ Existing Built-in Nodes (26 nodes)
 
 #### **Trigger Nodes** (5)
 1. **Manual Trigger** - Manual workflow execution
@@ -13,15 +13,17 @@
 6. **Workflow Called** - Called by other workflows
 7. **Chat** - Interactive chat interface trigger
 
-#### **Data Transformation** (9)
+#### **Data Transformation** (11)
 1. **Set** - Set/modify data values
 2. **Json** - Compose JSON objects
 3. **Code** - Execute JavaScript/Python code
 4. **If** - Conditional routing
 5. **Switch** - Multi-condition routing
 6. **Loop** - Iterate over items
-7. **Data Preview** - Preview and inspect data
-8. **Image Preview** - Image handling and preview
+7. **Merge** - Combine multiple inputs
+8. **Split** - Split data into batches/groups
+9. **Data Preview** - Preview and inspect data
+10. **Image Preview** - Image handling and preview
 
 #### **External Services** (4)
 1. **HTTP Request** - Make HTTP API calls
@@ -198,12 +200,12 @@
     - **Why**: You have custom node, should be built-in
 
 #### **Logic & Flow Control**
-26. **Merge** ⭐⭐⭐
+26. ~~**Merge**~~ ✅ **NOW AVAILABLE**
     - Merge multiple inputs
     - Combine data streams
     - **Why**: Essential for complex workflows
 
-27. **Split** ⭐⭐
+27. ~~**Split**~~ ✅ **NOW AVAILABLE**
     - Split data into batches
     - Parallel processing
     - **Why**: Performance optimization
@@ -329,8 +331,8 @@
 3. **Google Sheets (Action)** - You have trigger, need action
 4. **MySQL** - Complete database coverage
 5. **Date & Time** - Essential utility
-6. **Merge** - Workflow logic
-7. **Loop** - Data processing
+6. ~~**Merge**~~ ✅ **DONE** - Workflow logic
+7. ~~**Loop**~~ ✅ **DONE** - Data processing
 8. **AWS S3** - Cloud storage standard
 9. **Stripe** - Payment processing
 10. **GitHub** - Developer workflows
@@ -389,8 +391,9 @@
 - **Email Node** - Use nodemailer library
 - **Date & Time Node** - Use date-fns/dayjs
 - **CSV Node** - Use papaparse
-- **Merge Node** - Pure logic, no external deps
+- ~~**Merge Node**~~ ✅ **DONE** - Pure logic, no external deps
 - ~~**Loop Node**~~ ✅ **DONE** - Pure logic, no external deps
+- **Split Node** - Pure logic, no external deps
 
 ### **2. High-Impact Integrations (2-4 weeks each)**
 - **Slack** - Official SDK available
@@ -444,10 +447,10 @@
 ## 📊 Node Category Distribution
 
 ### **Current State**
-- Triggers: 7 nodes (29%)
-- Data Transform: 9 nodes (38%)
-- External Services: 4 nodes (17%)
-- Utilities: 4 nodes (17%)
+- Triggers: 7 nodes (27%)
+- Data Transform: 11 nodes (42%)
+- External Services: 4 nodes (15%)
+- Utilities: 4 nodes (15%)
 
 ### **Recommended State**
 - Triggers: 15-20 nodes (15%)
@@ -489,7 +492,7 @@
 
 ## 📝 Conclusion
 
-Your automation tool has a solid foundation with 24 built-in nodes (including Loop and Data Preview!) and 5 custom nodes. However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
+Your automation tool has a solid foundation with 26 built-in nodes (including Loop, Merge, Split, and Data Preview!) and 5 custom nodes. However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
 
 1. **30-50 more nodes minimum** to be viable
 2. **Email, Slack, and database nodes** are critical gaps
