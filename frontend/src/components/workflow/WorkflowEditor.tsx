@@ -10,7 +10,7 @@ import {
     ResizablePanel,
     ResizablePanelGroup,
 } from '@/components/ui/resizable'
-import { useExecutionAwareEdges } from '@/hooks/useEdgeAnimation'
+import { useExecutionAwareEdges } from '@/hooks/workflow'
 import {
     useCopyPaste,
     useExecutionControls,

@@ -46,6 +46,13 @@
 export { useAutoLayout } from "./useAutoLayout";
 export { useCopyPaste } from "./useCopyPaste";
 export { default as useDetachNodes } from "./useDetachNodes";
+export {
+  useEdgeAnimation,
+  useExecutionAwareEdges,
+  useHasAnimatedEdges,
+  useActiveEdges,
+  useCompletedEdges,
+} from "./useEdgeAnimation";
 export { useExecutionControls } from "./useExecutionControls";
 export { useExecutionPanelData } from "./useExecutionPanelData";
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
