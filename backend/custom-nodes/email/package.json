@@ -1,0 +1,36 @@
+{
+  "name": "email",
+  "version": "1.0.0",
+  "description": "Email nodes for workflow automation - Send emails via SMTP and receive via IMAP",
+  "main": "index.js",
+  "author": "",
+  "keywords": [
+    "nodeDrop",
+    "nd-node",
+    "workflow",
+    "automation",
+    "email",
+    "smtp",
+    "imap",
+    "mail",
+    "communication"
+  ],
+  "scripts": {},
+  "nodes": [
+    "nodes/email-send.node.js",
+    "nodes/email-receive.node.js"
+  ],
+  "credentials": [
+    "credentials/smtp.credentials.js",
+    "credentials/imap.credentials.js"
+  ],
+  "dependencies": {
+    "@types/node": "^20.0.0",
+    "nodemailer": "^6.9.7",
+    "imap": "^0.8.19",
+    "mailparser": "^3.6.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

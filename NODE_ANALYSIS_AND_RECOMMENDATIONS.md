@@ -40,12 +40,13 @@
 - **MCP** (empty folder)
 - **AnthropicMCP** (empty folder)
 
-### ✅ Custom Nodes (5 nodes)
+### ✅ Custom Nodes (6 nodes)
 1. **MongoDB** - MongoDB database operations
 2. **PostgreSQL** - Extended PostgreSQL features
 3. **Google Drive** - File storage operations
 4. **Form Generator** - Dynamic form creation
 5. **Delay** - Time-based delays
+6. **Text Parser** - String manipulation and transformation (40+ operations)
 
 ---
 
@@ -166,61 +167,67 @@
     - **Why**: Legacy enterprise systems
 
 #### **Data Processing**
-20. **XML** ⭐⭐
+20. ~~**String Manipulation**~~ ✅ **NOW AVAILABLE (Text Parser)**
+    - Case transformations (camelCase, snake_case, etc.)
+    - Encoding/decoding (Base64, URL, HTML)
+    - Regex operations
+    - **Why**: Essential for text processing
+
+21. **XML** ⭐⭐
     - Parse XML
     - Generate XML
     - XPath queries
     - **Why**: Common data format
 
-21. **HTML Parser** ⭐⭐
+22. **HTML Parser** ⭐⭐
     - Extract data from HTML
     - CSS selectors
     - **Why**: Web scraping
 
-22. **Markdown** ⭐
+23. **Markdown** ⭐
     - Convert Markdown to HTML
     - Parse Markdown
     - **Why**: Documentation workflows
 
-23. **PDF** ⭐⭐
+24. **PDF** ⭐⭐
     - Generate PDFs
     - Extract text
     - **Why**: Document automation
 
 #### **Date & Time**
-24. **Date & Time** ⭐⭐⭐
+25. **Date & Time** ⭐⭐⭐
     - Format dates
     - Calculate differences
     - Timezone conversions
     - **Why**: Essential for scheduling
 
-25. **Wait/Delay** ⭐⭐
+26. **Wait/Delay** ⭐⭐
     - Wait for duration
     - Wait until time
     - **Why**: You have custom node, should be built-in
 
 #### **Logic & Flow Control**
-26. ~~**Merge**~~ ✅ **NOW AVAILABLE**
+27. ~~**Merge**~~ ✅ **NOW AVAILABLE**
     - Merge multiple inputs
     - Combine data streams
     - **Why**: Essential for complex workflows
 
-27. ~~**Split**~~ ✅ **NOW AVAILABLE**
+28. ~~**Split**~~ ✅ **NOW AVAILABLE**
     - Split data into batches
     - Parallel processing
     - **Why**: Performance optimization
 
-28. ~~**Loop**~~ ✅ **NOW AVAILABLE**
+29. ~~**Loop**~~ ✅ **NOW AVAILABLE**
     - Iterate over items
     - For-each operations
     - **Why**: Data processing
 
-29. **Error Trigger** ⭐⭐
+30. **Error Trigger** ⭐⭐
     - Catch workflow errors
     - Error handling
     - **Why**: Robust automation
 
-30. **Stop and Error** ⭐⭐
+31. **Stop and Error** ⭐⭐
     - Stop workflow execution
     - Throw custom errors
     - **Why**: Flow control
@@ -230,96 +237,96 @@
 ### 🟡 **MEDIUM PRIORITY - Popular Integrations**
 
 #### **Project Management**
-31. **Jira** ⭐⭐
-32. **Trello** ⭐⭐
-33. **Asana** ⭐
-34. **Monday.com** ⭐
-35. **ClickUp** ⭐
+32. **Jira** ⭐⭐
+33. **Trello** ⭐⭐
+34. **Asana** ⭐
+35. **Monday.com** ⭐
+36. **ClickUp** ⭐
 
 #### **CRM & Sales**
-36. **Salesforce** ⭐⭐
-37. **HubSpot** ⭐⭐
-38. **Pipedrive** ⭐
-39. **Zoho CRM** ⭐
+37. **Salesforce** ⭐⭐
+38. **HubSpot** ⭐⭐
+39. **Pipedrive** ⭐
+40. **Zoho CRM** ⭐
 
 #### **Payment & E-commerce**
-40. **Stripe** ⭐⭐⭐
-41. **PayPal** ⭐⭐
-42. **Shopify** ⭐⭐
-43. **WooCommerce** ⭐
+41. **Stripe** ⭐⭐⭐
+42. **PayPal** ⭐⭐
+43. **Shopify** ⭐⭐
+44. **WooCommerce** ⭐
 
 #### **Calendar & Scheduling**
-44. **Google Calendar** ⭐⭐⭐
-45. **Microsoft Outlook Calendar** ⭐⭐
-46. **Calendly** ⭐
+45. **Google Calendar** ⭐⭐⭐
+46. **Microsoft Outlook Calendar** ⭐⭐
+47. **Calendly** ⭐
 
 #### **Social Media**
-47. **Twitter/X** ⭐⭐
-48. **LinkedIn** ⭐⭐
-49. **Facebook** ⭐
-50. **Instagram** ⭐
-51. **YouTube** ⭐
+48. **Twitter/X** ⭐⭐
+49. **LinkedIn** ⭐⭐
+50. **Facebook** ⭐
+51. **Instagram** ⭐
+52. **YouTube** ⭐
 
 #### **Forms & Surveys**
-52. **Google Forms** ⭐⭐
-53. **Typeform** ⭐
-54. **SurveyMonkey** ⭐
+53. **Google Forms** ⭐⭐
+54. **Typeform** ⭐
+55. **SurveyMonkey** ⭐
 
 #### **Version Control**
-55. **GitHub** ⭐⭐⭐
-56. **GitLab** ⭐⭐
-57. **Bitbucket** ⭐
+56. **GitHub** ⭐⭐⭐
+57. **GitLab** ⭐⭐
+58. **Bitbucket** ⭐
 
 #### **CI/CD & DevOps**
-58. **Jenkins** ⭐⭐
-59. **Docker** ⭐⭐
-60. **Kubernetes** ⭐
-61. **GitHub Actions** ⭐⭐
+59. **Jenkins** ⭐⭐
+60. **Docker** ⭐⭐
+61. **Kubernetes** ⭐
+62. **GitHub Actions** ⭐⭐
 
 #### **Monitoring & Logging**
-62. **Datadog** ⭐
-63. **New Relic** ⭐
-64. **Sentry** ⭐
-65. **PagerDuty** ⭐⭐
+63. **Datadog** ⭐
+64. **New Relic** ⭐
+65. **Sentry** ⭐
+66. **PagerDuty** ⭐⭐
 
 #### **AI & ML**
-66. **Google Gemini** ⭐⭐
-67. **Hugging Face** ⭐⭐
-68. **Stability AI** ⭐
-69. **ElevenLabs** ⭐
-70. **Whisper (Speech-to-Text)** ⭐⭐
+67. **Google Gemini** ⭐⭐
+68. **Hugging Face** ⭐⭐
+69. **Stability AI** ⭐
+70. **ElevenLabs** ⭐
+71. **Whisper (Speech-to-Text)** ⭐⭐
 
 ---
 
 ### 🟢 **LOW PRIORITY - Nice to Have**
 
 #### **Marketing Automation**
-71. **Mailchimp**
-72. **SendGrid**
-73. **ActiveCampaign**
-74. **ConvertKit**
+72. **Mailchimp**
+73. **SendGrid**
+74. **ActiveCampaign**
+75. **ConvertKit**
 
 #### **Analytics**
-75. **Google Analytics**
-76. **Mixpanel**
-77. **Amplitude**
+76. **Google Analytics**
+77. **Mixpanel**
+78. **Amplitude**
 
 #### **Documentation**
-78. **Notion**
-79. **Confluence**
-80. **GitBook**
+79. **Notion**
+80. **Confluence**
+81. **GitBook**
 
 #### **Video & Media**
-81. **Vimeo**
-82. **Cloudinary**
-83. **ImageKit**
+82. **Vimeo**
+83. **Cloudinary**
+84. **ImageKit**
 
 #### **Specialized**
-84. **RSS Feed**
-85. **Web Scraper**
-86. **QR Code Generator**
-87. **Barcode Scanner**
-88. **OCR (Optical Character Recognition)**
+85. **RSS Feed**
+86. **Web Scraper**
+87. **QR Code Generator**
+88. **Barcode Scanner**
+89. **OCR (Optical Character Recognition)**
 
 ---
 
@@ -393,7 +400,8 @@
 - **CSV Node** - Use papaparse
 - ~~**Merge Node**~~ ✅ **DONE** - Pure logic, no external deps
 - ~~**Loop Node**~~ ✅ **DONE** - Pure logic, no external deps
-- **Split Node** - Pure logic, no external deps
+- ~~**Split Node**~~ ✅ **DONE** - Pure logic, no external deps
+- ~~**Text Parser Node**~~ ✅ **DONE** - String manipulation with 40+ operations
 
 ### **2. High-Impact Integrations (2-4 weeks each)**
 - **Slack** - Official SDK available
@@ -436,10 +444,10 @@
 3. **Variable Manager** - Better variable handling
 4. **Secret Manager** - Secure credential storage
 5. **Template Engine** - Advanced templating
-6. **Regex Helper** - Regex operations
+6. ~~**Regex Helper**~~ ✅ **DONE (Text Parser)** - Regex operations
 7. **Crypto** - Encryption/decryption
 8. **Hash** - Generate hashes
-9. **Base64** - Encoding/decoding
+9. ~~**Base64**~~ ✅ **DONE (Text Parser)** - Encoding/decoding
 10. **Compression** - Zip/unzip files
 
 ---
@@ -492,7 +500,7 @@
 
 ## 📝 Conclusion
 
-Your automation tool has a solid foundation with 26 built-in nodes (including Loop, Merge, Split, and Data Preview!) and 5 custom nodes. However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
+Your automation tool has a solid foundation with 26 built-in nodes (including Loop, Merge, Split, and Data Preview!) and 6 custom nodes (including the new Text Parser with 40+ string operations). However, to compete with established platforms like n8n, Zapier, or Make.com, you need:
 
 1. **30-50 more nodes minimum** to be viable
 2. **Email, Slack, and database nodes** are critical gaps

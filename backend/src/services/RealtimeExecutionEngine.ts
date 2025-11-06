@@ -20,6 +20,7 @@ interface WorkflowNode {
     settings?: any;
     position?: { x: number; y: number };
     disabled?: boolean;
+    credentials?: string[]; // Array of credential IDs
 }
 
 interface WorkflowConnection {
@@ -51,6 +52,32 @@ export class RealtimeExecutionEngine extends EventEmitter {
         super();
         this.prisma = prisma;
         this.nodeService = nodeService;
+    }
+
+    /**
+     * Build credentials mapping from node's credential IDs
+     * Maps credential type to credential ID for node execution
+     */
+    private async buildCredentialsMapping(node: WorkflowNode): Promise<Record<string, string>> {
+        const credentialsMapping: Record<string, string> = {};
+
+        if (node.credentials && Array.isArray(node.credentials)) {
+            for (const credId of node.credentials) {
+                try {
+                    const cred = await this.prisma.credential.findUnique({
+                        where: { id: credId },
+                        select: { type: true }
+                    });
+                    if (cred) {
+                        credentialsMapping[cred.type] = credId;
+                    }
+                } catch (error) {
+                    logger.warn(`Failed to fetch credential ${credId}`, { error });
+                }
+            }
+        }
+
+        return credentialsMapping;
     }
 
     /**
@@ -210,11 +237,15 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
             // Execute the node
             const startTime = Date.now();
+
+            // Build credentials mapping from node's credential IDs
+            const credentialsMapping = await this.buildCredentialsMapping(node);
+
             const result = await this.nodeService.executeNode(
                 node.type,
                 node.parameters,
                 inputData,
-                undefined, // credentials
+                credentialsMapping, // Pass credentials mapping
                 executionId,
                 context.userId,
                 { timeout: 30000 },
@@ -437,11 +468,15 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
                 // Execute the loop node
                 const startTime = Date.now();
+
+                // Build credentials mapping from node's credential IDs
+                const credentialsMapping = await this.buildCredentialsMapping(node);
+
                 const result = await this.nodeService.executeNode(
                     node.type,
                     node.parameters,
                     inputData,
-                    undefined,
+                    credentialsMapping, // Pass credentials mapping
                     executionId,
                     context.userId,
                     { timeout: 30000, nodeId }, // Pass nodeId for state management
@@ -677,7 +712,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
         for (const connection of incomingConnections) {
             const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
             const connectionData: any[] = [];
-            
+
             if (sourceOutput) {
                 const outputBranch = connection.sourceOutput || "main";
 
@@ -704,7 +739,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
                     }
                 }
             }
-            
+
             // Add this connection's data as a separate array
             inputsPerConnection.push(connectionData);
         }
