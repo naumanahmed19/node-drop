@@ -2474,14 +2474,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         switch (data.type) {
           case "node-started":
             if (data.nodeId && data.executionId) {
-              // CRITICAL: Check if node belongs to this execution before updating
-              const { executionManager } = get();
-              if (!executionManager.isNodeInExecution(data.executionId, data.nodeId)) {
-                // Node doesn't belong to this execution, ignore the event
-                console.warn(`Ignoring node-started event for node ${data.nodeId} - not in execution ${data.executionId}`);
-                break;
-              }
-
               get().progressTracker.setCurrentExecution(data.executionId);
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.RUNNING, {
                 startTime: Date.now(),
@@ -2499,14 +2491,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "node-completed":
             if (data.nodeId && data.executionId) {
-              // CRITICAL: Check if node belongs to this execution before updating
-              const { executionManager } = get();
-              if (!executionManager.isNodeInExecution(data.executionId, data.nodeId)) {
-                // Node doesn't belong to this execution, ignore the event
-                console.warn(`Ignoring node-completed event for node ${data.nodeId} - not in execution ${data.executionId}`);
-                break;
-              }
-
               // Update node execution result for Results tab
               get().updateNodeExecutionResult(data.nodeId, {
                 nodeId: data.nodeId,
@@ -2569,14 +2553,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "node-failed":
             if (data.nodeId && data.executionId) {
-              // CRITICAL: Check if node belongs to this execution before updating
-              const { executionManager } = get();
-              if (!executionManager.isNodeInExecution(data.executionId, data.nodeId)) {
-                // Node doesn't belong to this execution, ignore the event
-                console.warn(`Ignoring node-failed event for node ${data.nodeId} - not in execution ${data.executionId}`);
-                break;
-              }
-
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.FAILED, {
                 endTime: timestamp,
                 error: data.error,
