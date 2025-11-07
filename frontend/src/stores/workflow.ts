@@ -2463,13 +2463,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       },
 
       handleExecutionEvent: (data: ExecutionEventData) => {
-        console.log('🔵 handleExecutionEvent called:', {
-          type: data.type,
-          executionId: data.executionId,
-          nodeId: data.nodeId,
-          timestamp: data.timestamp
-        });
-
         const { executionState, flowExecutionState } = get();
         const activeExecutions = flowExecutionState.activeExecutions;
 
@@ -2480,16 +2473,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         );
         const isCurrentExecution = data.executionId === executionState.executionId;
 
-        console.log('🔵 Execution checks:', {
-          isActiveExecution,
-          isRecentExecution,
-          isCurrentExecution,
-          activeExecutionsCount: activeExecutions.size,
-          currentExecutionId: executionState.executionId
-        });
-
         if (!isActiveExecution && !isRecentExecution && !isCurrentExecution) {
-          console.warn('⚠️ Event ignored - execution not found:', data.executionId);
           return;
         }
 
@@ -2498,14 +2482,12 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
         switch (data.type) {
           case "node-started":
-            console.log('🟢 Processing node-started:', data.nodeId);
             if (data.nodeId && data.executionId) {
               get().progressTracker.setCurrentExecution(data.executionId);
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.RUNNING, {
                 startTime: Date.now(),
                 progress: 0,
               });
-              console.log('✅ Node state updated to RUNNING:', data.nodeId);
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
                 level: "info",
@@ -2517,7 +2499,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             break;
 
           case "node-completed":
-            console.log('🟢 Processing node-completed:', data.nodeId);
             if (data.nodeId && data.executionId) {
               // Update node execution result for Results tab
               get().updateNodeExecutionResult(data.nodeId, {
@@ -2535,7 +2516,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 progress: 100,
                 outputData: data.data?.outputData || data.data,
               });
-              console.log('✅ Node state updated to COMPLETED:', data.nodeId);
 
               // NEW: Update edge animation state
               const flowStatus = activeExecutions.get(data.executionId);
@@ -2654,7 +2634,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "completed":
           case "execution-complete":
-            console.log('🟢 Processing execution completed:', data.executionId);
             // Clear execution timeout since execution completed
             const completedTimeoutId = get().executionTimeouts.get(data.executionId);
             if (completedTimeoutId) {
@@ -2669,7 +2648,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               endTime: Date.now(),
               error: data.error?.message,
             });
-            console.log('✅ Execution state updated to:', finalStatus);
 
             // NEW: Move all active edges to completed when execution finishes
             if (data.executionId) {
