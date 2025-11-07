@@ -10,11 +10,15 @@
 import { PrismaClient } from '@prisma/client';
 import { ScheduleJobManager } from './ScheduleJobManager';
 import { ExecutionService } from '../services/ExecutionService';
+import { NodeService } from '../services/NodeService';
+import ExecutionHistoryService from '../services/ExecutionHistoryService';
 import { logger } from '../utils/logger';
 
 async function testScheduledJobsDatabase() {
     const prisma = new PrismaClient();
-    const executionService = new ExecutionService(prisma);
+    const nodeService = new NodeService(prisma);
+    const executionHistoryService = new ExecutionHistoryService(prisma);
+    const executionService = new ExecutionService(prisma, nodeService, executionHistoryService);
     const scheduleJobManager = new ScheduleJobManager(prisma, executionService);
 
     try {
