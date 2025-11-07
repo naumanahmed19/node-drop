@@ -339,7 +339,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               "workflow-called",
               "webhook",
             ];
-            
+
             const triggerNodeIds = new Set(
               processedWorkflow.nodes
                 .filter((node) => triggerTypes.includes(node.type))
@@ -2291,25 +2291,19 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       // Real-time execution updates
       subscribeToExecution: async (executionId: string) => {
         try {
+          console.log('🔵 subscribeToExecution called for:', executionId);
+
           // Connect to WebSocket if not already connected
           if (!executionWebSocket.isConnected()) {
+            console.log('🔵 Connecting to WebSocket...');
             await executionWebSocket.connect();
           }
 
-          // Subscribe to execution updates
-          await executionWebSocket.subscribeToExecution(executionId);
-
-          // Set up event listener for this execution
-          executionWebSocket.addEventListener(
-            executionId,
-            (data: ExecutionEventData) => {
-              get().handleExecutionEvent(data);
-            }
-          );
-
-          // Store unsubscribe function for cleanup
+          // CRITICAL: Add to activeExecutions BEFORE subscribing
+          // This ensures isActiveExecution check passes when events arrive
           const currentFlowState = get().flowExecutionState;
           if (!currentFlowState.activeExecutions.has(executionId)) {
+            console.log('🔵 Adding execution to activeExecutions:', executionId);
             currentFlowState.activeExecutions.set(executionId, {
               executionId,
               overallStatus: "running",
@@ -2325,6 +2319,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             });
           }
 
+          // CRITICAL: Add event listener BEFORE subscribing
+          // This ensures we catch events that arrive immediately after subscription
+          console.log('🔵 Adding event listener for:', executionId);
+          executionWebSocket.addEventListener(
+            executionId,
+            (data: ExecutionEventData) => {
+              console.log('🔵 Event listener triggered for:', data.type, data.executionId);
+              get().handleExecutionEvent(data);
+            }
+          );
+
+          // Subscribe to execution updates (this triggers backend to send events)
+          console.log('🔵 Subscribing to execution:', executionId);
+          await executionWebSocket.subscribeToExecution(executionId);
+
           // Safety timeout: If no updates received for 5 minutes, mark as failed
           // This prevents executions from being stuck in "running" state forever
           const timeoutId = setTimeout(() => {
@@ -2336,7 +2345,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: "error",
                 message: `Execution timed out - no updates received for 5 minutes. This may indicate a connection issue.`,
               });
-              
+
               // Mark execution as failed
               get().handleExecutionEvent({
                 executionId,
@@ -2345,11 +2354,11 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 timestamp: Date.now(),
               } as ExecutionEventData);
             }
-            
+
             // Clean up timeout
             get().executionTimeouts.delete(executionId);
           }, 300000); // 5 minutes
-          
+
           // Store timeout for cleanup
           get().executionTimeouts.set(executionId, timeoutId);
 
@@ -2531,26 +2540,26 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               // NEW: Update edge animation state
               const flowStatus = activeExecutions.get(data.executionId);
               const activeConnectionsData = data.data?.activeConnections || (data as any).activeConnections;
-              
+
               if (flowStatus && activeConnectionsData) {
                 const activeEdges = flowStatus.activeEdges || new Set();
                 const completedEdges = flowStatus.completedEdges || new Set();
-                
+
                 // Move all currently active edges to completed before adding new ones
                 activeEdges.forEach((edgeId) => {
                   completedEdges.add(edgeId);
                 });
                 activeEdges.clear();
-                
+
                 // Add new active edges (these will stay active until the next node completes)
                 activeConnectionsData.forEach((conn: any) => {
                   activeEdges.add(conn.id);
                 });
-                
+
                 // Create new Sets to ensure React detects the change
                 flowStatus.activeEdges = new Set(activeEdges);
                 flowStatus.completedEdges = new Set(completedEdges);
-                
+
                 // Update the map immediately to show new active edges
                 activeExecutions.set(data.executionId, flowStatus);
                 set({
@@ -2668,17 +2677,17 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               if (flowStatus) {
                 const activeEdges = flowStatus.activeEdges || new Set();
                 const completedEdges = flowStatus.completedEdges || new Set();
-                
+
                 // Move all active edges to completed
                 activeEdges.forEach((edgeId) => {
                   completedEdges.add(edgeId);
                 });
                 activeEdges.clear();
-                
+
                 // Create new Sets to ensure React detects the change
                 flowStatus.activeEdges = new Set(activeEdges);
                 flowStatus.completedEdges = new Set(completedEdges);
-                
+
                 activeExecutions.set(data.executionId, flowStatus);
                 set({
                   flowExecutionState: {
