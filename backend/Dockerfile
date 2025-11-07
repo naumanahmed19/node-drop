@@ -62,9 +62,10 @@ USER nodejs
 # Expose port
 EXPOSE 4000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check with longer start period for initialization
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
   CMD curl -f http://localhost:4000/health || exit 1
 
-# Start application with migrations and node registration
-CMD ["sh", "-c", "npx prisma migrate deploy && (npm run nodes:register:prod || echo 'Node registration failed, will retry at startup') && npm start"]
+# Start application with migrations only
+# Node registration happens after server starts to avoid blocking and race conditions
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

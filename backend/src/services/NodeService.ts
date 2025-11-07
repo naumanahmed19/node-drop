@@ -165,58 +165,46 @@ export class NodeService {
         };
       }
 
-      // Check if node type already exists
-      const existingNode = await this.prisma.nodeType.findUnique({
-        where: { type: nodeDefinition.type },
-      });
-
       // Resolve properties before saving to database
       const resolvedProperties = this.resolveProperties(
         nodeDefinition.properties
       );
 
-      if (existingNode) {
-        // Update existing node but preserve the active status
-        await this.prisma.nodeType.update({
-          where: { type: nodeDefinition.type },
-          data: {
-            displayName: nodeDefinition.displayName,
-            name: nodeDefinition.name,
-            group: nodeDefinition.group,
-            version: nodeDefinition.version,
-            description: nodeDefinition.description,
-            defaults: nodeDefinition.defaults as any,
-            inputs: nodeDefinition.inputs,
-            outputs: nodeDefinition.outputs,
-            properties: resolvedProperties as any,
-            icon: nodeDefinition.icon,
-            color: nodeDefinition.color,
-            outputComponent: nodeDefinition.outputComponent, // Save custom output component
-            // Preserve existing active status instead of overriding to true
-            active: existingNode.active,
-          },
-        });
-      } else {
-        // Create new node
-        await this.prisma.nodeType.create({
-          data: {
-            type: nodeDefinition.type,
-            displayName: nodeDefinition.displayName,
-            name: nodeDefinition.name,
-            group: nodeDefinition.group,
-            version: nodeDefinition.version,
-            description: nodeDefinition.description,
-            defaults: nodeDefinition.defaults as any,
-            inputs: nodeDefinition.inputs,
-            outputs: nodeDefinition.outputs,
-            properties: resolvedProperties as any,
-            icon: nodeDefinition.icon,
-            color: nodeDefinition.color,
-            outputComponent: nodeDefinition.outputComponent, // Save custom output component
-            active: true,
-          },
-        });
-      }
+      // Use upsert to handle race conditions and avoid duplicate key errors
+      await this.prisma.nodeType.upsert({
+        where: { type: nodeDefinition.type },
+        update: {
+          displayName: nodeDefinition.displayName,
+          name: nodeDefinition.name,
+          group: nodeDefinition.group,
+          version: nodeDefinition.version,
+          description: nodeDefinition.description,
+          defaults: nodeDefinition.defaults as any,
+          inputs: nodeDefinition.inputs,
+          outputs: nodeDefinition.outputs,
+          properties: resolvedProperties as any,
+          icon: nodeDefinition.icon,
+          color: nodeDefinition.color,
+          outputComponent: nodeDefinition.outputComponent,
+          // Don't update active status on update - preserve user's choice
+        },
+        create: {
+          type: nodeDefinition.type,
+          displayName: nodeDefinition.displayName,
+          name: nodeDefinition.name,
+          group: nodeDefinition.group,
+          version: nodeDefinition.version,
+          description: nodeDefinition.description,
+          defaults: nodeDefinition.defaults as any,
+          inputs: nodeDefinition.inputs,
+          outputs: nodeDefinition.outputs,
+          properties: resolvedProperties as any,
+          icon: nodeDefinition.icon,
+          color: nodeDefinition.color,
+          outputComponent: nodeDefinition.outputComponent,
+          active: true,
+        },
+      });
 
       // Store in memory registry
       this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
@@ -226,6 +214,17 @@ export class NodeService {
         nodeType: nodeDefinition.type,
       };
     } catch (error) {
+      // Handle duplicate key errors gracefully (race condition)
+      if (error instanceof Error && error.message.includes('duplicate key')) {
+        logger.warn(`Node ${nodeDefinition.type} already registered (race condition), skipping`);
+        // Still store in memory registry
+        this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
+        return {
+          success: true,
+          nodeType: nodeDefinition.type,
+        };
+      }
+
       logger.error("Failed to register node", {
         error,
         nodeType: nodeDefinition.type,
