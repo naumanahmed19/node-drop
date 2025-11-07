@@ -67,7 +67,12 @@ export class ExecutionWebSocket {
           token,
         },
         transports: ["websocket", "polling"],
-        timeout: 10000,
+        timeout: 45000,            // Match backend connectTimeout
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
         forceNew: true,
       });
 
@@ -76,6 +81,17 @@ export class ExecutionWebSocket {
         console.log("Socket ID:", this.socket?.id);
         console.log("Socket connected state:", this.socket?.connected);
         this.reconnectAttempts = 0;
+        
+        // Re-subscribe to all active executions after reconnect
+        if (this.listeners.size > 0) {
+          console.log("🔄 Re-subscribing to active executions after reconnect");
+          this.listeners.forEach((_, executionId) => {
+            this.subscribeToExecution(executionId).catch(err => {
+              console.error(`Failed to re-subscribe to execution ${executionId}:`, err);
+            });
+          });
+        }
+        
         resolve();
       });
 

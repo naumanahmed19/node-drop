@@ -69,6 +69,7 @@ interface WorkflowStore extends WorkflowEditorState {
   progressTracker: ProgressTracker;
   executionManager: ExecutionContextManager; // NEW: Manages execution contexts with proper isolation
   executionStateVersion: number; // NEW: Version counter to trigger hook re-renders
+  executionTimeouts: Map<string, NodeJS.Timeout>; // Track execution timeouts for safety
 
   // Node interaction state
   showPropertyPanel: boolean;
@@ -307,6 +308,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       progressTracker: new ProgressTracker(),
       executionManager: new ExecutionContextManager(), // NEW: Initialize execution context manager
       executionStateVersion: 0, // NEW: Initialize version counter
+      executionTimeouts: new Map(), // Initialize execution timeout tracking
 
       // Node interaction state
       showPropertyPanel: false,
@@ -2323,6 +2325,34 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             });
           }
 
+          // Safety timeout: If no updates received for 5 minutes, mark as failed
+          // This prevents executions from being stuck in "running" state forever
+          const timeoutId = setTimeout(() => {
+            const execution = get().flowExecutionState.activeExecutions.get(executionId);
+            if (execution && execution.overallStatus === "running") {
+              console.warn(`⏱️ Execution ${executionId} timed out - no updates received for 5 minutes`);
+              get().addExecutionLog({
+                timestamp: new Date().toISOString(),
+                level: "error",
+                message: `Execution timed out - no updates received for 5 minutes. This may indicate a connection issue.`,
+              });
+              
+              // Mark execution as failed
+              get().handleExecutionEvent({
+                executionId,
+                type: "failed",
+                error: { message: "Execution timed out - no updates received. Please check your connection and try again." },
+                timestamp: Date.now(),
+              } as ExecutionEventData);
+            }
+            
+            // Clean up timeout
+            get().executionTimeouts.delete(executionId);
+          }, 300000); // 5 minutes
+          
+          // Store timeout for cleanup
+          get().executionTimeouts.set(executionId, timeoutId);
+
           get().addExecutionLog({
             timestamp: new Date().toISOString(),
             level: "info",
@@ -2339,6 +2369,13 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
       unsubscribeFromExecution: async (executionId: string) => {
         try {
+          // Clear execution timeout if exists
+          const timeoutId = get().executionTimeouts.get(executionId);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            get().executionTimeouts.delete(executionId);
+          }
+
           await executionWebSocket.unsubscribeFromExecution(executionId);
           executionWebSocket.removeExecutionListeners(executionId);
 
@@ -2612,6 +2649,13 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "completed":
           case "execution-complete":
+            // Clear execution timeout since execution completed
+            const completedTimeoutId = get().executionTimeouts.get(data.executionId);
+            if (completedTimeoutId) {
+              clearTimeout(completedTimeoutId);
+              get().executionTimeouts.delete(data.executionId);
+            }
+
             const finalStatus = data.error ? "error" : "success";
             get().setExecutionState({
               status: finalStatus,
@@ -2679,6 +2723,13 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "execution-error":
           case "failed":
+            // Clear execution timeout since execution failed
+            const failedTimeoutId = get().executionTimeouts.get(data.executionId);
+            if (failedTimeoutId) {
+              clearTimeout(failedTimeoutId);
+              get().executionTimeouts.delete(data.executionId);
+            }
+
             // Mark execution as failed but DON'T change node states
             // Nodes keep their individual states (completed/failed)
             get().setExecutionState({

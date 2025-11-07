@@ -59,9 +59,12 @@ export class SocketService {
           token
         },
         transports: ['websocket', 'polling'],
+        timeout: 45000,            // Match backend connectTimeout
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: this.reconnectDelay
+        reconnectionDelay: this.reconnectDelay,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
       });
 
       this.setupEventHandlers();

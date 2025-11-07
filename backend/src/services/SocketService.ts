@@ -35,7 +35,7 @@ export class SocketService {
 
   // Event buffering for late subscribers
   private executionEventBuffer: Map<string, ExecutionEventData[]> = new Map();
-  private bufferRetentionMs = 10000; // Keep events for 10 seconds
+  private bufferRetentionMs = 60000; // Keep events for 60 seconds (increased for production latency)
   private bufferCleanupInterval: NodeJS.Timeout;
 
   constructor(httpServer: HTTPServer) {
@@ -45,6 +45,12 @@ export class SocketService {
         credentials: true,
       },
       transports: ["websocket", "polling"],
+      // Production-ready timeout configuration
+      pingTimeout: 60000,        // 60 seconds - how long to wait for pong before considering connection dead
+      pingInterval: 25000,       // 25 seconds - how often to send ping packets
+      connectTimeout: 45000,     // 45 seconds - connection timeout
+      upgradeTimeout: 30000,     // 30 seconds - upgrade timeout
+      maxHttpBufferSize: 1e6,    // 1MB - max buffer size
     });
 
     this.setupAuthentication();
