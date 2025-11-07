@@ -121,12 +121,11 @@ export function WorkflowEditorPage() {
     }
   }, [id])
 
-  // Initialize node types store
-  useEffect(() => {
-    if (nodeTypes.length === 0 && !isLoadingNodeTypes) {
-      fetchNodeTypes()
-    }
-  }, [nodeTypes.length, isLoadingNodeTypes, fetchNodeTypes])
+  // Don't load node types on page mount - let them load lazily when needed
+  // Node types will be loaded when:
+  // 1. User opens the add node dialog
+  // 2. User opens the nodes sidebar
+  // This improves initial page load performance
 
   // Load execution data if executionId is present
   useEffect(() => {

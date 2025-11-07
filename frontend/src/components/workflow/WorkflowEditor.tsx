@@ -62,12 +62,8 @@ export function WorkflowEditor({
     // Get dynamic node types from store to include newly uploaded nodes
     const { activeNodeTypes: storeNodeTypes, fetchNodeTypes, hasFetched } = useNodeTypes()
 
-    // Ensure node types are loaded when component mounts
-    useEffect(() => {
-        if (!hasFetched && storeNodeTypes.length === 0) {
-            fetchNodeTypes()
-        }
-    }, [hasFetched, storeNodeTypes.length, fetchNodeTypes])
+    // Don't load node types on component mount - let them load lazily when needed
+    // Node types will be loaded when user opens the add node dialog or nodes sidebar
 
     // Create dynamic nodeTypes object that includes both built-in and uploaded nodes
     const nodeTypes = useMemo(() => {
