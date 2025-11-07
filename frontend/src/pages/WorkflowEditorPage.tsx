@@ -34,7 +34,7 @@ export function WorkflowEditorPage() {
   const { user } = useAuthStore()
   const [error, setError] = useState<string | null>(null)
   // Use global node types store instead of local state
-  const { activeNodeTypes: nodeTypes, isLoading: isLoadingNodeTypes, fetchNodeTypes } = useNodeTypes()
+  const { activeNodeTypes: nodeTypes, isLoading: isLoadingNodeTypes } = useNodeTypes()
   const [execution, setExecution] = useState<ExecutionDetails | null>(null)
   const [isLoadingExecution, setIsLoadingExecution] = useState(false)
 

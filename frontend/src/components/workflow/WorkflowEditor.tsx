@@ -60,7 +60,7 @@ export function WorkflowEditor({
     const closeChatDialog = useWorkflowStore(state => state.closeChatDialog)
 
     // Get dynamic node types from store to include newly uploaded nodes
-    const { activeNodeTypes: storeNodeTypes, fetchNodeTypes, hasFetched } = useNodeTypes()
+    const { activeNodeTypes: storeNodeTypes } = useNodeTypes()
 
     // Don't load node types on component mount - let them load lazily when needed
     // Node types will be loaded when user opens the add node dialog or nodes sidebar
