@@ -171,7 +171,10 @@ export class CustomNodeService {
     const response = await api.get(
       `${this.baseUrl}/marketplace/search?${params.toString()}`
     );
-    return response.data;
+    // Backend returns { success: true, data: { packages, total, hasMore } }
+    // But we need to check if it's wrapped or not
+    const result = response.data.data || response.data;
+    return result;
   }
 
   /**
@@ -191,11 +194,20 @@ export class CustomNodeService {
     packageId: string,
     options: InstallOptions = {}
   ): Promise<InstallResult> {
-    const response = await api.post(`${this.baseUrl}/marketplace/install`, {
-      packageId,
-      ...options,
-    });
-    return response.data.data;
+    try {
+      const response = await api.post(`${this.baseUrl}/marketplace/install`, {
+        packageId,
+        ...options,
+      });
+      const result = response.data.data || response.data;
+      return result;
+    } catch (error: any) {
+      // Return error result instead of throwing
+      return {
+        success: false,
+        errors: [error.response?.data?.error || error.message || 'Installation failed']
+      };
+    }
   }
 
   /**

@@ -19,7 +19,7 @@ import {
   UpdateResult,
 } from "../types/customNode";
 
-interface CustomNodeStore extends CustomNodeState, CustomNodeActions {}
+interface CustomNodeStore extends CustomNodeState, CustomNodeActions { }
 
 export const useCustomNodeStore = createWithEqualityFn<CustomNodeStore>()(
   devtools(

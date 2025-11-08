@@ -345,7 +345,7 @@ router.get("/marketplace/search", async (req: Request, res: Response) => {
       query: query as string,
       category: category as string,
       author: author as string,
-      verified: verified === "true",
+      verified: verified !== undefined ? verified === "true" : undefined,
       minRating: minRating ? parseFloat(minRating as string) : undefined,
       tags: tags ? (tags as string).split(",") : undefined,
       sortBy: sortBy as any,
@@ -355,10 +355,39 @@ router.get("/marketplace/search", async (req: Request, res: Response) => {
     };
 
     const result = await marketplace.searchNodes(filters);
+    
+    // Get installed packages to check installation status
+    const installedPackages = await marketplace.getInstalledPackages();
+    
+    // Create a map with both original name and lowercase name for matching
+    const installedMap = new Map<string, { version: string; name: string }>();
+    installedPackages.forEach(pkg => {
+      installedMap.set(pkg.name.toLowerCase(), { version: pkg.version, name: pkg.name });
+      installedMap.set(pkg.name, { version: pkg.version, name: pkg.name });
+    });
+    
+    logger.info('Installed packages map', { 
+      installedPackages: installedPackages.map(p => ({ name: p.name, version: p.version })),
+      mapKeys: Array.from(installedMap.keys())
+    });
+    
+    // Add installation status to each package
+    const packagesWithStatus = result.packages.map(pkg => {
+      const installedInfo = installedMap.get(pkg.name.toLowerCase()) || installedMap.get(pkg.name);
+      return {
+        ...pkg,
+        installed: !!installedInfo,
+        installedVersion: installedInfo?.version,
+        hasUpdate: installedInfo && installedInfo.version !== pkg.version
+      };
+    });
 
     res.json({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        packages: packagesWithStatus
+      },
     });
   } catch (error) {
     logger.error("Failed to search marketplace", { error });
@@ -431,8 +460,15 @@ router.post("/marketplace/install", async (req: Request, res: Response) => {
 
     if (result.success) {
       // Load the installed package
-      const nodeLoader = global.nodeLoader as NodeLoader;
-      await nodeLoader.loadNodePackage(result.packagePath!);
+      try {
+        const nodeLoader = global.nodeLoader as NodeLoader;
+        await nodeLoader.loadNodePackage(result.packagePath!);
+        
+        logger.info('Package installed and loaded successfully', { packageId, packagePath: result.packagePath });
+      } catch (loadError) {
+        logger.error('Failed to load installed package', { error: loadError, packageId });
+        // Continue anyway - package is installed even if loading failed
+      }
 
       res.json({
         success: true,
