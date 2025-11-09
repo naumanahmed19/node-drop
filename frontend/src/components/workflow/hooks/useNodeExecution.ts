@@ -4,7 +4,7 @@ import {
   createNodeExecutionError,
   logExecutionError,
 } from "@/utils/errorHandling";
-import { canExecuteWorkflow } from "@/utils/workflowExecutionGuards";
+import { canProceedWithExecution } from "@/utils/workflowExecutionGuards";
 import { useEffect, useState } from "react";
 import type { NodeExecutionError } from "../types";
 
@@ -77,13 +77,8 @@ export function useNodeExecution(nodeId: string, nodeType: string) {
   ]);
 
   const handleExecuteNode = async (nodeId: string, nodeType: string) => {
-    if (executionState.status === "running") {
-      console.warn("Cannot execute individual node while workflow is running");
-      return;
-    }
-
-    // Check if workflow can be executed (must be saved first)
-    if (!canExecuteWorkflow()) {
+    // Perform all pre-execution checks (workflow running, unsaved changes, etc.)
+    if (!canProceedWithExecution()) {
       return;
     }
 
