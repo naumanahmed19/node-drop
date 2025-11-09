@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -6,16 +16,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { useSidebarContext } from '@/contexts'
 import { apiClient } from '@/services/api'
 import { executionService, type ExecutionDetails } from '@/services/execution'
+import { useWorkflowStore } from '@/stores/workflow'
 import {
   Activity,
   AlertCircle,
   Calendar,
   CheckCircle,
   Clock,
+  Database,
   MoreHorizontal,
   Pause,
   Play,
@@ -38,6 +51,7 @@ export function ExecutionsList({}: ExecutionsListProps) {
   const {
     setHeaderSlot
   } = useSidebarContext()
+  const { workflow, updateWorkflow } = useWorkflowStore()
   
   const [allExecutions, setAllExecutions] = useState<Execution[]>([])
   const [workflowExecutions, setWorkflowExecutions] = useState<Execution[]>([])
@@ -47,6 +61,8 @@ export function ExecutionsList({}: ExecutionsListProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<"workflow" | "all">("workflow")
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Extract the currently active workflow ID from URL if in workflow editor
   const currentWorkflowId = useMemo(() => {
@@ -115,6 +131,34 @@ export function ExecutionsList({}: ExecutionsListProps) {
     fetchExecutions(true)
   }
 
+  const handleDeleteAll = () => {
+    setShowDeleteDialog(true)
+  }
+
+  const confirmDeleteAll = async () => {
+    setIsDeleting(true)
+    
+    try {
+      const executionsToDelete = activeTab === 'workflow' ? workflowExecutions : allExecutions
+      
+      // Delete all executions
+      await Promise.all(
+        executionsToDelete.map(execution => 
+          apiClient.delete(`/executions/${execution.id}`)
+        )
+      )
+
+      // Refresh the list
+      await fetchExecutions(true)
+      setShowDeleteDialog(false)
+    } catch (error) {
+      console.error('Failed to delete executions:', error)
+      // Keep dialog open to show error
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   useEffect(() => {
     fetchExecutions()
   }, [statusFilter, currentWorkflowId])
@@ -151,6 +195,7 @@ export function ExecutionsList({}: ExecutionsListProps) {
         allExecutionCount={allExecutions.length}
         onRefresh={handleRefresh}
         isRefreshing={isRefreshing}
+        onDeleteAll={handleDeleteAll}
       />
     )
     
@@ -412,6 +457,69 @@ export function ExecutionsList({}: ExecutionsListProps) {
     )
   }
 
+  // Render banner for workflow tab
+  const renderBanner = () => {
+    if (!workflow || workflow.id !== currentWorkflowId || activeTab !== 'workflow') {
+      return null
+    }
+
+    const saveExecutionEnabled = workflow.settings?.saveExecutionToDatabase !== false
+
+    return (
+      <div className={`p-3 border-b ${
+        saveExecutionEnabled 
+          ? 'bg-muted/30 border-border' 
+          : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900'
+      }`}>
+        <div className="flex items-start gap-3">
+          <Database className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+            saveExecutionEnabled 
+              ? 'text-muted-foreground' 
+              : 'text-amber-600 dark:text-amber-500'
+          }`} />
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs font-medium ${
+              saveExecutionEnabled 
+                ? 'text-foreground' 
+                : 'text-amber-900 dark:text-amber-200'
+            }`}>
+              {saveExecutionEnabled ? 'Execution History Enabled' : 'Execution History Disabled'}
+            </p>
+            <p className={`text-xs mt-0.5 ${
+              saveExecutionEnabled 
+                ? 'text-muted-foreground' 
+                : 'text-amber-700 dark:text-amber-300'
+            }`}>
+              {saveExecutionEnabled 
+                ? 'Executions are being saved to database' 
+                : 'New executions won\'t be saved to database'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Switch
+              checked={saveExecutionEnabled}
+              onCheckedChange={async (checked) => {
+                if (workflow) {
+                  // Toggle execution history
+                  updateWorkflow({
+                    settings: {
+                      ...workflow.settings,
+                      saveExecutionToDatabase: checked,
+                    },
+                  })
+                  // Note: Workflow will auto-save on changes
+                  // Refresh execution list after a short delay
+                  setTimeout(() => fetchExecutions(true), 500)
+                }
+              }}
+              className="data-[state=checked]:bg-green-600"
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Shared component for loading, error, and empty states
   const renderContent = (isForWorkflow: boolean = false) => {
     if (isLoading) {
@@ -509,23 +617,58 @@ export function ExecutionsList({}: ExecutionsListProps) {
     )
   }
 
+  const executionCount = activeTab === 'workflow' ? workflowExecutions.length : allExecutions.length
+
   return (
-    <div className="p-0">
-      {/* Show tabs UI when we have a current workflow */}
-      {currentWorkflowId && currentWorkflowId !== 'new' ? (
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "workflow" | "all")} className="w-full">
-          <TabsContent value="workflow" className="space-y-0 mt-0">
-            {renderContent(true)}
-          </TabsContent>
-          
-          <TabsContent value="all" className="space-y-0 mt-0">
-            {renderContent(false)}
-          </TabsContent>
-        </Tabs>
-      ) : (
-        // Show all executions when no current workflow
-        renderContent(false)
-      )}
-    </div>
+    <>
+      <div className="p-0">
+        {/* Show banner for workflow tab */}
+        {renderBanner()}
+        
+        {/* Show tabs UI when we have a current workflow */}
+        {currentWorkflowId && currentWorkflowId !== 'new' ? (
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "workflow" | "all")} className="w-full">
+            <TabsContent value="workflow" className="space-y-0 mt-0">
+              {renderContent(true)}
+            </TabsContent>
+            
+            <TabsContent value="all" className="space-y-0 mt-0">
+              {renderContent(false)}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          // Show all executions when no current workflow
+          renderContent(false)
+        )}
+      </div>
+
+      {/* Delete All Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete All Executions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {activeTab === 'workflow' 
+                ? `This will permanently delete all ${executionCount} execution${executionCount !== 1 ? 's' : ''} for this workflow.`
+                : `This will permanently delete all ${executionCount} execution${executionCount !== 1 ? 's' : ''}.`
+              }
+              <br />
+              <br />
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteAll}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete All'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
