@@ -1545,7 +1545,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             }
 
             // For single mode, use the single node execution endpoint
-            const result = await executionService.executeSingleNode({
+            const result: any = await executionService.executeSingleNode({
               workflowId: workflow.id,
               nodeId,
               inputData: nodeInputData || { main: [[]] },
@@ -1574,25 +1574,20 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             const isSuccess =
               result.status === "completed" && !result.hasFailures;
 
-            // Get detailed execution results to fetch actual output data
+            // Get output data from the execution result (no database query needed for single node execution)
             let nodeOutputData: any = undefined;
             let nodeError: any = undefined;
 
-            try {
-              const executionDetails =
-                await executionService.getExecutionDetails(result.executionId);
-
-              // Find the executed node's output data
-              const nodeExecution = executionDetails.nodeExecutions.find(
-                (nodeExec) => nodeExec.nodeId === nodeId
+            // Single node executions now return output data directly in the response
+            if (result.nodeExecutions && result.nodeExecutions.length > 0) {
+              const nodeExecution = result.nodeExecutions.find(
+                (nodeExec: any) => nodeExec.nodeId === nodeId
               );
 
               if (nodeExecution) {
                 nodeOutputData = nodeExecution.outputData;
                 nodeError = serializeError(nodeExecution.error);
               }
-            } catch (error) {
-              nodeError = "Failed to retrieve execution details";
             }
 
             get().updateNodeExecutionResult(nodeId, {

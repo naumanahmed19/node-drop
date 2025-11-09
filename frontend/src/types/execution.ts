@@ -126,6 +126,12 @@ export interface ExecutionResponse {
   failedNodes?: string[];
   duration?: number;
   hasFailures?: boolean;
+  // For single node executions, output data is returned directly (not saved to database)
+  nodeExecutions?: Array<{
+    nodeId: string;
+    outputData?: any;
+    error?: any;
+  }>;
 }
 
 export interface SingleNodeExecutionRequest {
