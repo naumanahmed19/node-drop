@@ -2,6 +2,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { useAddNodeDialogStore, useWorkflowStore } from '@/stores'
 import { WorkflowNode } from '@/types'
+import { canExecuteWorkflow } from '@/utils/workflowExecutionGuards'
 import { useReactFlow, useStore } from '@xyflow/react'
 import { Box, Maximize2, MessageSquare, Plus, Redo, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { ReactNode, useCallback, useState } from 'react'
@@ -230,10 +231,12 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
   const handleExecuteWorkflow = async (triggerNodeId?: string) => {
     if (!workflow) return
     
+    // Check if workflow can be executed (must be saved first)
+    if (!canExecuteWorkflow()) {
+      return
+    }
+    
     try {
-      // If workflow is not saved (has unsaved changes), we'll execute anyway
-      // The toolbar handles the save logic before execution
-      
       // Execute the workflow using the workflow store's executeNode method
       const { executeNode } = useWorkflowStore.getState()
       await executeNode(triggerNodeId || workflow.nodes.find(n => 
