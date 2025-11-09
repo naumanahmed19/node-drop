@@ -36,18 +36,20 @@ function useDetachNodes() {
       // Sync changes to Zustand workflow store
       if (workflow) {
         const existingNodesMap = new Map(workflow.nodes.map((n) => [n.id, n]));
-        const updatedNodes = filteredNodes.map((rfNode) => {
-          const existingNode = existingNodesMap.get(rfNode.id);
-          if (existingNode) {
-            return {
-              ...existingNode,
-              position: rfNode.position,
-              parentId: rfNode.parentId || undefined,
-              extent: (rfNode.extent || undefined) as any,
-            };
-          }
-          return existingNode;
-        }).filter(Boolean);
+        const updatedNodes = filteredNodes
+          .map((rfNode) => {
+            const existingNode = existingNodesMap.get(rfNode.id);
+            if (existingNode) {
+              return {
+                ...existingNode,
+                position: rfNode.position,
+                parentId: rfNode.parentId || undefined,
+                extent: (rfNode.extent || undefined) as any,
+              };
+            }
+            return undefined;
+          })
+          .filter((node): node is NonNullable<typeof node> => node !== undefined);
 
         updateWorkflow({ nodes: updatedNodes });
       }

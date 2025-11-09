@@ -33,7 +33,6 @@ export function NodeMarketplace({
     searchMarketplace,
     installPackage,
     loadPackages,
-    packages,
     searchResults,
     searchLoading,
     error

@@ -85,6 +85,7 @@ export interface InstallResult {
   success: boolean;
   packagePath?: string;
   version?: string;
+  packageName?: string;
   errors?: string[];
   warnings?: string[];
 }
