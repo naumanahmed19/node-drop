@@ -484,7 +484,12 @@ export class TriggerService {
     webhookId: string,
     request: WebhookRequest,
     testMode: boolean = false
-  ): Promise<{ success: boolean; executionId?: string; error?: string }> {
+  ): Promise<{ 
+    success: boolean; 
+    executionId?: string; 
+    error?: string;
+    responseData?: any;
+  }> {
     try {
       const trigger = this.webhookTriggers.get(webhookId);
       if (!trigger) {
@@ -608,12 +613,50 @@ export class TriggerService {
         }
       }
 
+      // Fetch workflow to get the owner's userId and nodes for responseMode check
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { 
+          userId: true,
+          nodes: true,
+        },
+      });
+
+      if (!workflow) {
+        throw new AppError(
+          "Workflow not found for webhook trigger",
+          404,
+          "WORKFLOW_NOT_FOUND"
+        );
+      }
+
+      // Parse workflow nodes to get webhook trigger node settings
+      const workflowNodes = typeof workflow.nodes === "string" 
+        ? JSON.parse(workflow.nodes) 
+        : workflow.nodes;
+      
+      const webhookTriggerNode = (workflowNodes as any[])?.find(
+        (node: any) => node.id === trigger.nodeId
+      );
+
+      const responseMode = webhookTriggerNode?.parameters?.responseMode || "onReceived";
+      const shouldWaitForCompletion = responseMode === "lastNode";
+
+      // DEBUG: Log response mode configuration
+      console.log(`🔍 DEBUG Webhook Response Mode:`, {
+        webhookId,
+        nodeId: trigger.nodeId,
+        responseMode,
+        shouldWaitForCompletion,
+        hasWebhookNode: !!webhookTriggerNode,
+      });
+
       // Create trigger execution request with webhook data
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
         triggerType: "webhook",
         workflowId: trigger.workflowId,
-        userId: "system", // System user for webhook triggers
+        userId: workflow.userId, // Use workflow owner's userId for credential access
         triggerNodeId: trigger.nodeId,
         triggerData: {
           method: request.method,
@@ -720,9 +763,55 @@ export class TriggerService {
         console.log(`ℹ️  Test mode NOT detected (testMode = ${testMode})`);
       }
 
+      // If responseMode is "lastNode", wait for execution to complete and extract response data
+      let responseData = null;
+      if (shouldWaitForCompletion && result.executionId) {
+        try {
+          console.log(`⏳ Waiting for execution to complete (responseMode: lastNode)`, {
+            executionId: result.executionId,
+            webhookId,
+          });
+          logger.info(`Waiting for execution to complete (responseMode: lastNode)`, {
+            executionId: result.executionId,
+          });
+
+          // Wait for execution to complete (with timeout)
+          responseData = await this.waitForExecutionCompletion(
+            result.executionId,
+            30000 // 30 second timeout
+          );
+
+          console.log(`✅ Execution completed, response data extracted`, {
+            executionId: result.executionId,
+            hasResponseData: !!responseData,
+            responseDataKeys: responseData ? Object.keys(responseData) : [],
+          });
+          logger.info(`Execution completed, response data extracted`, {
+            executionId: result.executionId,
+            hasResponseData: !!responseData,
+          });
+        } catch (error) {
+          console.error(`❌ Error waiting for execution completion`, {
+            executionId: result.executionId,
+            error: error instanceof Error ? error.message : error,
+          });
+          logger.error(`Error waiting for execution completion`, {
+            executionId: result.executionId,
+            error: error instanceof Error ? error.message : error,
+          });
+          // Continue with standard response if waiting fails
+        }
+      } else {
+        console.log(`ℹ️  Not waiting for completion:`, {
+          shouldWaitForCompletion,
+          hasExecutionId: !!result.executionId,
+        });
+      }
+
       return {
         success: true,
         executionId: result.executionId,
+        responseData,
       };
     } catch (error) {
       logger.error(`Error handling webhook trigger ${webhookId}:`, error);
@@ -1205,6 +1294,165 @@ export class TriggerService {
     } catch (error) {
       logger.error(`Error syncing triggers for workflow ${workflowId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Wait for execution to complete and extract response data
+   * Used for webhook responseMode: "lastNode"
+   */
+  private async waitForExecutionCompletion(
+    executionId: string,
+    timeout: number = 30000
+  ): Promise<any> {
+    return new Promise(async (resolve, reject) => {
+      const startTime = Date.now();
+      const pollInterval = 500; // Poll every 500ms
+      const initialDelay = 100; // Wait 100ms before first poll to allow execution record to be created
+
+      const checkExecution = async () => {
+        try {
+          // Check if timeout exceeded
+          if (Date.now() - startTime > timeout) {
+            reject(new Error("Execution timeout"));
+            return;
+          }
+
+          // Fetch execution from database
+          const execution = await this.prisma.execution.findUnique({
+            where: { id: executionId },
+          });
+
+          if (!execution) {
+            // Don't reject immediately - execution might not be created yet
+            // Continue polling until timeout
+            console.log(`⏳ Execution record not found yet, continuing to poll...`);
+            setTimeout(checkExecution, pollInterval);
+            return;
+          }
+
+          // Check if execution is complete
+          if (execution.status === "SUCCESS" || execution.status === "ERROR" || execution.status === "CANCELLED" || execution.status === "TIMEOUT") {
+            // Extract response data from execution
+            const responseData = this.extractResponseData(execution);
+            resolve(responseData);
+            return;
+          }
+
+          // Continue polling
+          setTimeout(checkExecution, pollInterval);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      // Start polling after initial delay to allow execution record to be created
+      setTimeout(checkExecution, initialDelay);
+    });
+  }
+
+  /**
+   * Extract HTTP Response node data from execution result
+   */
+  private async extractResponseData(execution: any): Promise<any> {
+    try {
+      console.log(`🔍 DEBUG extractResponseData - Execution status:`, execution.status);
+      
+      // Fetch node executions for this execution
+      const nodeExecutions = await this.prisma.nodeExecution.findMany({
+        where: { executionId: execution.id },
+        select: {
+          nodeId: true,
+          outputData: true,
+          status: true,
+        },
+      });
+
+      if (!nodeExecutions || nodeExecutions.length === 0) {
+        console.log(`⚠️  DEBUG extractResponseData - No node executions found`);
+        return null;
+      }
+
+      console.log(`🔍 DEBUG extractResponseData - Found ${nodeExecutions.length} node executions`);
+      
+      // Iterate through node executions to find one with _httpResponse flag
+      for (const nodeExecution of nodeExecutions) {
+        if (!nodeExecution.outputData) {
+          continue;
+        }
+
+        // Parse outputData
+        let outputData = nodeExecution.outputData;
+        if (typeof outputData === "string") {
+          outputData = JSON.parse(outputData);
+        }
+
+        // Check if this node has main output data
+        const outputDataObj = outputData as any;
+        if (outputDataObj.main && Array.isArray(outputDataObj.main) && outputDataObj.main.length > 0) {
+          const mainOutput = outputDataObj.main[0];
+          
+          if (mainOutput && mainOutput.json) {
+            const output = mainOutput.json as any;
+            
+            console.log(`🔍 DEBUG extractResponseData - Node ${nodeExecution.nodeId} output:`, {
+              hasHttpResponseFlag: output._httpResponse === true,
+              outputKeys: Object.keys(output),
+            });
+            
+            // Check if this is an HTTP Response node output
+            if (output._httpResponse === true) {
+              console.log(`✅ Found HTTP Response node output`, {
+                nodeId: nodeExecution.nodeId,
+                statusCode: output.statusCode,
+              });
+              logger.info("Found HTTP Response node output", {
+                nodeId: nodeExecution.nodeId,
+                statusCode: output.statusCode,
+              });
+              
+              return {
+                statusCode: output.statusCode || 200,
+                headers: output.headers || {},
+                body: output.body,
+                cookies: output.cookies || [],
+              };
+            }
+          }
+        }
+      }
+
+      // If no HTTP Response node found, return the last node's output
+      if (nodeExecutions.length > 0) {
+        const lastNodeExecution = nodeExecutions[nodeExecutions.length - 1];
+        
+        if (lastNodeExecution.outputData) {
+          let lastOutputData = lastNodeExecution.outputData;
+          if (typeof lastOutputData === "string") {
+            lastOutputData = JSON.parse(lastOutputData);
+          }
+          
+          const lastOutputDataObj = lastOutputData as any;
+          if (lastOutputDataObj.main && Array.isArray(lastOutputDataObj.main) && lastOutputDataObj.main.length > 0) {
+            const lastMainOutput = lastOutputDataObj.main[0];
+            
+            if (lastMainOutput && lastMainOutput.json) {
+              return {
+                statusCode: 200,
+                headers: { "Content-Type": "application/json" },
+                body: lastMainOutput.json,
+                cookies: [],
+              };
+            }
+          }
+        }
+      }
+
+      console.log(`⚠️  DEBUG extractResponseData - No HTTP Response node found`);
+      return null;
+    } catch (error) {
+      logger.error("Error extracting response data", { error });
+      return null;
     }
   }
 }

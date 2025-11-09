@@ -15,6 +15,65 @@ import {
 const router = Router();
 const prisma = new PrismaClient();
 
+/**
+ * Helper function to send webhook response
+ * Handles both custom HTTP Response node data and standard responses
+ */
+function sendWebhookResponse(
+  res: Response,
+  result: any,
+  testMode: boolean
+): void {
+  console.log(`🔍 DEBUG sendWebhookResponse called:`, {
+    hasResponseData: !!result.responseData,
+    hasStatusCode: result.responseData?.statusCode,
+    testMode,
+  });
+  
+  // Check if we have custom HTTP Response data
+  if (result.responseData && result.responseData.statusCode) {
+    console.log(`📤 Using custom HTTP Response from workflow`, {
+      statusCode: result.responseData.statusCode,
+      hasBody: !!result.responseData.body,
+    });
+
+    // Set cookies if provided
+    if (result.responseData.cookies && Array.isArray(result.responseData.cookies)) {
+      result.responseData.cookies.forEach((cookie: any) => {
+        res.cookie(cookie.name, cookie.value, {
+          maxAge: cookie.maxAge,
+          httpOnly: cookie.httpOnly,
+          secure: cookie.secure,
+          path: cookie.path || '/',
+          domain: cookie.domain,
+          sameSite: cookie.sameSite,
+        });
+      });
+    }
+
+    // Set custom headers
+    if (result.responseData.headers) {
+      Object.entries(result.responseData.headers).forEach(([key, value]) => {
+        res.setHeader(key, value as string);
+      });
+    }
+
+    // Send custom response
+    res.status(result.responseData.statusCode).send(result.responseData.body);
+  } else {
+    // Standard response (when no HTTP Response node or responseMode is "onReceived")
+    res.status(200).json({
+      success: true,
+      message: testMode
+        ? "Webhook received - execution will be visible in editor"
+        : "Webhook received and workflow triggered",
+      executionId: result.executionId,
+      testMode,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
 // Use lazy initialization to get services when needed
 const getNodeService = () => {
   if (!global.nodeService) {
@@ -136,15 +195,7 @@ router.all(
         console.log(
           `✅ Webhook processed successfully - Execution ID: ${result.executionId}`
         );
-        res.status(200).json({
-          success: true,
-          message: testMode
-            ? "Webhook received - execution will be visible in editor"
-            : "Webhook received and workflow triggered",
-          executionId: result.executionId,
-          testMode,
-          timestamp: new Date().toISOString(),
-        });
+        sendWebhookResponse(res, result, testMode);
       } else {
         console.error(`❌ Webhook processing failed: ${result.error}`);
         const statusCode = result.error?.includes("not found")
@@ -212,15 +263,7 @@ router.all(
         console.log(
           `✅ Webhook processed successfully - Execution ID: ${result.executionId}`
         );
-        res.status(200).json({
-          success: true,
-          message: testMode
-            ? "Webhook received - execution will be visible in editor"
-            : "Webhook received and workflow triggered",
-          executionId: result.executionId,
-          testMode,
-          timestamp: new Date().toISOString(),
-        });
+        sendWebhookResponse(res, result, testMode);
       } else {
         console.error(`❌ Webhook processing failed: ${result.error}`);
         const statusCode = result.error?.includes("not found")
