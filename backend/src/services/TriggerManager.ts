@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { EventEmitter } from "events";
 import { ExecutionResult } from "../types/database";
 import { logger } from "../utils/logger";
+import { ExecutionResultCache } from "./ExecutionResultCache";
 import { ExecutionService } from "./ExecutionService";
 import {
   TriggerExecutionContext,
@@ -60,6 +61,7 @@ export class TriggerManager extends EventEmitter {
   private prisma: PrismaClient;
   private executionService: ExecutionService;
   private resourceManager: TriggerResourceManager;
+  private executionResultCache: ExecutionResultCache;
 
   private activeTriggers: Map<string, TriggerExecutionContext> = new Map();
   private queuedTriggers: TriggerExecutionContext[] = [];
@@ -78,6 +80,7 @@ export class TriggerManager extends EventEmitter {
     this.prisma = prisma;
     this.executionService = executionService;
     this.resourceManager = new TriggerResourceManager();
+    this.executionResultCache = new ExecutionResultCache();
 
     this.config = {
       maxConcurrentTriggers: 10,
@@ -178,6 +181,72 @@ export class TriggerManager extends EventEmitter {
         error: error instanceof Error ? error.message : error,
       });
 
+      return {
+        success: false,
+        reason: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
+   * Execute a trigger and wait for it to complete
+   * Returns the execution result directly without polling database
+   * Uses Redis for reliable cross-server result sharing
+   */
+  async executeTriggerAndWait(
+    request: TriggerExecutionRequest,
+    timeout: number = 30000
+  ): Promise<{
+    success: boolean;
+    executionId?: string;
+    result?: ExecutionResult;
+    reason?: string;
+  }> {
+    try {
+      // Execute the trigger
+      const triggerResult = await this.executeTrigger(request);
+      
+      if (!triggerResult.success || !triggerResult.executionId) {
+        return {
+          success: false,
+          reason: triggerResult.reason || "Failed to start execution",
+        };
+      }
+      
+      const executionId = triggerResult.executionId;
+      
+      logger.info(`Waiting for execution result via Redis`, {
+        executionId,
+        timeout,
+      });
+      
+      // Wait for result to be available in Redis
+      const result = await this.executionResultCache.waitForResult(
+        executionId,
+        timeout
+      );
+      
+      if (!result) {
+        logger.warn(`Timeout waiting for execution result`, { executionId });
+        return {
+          success: false,
+          executionId,
+          reason: "Execution timeout - result not available in Redis",
+        };
+      }
+      
+      logger.info(`Execution result retrieved from Redis`, {
+        executionId,
+        success: result.success,
+      });
+      
+      return {
+        success: true,
+        executionId,
+        result,
+      };
+    } catch (error) {
+      logger.error("Failed to execute trigger and wait:", error);
       return {
         success: false,
         reason: error instanceof Error ? error.message : "Unknown error",
@@ -516,6 +585,7 @@ export class TriggerManager extends EventEmitter {
         {
           timeout: context.executionOptions?.timeout || 300000,
           saveProgress: true,
+          saveToDatabase: context.executionOptions?.saveToDatabase, // Pass saveToDatabase option
         },
         context.triggerNodeId,
         {
@@ -541,6 +611,9 @@ export class TriggerManager extends EventEmitter {
 
     // Release resources
     this.resourceManager.releaseLocks(context.executionId);
+
+    // Cache execution result in Redis for webhook response extraction
+    await this.executionResultCache.set(context.executionId, result);
 
     // ExecutionService already saved to database and emitted socket events
     // No need to do it again here

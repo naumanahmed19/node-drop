@@ -10,8 +10,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import { Workflow } from '@/types/workflow'
-import { Save, Tag, X } from 'lucide-react'
+import { Save, Tag, X, Database, AlertTriangle } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { CategorySelect } from './CategorySelect'
 
@@ -33,7 +34,9 @@ export function WorkflowSettingsModal({
   const [category, setCategory] = useState(workflow.category || '')
   const [tags, setTags] = useState(workflow.tags || [])
   const [newTag, setNewTag] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
+  const [saveExecutionToDatabase, setSaveExecutionToDatabase] = useState(
+    workflow.settings?.saveExecutionToDatabase !== false // Default to true
+  )
 
   // Reset form when workflow changes
   useEffect(() => {
@@ -41,6 +44,7 @@ export function WorkflowSettingsModal({
     setDescription(workflow.description || '')
     setCategory(workflow.category || '')
     setTags(workflow.tags || [])
+    setSaveExecutionToDatabase(workflow.settings?.saveExecutionToDatabase !== false)
   }, [workflow])
 
   const handleAddTag = () => {
@@ -54,22 +58,20 @@ export function WorkflowSettingsModal({
     setTags(tags.filter(tag => tag !== tagToRemove))
   }
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true)
-      const updates = {
-        name: name.trim(),
-        description: description.trim(),
-        category: category || undefined,
-        tags
+  const handleSave = () => {
+    const updates = {
+      name: name.trim(),
+      description: description.trim(),
+      category: category || undefined,
+      tags,
+      settings: {
+        ...(workflow.settings || {}), // Ensure settings is an object
+        saveExecutionToDatabase
       }
-      await onSave(updates)
-      onClose()
-    } catch (error) {
-      console.error('Failed to save workflow settings:', error)
-    } finally {
-      setIsSaving(false)
     }
+    console.log('Updating workflow settings:', updates)
+    onSave(updates) // Just update the store, don't save to backend
+    onClose()
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -81,11 +83,11 @@ export function WorkflowSettingsModal({
 
   return (
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-[550px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Workflow Settings</DialogTitle>
             <DialogDescription>
-              Manage your workflow's basic information and categorization.
+              Manage your workflow's basic information and configuration.
             </DialogDescription>
           </DialogHeader>
           
@@ -176,6 +178,36 @@ export function WorkflowSettingsModal({
               </div>
             )}
           </div>
+
+          {/* Execution Settings */}
+          <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1 flex-1 min-w-0">
+                <Label htmlFor="saveExecutionToDatabase" className="flex items-center gap-2 font-medium cursor-pointer">
+                  <Database className="w-4 h-4 flex-shrink-0" />
+                  <span>Save Execution History</span>
+                </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Store execution data in database. Disable for high-traffic APIs to improve performance.
+                </p>
+              </div>
+              <Switch
+                id="saveExecutionToDatabase"
+                checked={saveExecutionToDatabase}
+                onCheckedChange={setSaveExecutionToDatabase}
+                className="flex-shrink-0"
+              />
+            </div>
+
+            {!saveExecutionToDatabase && (
+              <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded text-xs">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500 mt-0.5 flex-shrink-0" />
+                <div className="text-amber-800 dark:text-amber-200">
+                  <p className="font-medium">No execution history will be saved</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
@@ -187,19 +219,10 @@ export function WorkflowSettingsModal({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving || !name.trim()}
+            disabled={!name.trim()}
           >
-            {isSaving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" />
-                Save
-              </>
-            )}
+            <Save className="w-4 h-4 mr-2" />
+            Apply
           </Button>
         </DialogFooter>
         </DialogContent>

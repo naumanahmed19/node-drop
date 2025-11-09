@@ -383,7 +383,15 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const current = get().workflow;
         if (!current) return;
 
-        const updated = { ...current, ...updates };
+        // Deep merge settings if provided
+        const updated = {
+          ...current,
+          ...updates,
+          settings: updates.settings
+            ? { ...(current.settings || {}), ...updates.settings }
+            : current.settings,
+        };
+        console.log('Workflow updated:', updated);
         set({ workflow: updated, isDirty: true });
       },
 
@@ -1241,6 +1249,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                     options: {
                       timeout: 300000,
                       manual: true,
+                      saveToDatabase: workflow.settings?.saveExecutionToDatabase !== false, // Pass workflow setting
                     },
                   },
                   (response: any) => {

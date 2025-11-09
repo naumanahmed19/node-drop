@@ -242,6 +242,8 @@ export class WorkflowService {
 
 
 
+      console.log('🔍 Updating workflow with settings:', data.settings);
+      
       const workflow = await this.prisma.workflow.update({
         where: { id },
         data: {
@@ -254,11 +256,13 @@ export class WorkflowService {
           ...(data.nodes && { nodes: data.nodes as any }),
           ...(data.connections && { connections: data.connections as any }),
           ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
-          ...(data.settings && { settings: data.settings as any }),
+          ...(data.settings !== undefined && { settings: data.settings as any }), // Changed to check undefined instead of truthy
           ...(data.active !== undefined && { active: data.active }),
           updatedAt: new Date(),
         },
       });
+      
+      console.log('✅ Workflow updated, settings saved:', workflow.settings);
 
 
       // Sync triggers with TriggerService if triggers or active status changed

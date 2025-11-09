@@ -28,6 +28,7 @@ export interface FlowExecutionOptions {
   retryDelay?: number;
   saveProgress?: boolean;
   saveData?: boolean;
+  saveToDatabase?: boolean; // Skip saving execution to database (for high-traffic APIs)
   manual?: boolean;
   isolatedExecution?: boolean;
 }

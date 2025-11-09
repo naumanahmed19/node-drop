@@ -41,6 +41,7 @@ interface ExecutionContext {
     status: "running" | "completed" | "failed" | "cancelled";
     startTime: number;
     currentNodeId?: string;
+    saveToDatabase?: boolean; // Whether to save execution to database
 }
 
 export class RealtimeExecutionEngine extends EventEmitter {
@@ -90,7 +91,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
         triggerNodeId: string,
         triggerData: any,
         nodes: WorkflowNode[],
-        connections: WorkflowConnection[]
+        connections: WorkflowConnection[],
+        options?: { saveToDatabase?: boolean }
     ): Promise<string> {
         const executionId = uuidv4();
 
@@ -100,6 +102,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
         });
 
         // Create execution context
+        const saveToDatabase = options?.saveToDatabase !== false; // Default to true
+        
         const context: ExecutionContext = {
             executionId,
             workflowId,
@@ -109,20 +113,29 @@ export class RealtimeExecutionEngine extends EventEmitter {
             connections, // Store connections for branch checking
             status: "running",
             startTime: Date.now(),
+            saveToDatabase, // Store in context for later use
         };
 
         this.activeExecutions.set(executionId, context);
 
-        // Create execution record in database
-        await this.prisma.execution.create({
-            data: {
-                id: executionId,
-                workflow: { connect: { id: workflowId } },
-                status: ExecutionStatus.RUNNING,
-                startedAt: new Date(),
-                triggerData: triggerData || {},
-            },
-        });
+        // Create execution record in database (unless saveToDatabase is false)
+        if (saveToDatabase) {
+            await this.prisma.execution.create({
+                data: {
+                    id: executionId,
+                    workflow: { connect: { id: workflowId } },
+                    status: ExecutionStatus.RUNNING,
+                    startedAt: new Date(),
+                    triggerData: triggerData || {},
+                },
+            });
+        } else {
+            console.log(`⏭️  Skipping database save for realtime execution ${executionId} (saveToDatabase: false)`);
+            logger.info(`Skipping database save for realtime execution`, {
+                executionId,
+                workflowId,
+            });
+        }
 
         // Emit execution started event
         this.emit("execution-started", {
@@ -221,15 +234,18 @@ export class RealtimeExecutionEngine extends EventEmitter {
             timestamp: new Date(),
         });
 
-        // Create node execution record
-        const nodeExecution = await this.prisma.nodeExecution.create({
-            data: {
-                nodeId,
-                executionId,
-                status: NodeExecutionStatus.RUNNING,
-                startedAt: new Date(),
-            },
-        });
+        // Create node execution record (if saveToDatabase is enabled)
+        let nodeExecution: any = null;
+        if (context.saveToDatabase !== false) {
+            nodeExecution = await this.prisma.nodeExecution.create({
+                data: {
+                    nodeId,
+                    executionId,
+                    status: NodeExecutionStatus.RUNNING,
+                    startedAt: new Date(),
+                },
+            });
+        }
 
         try {
             // Get input data from connected nodes
@@ -276,15 +292,17 @@ export class RealtimeExecutionEngine extends EventEmitter {
             // Store output data (even if there was an error but continueOnFail is enabled)
             context.nodeOutputs.set(nodeId, result.data);
 
-            // Update node execution record
-            await this.prisma.nodeExecution.update({
-                where: { id: nodeExecution.id },
-                data: {
-                    status: NodeExecutionStatus.SUCCESS,
-                    outputData: result.data as any,
-                    finishedAt: new Date(),
-                },
-            });
+            // Update node execution record (if saveToDatabase is enabled)
+            if (context.saveToDatabase !== false && nodeExecution) {
+                await this.prisma.nodeExecution.update({
+                    where: { id: nodeExecution.id },
+                    data: {
+                        status: NodeExecutionStatus.SUCCESS,
+                        outputData: result.data as any,
+                        finishedAt: new Date(),
+                    },
+                });
+            }
 
             // Find which edges/connections will be activated by this node
             // For branching nodes (like IfElse), only include connections where the branch has data
@@ -346,18 +364,20 @@ export class RealtimeExecutionEngine extends EventEmitter {
         } catch (error: any) {
             logger.error(`[RealtimeExecution] Node ${nodeId} failed:`, error);
 
-            // Update node execution record
-            await this.prisma.nodeExecution.update({
-                where: { id: nodeExecution.id },
-                data: {
-                    status: NodeExecutionStatus.ERROR,
-                    error: {
-                        message: error.message,
-                        stack: error.stack,
+            // Update node execution record (if saveToDatabase is enabled)
+            if (context.saveToDatabase !== false && nodeExecution) {
+                await this.prisma.nodeExecution.update({
+                    where: { id: nodeExecution.id },
+                    data: {
+                        status: NodeExecutionStatus.ERROR,
+                        error: {
+                            message: error.message,
+                            stack: error.stack,
+                        },
+                        finishedAt: new Date(),
                     },
-                    finishedAt: new Date(),
-                },
-            });
+                });
+            }
 
             // Emit node failed event
             this.emit("node-failed", {
@@ -452,15 +472,18 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 timestamp: new Date(),
             });
 
-            // Create node execution record
-            const nodeExecution = await this.prisma.nodeExecution.create({
-                data: {
-                    nodeId,
-                    executionId,
-                    status: NodeExecutionStatus.RUNNING,
-                    startedAt: new Date(),
-                },
-            });
+            // Create node execution record (if saveToDatabase is enabled)
+            let nodeExecution: any = null;
+            if (context.saveToDatabase !== false) {
+                nodeExecution = await this.prisma.nodeExecution.create({
+                    data: {
+                        nodeId,
+                        executionId,
+                        status: NodeExecutionStatus.RUNNING,
+                        startedAt: new Date(),
+                    },
+                });
+            }
 
             try {
                 // Get input data
@@ -493,15 +516,17 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 // Store output
                 context.nodeOutputs.set(nodeId, result.data);
 
-                // Update node execution record
-                await this.prisma.nodeExecution.update({
-                    where: { id: nodeExecution.id },
-                    data: {
-                        status: NodeExecutionStatus.SUCCESS,
-                        outputData: result.data as any,
-                        finishedAt: new Date(),
-                    },
-                });
+                // Update node execution record (if saveToDatabase is enabled)
+                if (context.saveToDatabase !== false && nodeExecution) {
+                    await this.prisma.nodeExecution.update({
+                        where: { id: nodeExecution.id },
+                        data: {
+                            status: NodeExecutionStatus.SUCCESS,
+                            outputData: result.data as any,
+                            finishedAt: new Date(),
+                        },
+                    });
+                }
 
                 // Check loop and done outputs
                 const loopData = result.data?.branches?.["loop"] || [];
@@ -567,17 +592,19 @@ export class RealtimeExecutionEngine extends EventEmitter {
             } catch (error: any) {
                 logger.error(`[RealtimeExecution] Loop node ${nodeId} failed:`, error);
 
-                await this.prisma.nodeExecution.update({
-                    where: { id: nodeExecution.id },
-                    data: {
-                        status: NodeExecutionStatus.ERROR,
-                        error: {
-                            message: error.message,
-                            stack: error.stack,
+                if (context.saveToDatabase !== false && nodeExecution) {
+                    await this.prisma.nodeExecution.update({
+                        where: { id: nodeExecution.id },
+                        data: {
+                            status: NodeExecutionStatus.ERROR,
+                            error: {
+                                message: error.message,
+                                stack: error.stack,
+                            },
+                            finishedAt: new Date(),
                         },
-                        finishedAt: new Date(),
-                    },
-                });
+                    });
+                }
 
                 this.emit("node-failed", {
                     executionId,
@@ -767,13 +794,15 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         context.status = "completed";
 
-        await this.prisma.execution.update({
-            where: { id: executionId },
-            data: {
-                status: ExecutionStatus.SUCCESS,
-                finishedAt: new Date(),
-            },
-        });
+        if (context.saveToDatabase !== false) {
+            await this.prisma.execution.update({
+                where: { id: executionId },
+                data: {
+                    status: ExecutionStatus.SUCCESS,
+                    finishedAt: new Date(),
+                },
+            });
+        }
 
         this.emit("execution-completed", {
             executionId,
@@ -798,17 +827,19 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         context.status = "failed";
 
-        await this.prisma.execution.update({
-            where: { id: executionId },
-            data: {
-                status: ExecutionStatus.ERROR,
-                finishedAt: new Date(),
-                error: {
-                    message: error.message,
-                    stack: error.stack,
+        if (context.saveToDatabase !== false) {
+            await this.prisma.execution.update({
+                where: { id: executionId },
+                data: {
+                    status: ExecutionStatus.ERROR,
+                    finishedAt: new Date(),
+                    error: {
+                        message: error.message,
+                        stack: error.stack,
+                    },
                 },
-            },
-        });
+            });
+        }
 
         this.emit("execution-failed", {
             executionId,
@@ -838,13 +869,15 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         context.status = "cancelled";
 
-        await this.prisma.execution.update({
-            where: { id: executionId },
-            data: {
-                status: ExecutionStatus.CANCELLED,
-                finishedAt: new Date(),
-            },
-        });
+        if (context.saveToDatabase !== false) {
+            await this.prisma.execution.update({
+                where: { id: executionId },
+                data: {
+                    status: ExecutionStatus.CANCELLED,
+                    finishedAt: new Date(),
+                },
+            });
+        }
 
         this.emit("execution-cancelled", {
             executionId,

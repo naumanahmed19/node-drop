@@ -43,6 +43,8 @@ export function useWorkflowOperations() {
         JSON.stringify(currentWorkflow.nodes, null, 2)
       );
 
+      console.log('🔍 Building workflow data with settings:', currentWorkflow.settings);
+      
       return {
         name: workflowTitle || currentWorkflow.name,
         description: currentWorkflow.description,

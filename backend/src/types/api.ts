@@ -97,6 +97,7 @@ export const CreateWorkflowSchema = z.object({
       saveExecutionProgress: z.boolean().default(true),
       saveDataErrorExecution: z.enum(["all", "none"]).default("all"),
       saveDataSuccessExecution: z.enum(["all", "none"]).default("all"),
+      saveExecutionToDatabase: z.boolean().default(true), // Skip saving executions to database
       callerPolicy: z
         .enum(["workflowsFromSameOwner", "workflowsFromAList", "any"])
         .default("workflowsFromSameOwner"),

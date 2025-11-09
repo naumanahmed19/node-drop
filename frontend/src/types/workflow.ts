@@ -59,6 +59,7 @@ export interface WorkflowSettings {
   saveDataErrorExecution?: "all" | "none";
   saveDataSuccessExecution?: "all" | "none";
   saveManualExecutions?: boolean;
+  saveExecutionToDatabase?: boolean; // Skip saving executions to database (for high-traffic APIs)
   callerPolicy?: "workflowsFromSameOwner" | "workflowsFromAList" | "any";
 }
 

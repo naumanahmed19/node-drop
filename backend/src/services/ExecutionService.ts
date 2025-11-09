@@ -87,6 +87,7 @@ export class ExecutionService {
     workflowData?: { nodes?: any[]; connections?: any[]; settings?: any }, // Optional workflow data
     executionId?: string // Optional execution ID (for trigger-initiated executions)
   ): Promise<ExecutionResult> {
+    
     try {
 
 
@@ -252,7 +253,8 @@ export class ExecutionService {
             connections: parsedWorkflow.connections,
             settings: parsedWorkflow.settings,
           }
-          : undefined
+          : undefined,
+        options // Pass options to check saveToDatabase
       );
 
       // Collect error information from failed nodes
@@ -391,7 +393,8 @@ export class ExecutionService {
             connections: parsedWorkflow.connections,
             settings: parsedWorkflow.settings,
           }
-          : undefined
+          : undefined,
+        options // Pass options to check saveToDatabase
       );
 
       // Collect error information from failed nodes
@@ -1391,7 +1394,9 @@ export class ExecutionService {
             flowResult,
             workflowId,
             userId,
-            nodeInputData
+            nodeInputData,
+            undefined, // No workflow snapshot for single node execution
+            undefined // No options - always save single node executions
           );
 
 
@@ -1672,9 +1677,27 @@ export class ExecutionService {
     workflowId: string,
     userId: string,
     triggerData?: any,
-    workflowSnapshot?: { nodes: any[]; connections: any[]; settings?: any }
+    workflowSnapshot?: { nodes: any[]; connections: any[]; settings?: any },
+    options?: ExecutionOptions
   ): Promise<any> {
     try {
+      // Skip database save if configured
+      if (options?.saveToDatabase === false) {
+        console.log(`⏭️  Skipping database save for execution ${flowResult.executionId} (saveToDatabase: false)`);
+        logger.info(`Skipping database save for execution`, {
+          executionId: flowResult.executionId,
+          workflowId,
+        });
+        
+        // Return a minimal execution record for compatibility
+        return {
+          id: flowResult.executionId,
+          workflowId,
+          status: flowResult.status === "completed" ? ExecutionStatus.SUCCESS : ExecutionStatus.ERROR,
+          startedAt: new Date(Date.now() - flowResult.totalDuration),
+          finishedAt: new Date(),
+        };
+      }
       // Map flow status to execution status
       let executionStatus: ExecutionStatus;
       switch (flowResult.status) {

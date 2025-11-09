@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import * as cron from "node-cron";
 import { v4 as uuidv4 } from "uuid";
 import { AppError } from "../middleware/errorHandler";
+import { ExecutionResult } from "../types/database";
 import { logger } from "../utils/logger";
 import { CredentialService } from "./CredentialService";
 import ExecutionHistoryService from "./ExecutionHistoryService";
@@ -619,6 +620,8 @@ export class TriggerService {
         select: { 
           userId: true,
           nodes: true,
+          connections: true,
+          settings: true,
         },
       });
 
@@ -642,14 +645,12 @@ export class TriggerService {
       const responseMode = webhookTriggerNode?.parameters?.responseMode || "onReceived";
       const shouldWaitForCompletion = responseMode === "lastNode";
 
-      // DEBUG: Log response mode configuration
-      console.log(`🔍 DEBUG Webhook Response Mode:`, {
-        webhookId,
-        nodeId: trigger.nodeId,
-        responseMode,
-        shouldWaitForCompletion,
-        hasWebhookNode: !!webhookTriggerNode,
-      });
+      // Check workflow settings for database storage
+      const workflowSettings = typeof workflow.settings === "string"
+        ? JSON.parse(workflow.settings)
+        : workflow.settings;
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
 
       // Create trigger execution request with webhook data
       const triggerRequest: TriggerExecutionRequest = {
@@ -670,6 +671,7 @@ export class TriggerService {
           isolatedExecution: true, // Webhooks should run in isolation
           priority: 2, // Medium priority for webhooks
           triggerTimeout: 30000, // 30 second timeout for webhooks
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -687,8 +689,12 @@ export class TriggerService {
       // Log trigger event
       await this.logTriggerEvent(triggerEvent);
 
-      // Execute using TriggerManager for concurrent execution support
-      const result = await this.triggerManager.executeTrigger(triggerRequest);
+      // Execute using TriggerManager
+      // If responseMode is "lastNode", wait for completion to get result directly
+      // Otherwise, use fire-and-forget execution
+      const result = shouldWaitForCompletion
+        ? await this.triggerManager.executeTriggerAndWait(triggerRequest, 30000)
+        : await this.triggerManager.executeTrigger(triggerRequest);
 
       if (!result.success) {
         triggerEvent.status = "failed";
@@ -704,7 +710,7 @@ export class TriggerService {
       // Update trigger event with execution ID
       triggerEvent.executionId = result.executionId;
       triggerEvent.status =
-        result.status === "started" ? "processing" : "pending";
+        (result as any).status === "started" ? "processing" : "pending";
       await this.updateTriggerEvent(triggerEvent);
 
       // Emit real-time update to workflow room
@@ -714,7 +720,7 @@ export class TriggerService {
           triggerId: trigger.id,
           executionId: result.executionId,
           type: "webhook",
-          status: result.status,
+          status: (result as any).status || "started",
           testMode,
           timestamp: new Date().toISOString(),
         });
@@ -763,29 +769,27 @@ export class TriggerService {
         console.log(`ℹ️  Test mode NOT detected (testMode = ${testMode})`);
       }
 
-      // If responseMode is "lastNode", wait for execution to complete and extract response data
+      // If responseMode is "lastNode", extract response data from execution result
       let responseData = null;
       if (shouldWaitForCompletion && result.executionId) {
         try {
-          console.log(`⏳ Waiting for execution to complete (responseMode: lastNode)`, {
+          console.log(`✅ Execution completed (responseMode: lastNode)`, {
             executionId: result.executionId,
             webhookId,
-          });
-          logger.info(`Waiting for execution to complete (responseMode: lastNode)`, {
-            executionId: result.executionId,
+            hasResult: !!(result as any).result,
           });
 
-          // Wait for execution to complete (with timeout)
-          responseData = await this.waitForExecutionCompletion(
-            result.executionId,
-            30000 // 30 second timeout
-          );
-
-          console.log(`✅ Execution completed, response data extracted`, {
-            executionId: result.executionId,
-            hasResponseData: !!responseData,
-            responseDataKeys: responseData ? Object.keys(responseData) : [],
-          });
+          // Extract response data from the execution result
+          if ((result as any).result) {
+            responseData = await this.extractResponseDataFromResult((result as any).result);
+            
+            console.log(`✅ Response data extracted from result`, {
+              executionId: result.executionId,
+              hasResponseData: !!responseData,
+              responseDataKeys: responseData ? Object.keys(responseData) : [],
+            });
+          }
+          
           logger.info(`Execution completed, response data extracted`, {
             executionId: result.executionId,
             hasResponseData: !!responseData,
@@ -827,6 +831,21 @@ export class TriggerService {
     trigger: TriggerDefinition
   ): Promise<void> {
     try {
+      // Fetch workflow to get settings
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { settings: true },
+      });
+
+      // Check workflow settings for database storage
+      const workflowSettings = workflow?.settings
+        ? typeof workflow.settings === "string"
+          ? JSON.parse(workflow.settings)
+          : workflow.settings
+        : {};
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
+
       // Create trigger execution request for scheduled execution
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
@@ -843,6 +862,7 @@ export class TriggerService {
           isolatedExecution: false, // Schedules can share resources
           priority: 3, // Lower priority for scheduled triggers
           triggerTimeout: 300000, // 5 minute timeout for scheduled triggers
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -924,6 +944,13 @@ export class TriggerService {
         throw new AppError("Trigger is not active", 400, "TRIGGER_NOT_ACTIVE");
       }
 
+      // Check workflow settings for database storage
+      const workflowSettings = typeof workflow.settings === "string"
+        ? JSON.parse(workflow.settings)
+        : workflow.settings;
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
+
       // Create trigger execution request for manual execution
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
@@ -936,6 +963,7 @@ export class TriggerService {
           isolatedExecution: true, // Manual triggers should run in isolation
           priority: 1, // Highest priority for manual triggers
           triggerTimeout: 600000, // 10 minute timeout for manual triggers
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -1352,7 +1380,96 @@ export class TriggerService {
   }
 
   /**
-   * Extract HTTP Response node data from execution result
+   * Extract HTTP Response node data from ExecutionResult (without database query)
+   */
+  private async extractResponseDataFromResult(executionResult: ExecutionResult): Promise<any> {
+    try {
+      console.log(`🔍 DEBUG extractResponseDataFromResult - Execution result:`, {
+        success: executionResult.success,
+        hasData: !!executionResult.data,
+        hasExecutionData: !!(executionResult.data as any)?.executionData,
+      });
+      
+      // Get execution data from result
+      const executionData = (executionResult.data as any)?.executionData;
+      if (!executionData || !executionData.nodeResults) {
+        console.log(`⚠️  No execution data in result`);
+        return null;
+      }
+      
+      const nodeResults = executionData.nodeResults;
+      console.log(`🔍 Found ${Object.keys(nodeResults).length} node results`);
+      
+      // Iterate through node results to find HTTP Response node
+      for (const [nodeId, nodeResult] of Object.entries(nodeResults)) {
+        const result = nodeResult as any;
+        
+        if (!result.data || !result.data.main) {
+          continue;
+        }
+        
+        // Check main output
+        const mainOutput = result.data.main;
+        if (Array.isArray(mainOutput) && mainOutput.length > 0) {
+          const firstOutput = mainOutput[0];
+          
+          if (firstOutput && firstOutput.json) {
+            const output = firstOutput.json;
+            
+            console.log(`🔍 Node ${nodeId} output:`, {
+              hasHttpResponseFlag: output._httpResponse === true,
+              outputKeys: Object.keys(output),
+            });
+            
+            // Check if this is an HTTP Response node output
+            if (output._httpResponse === true) {
+              console.log(`✅ Found HTTP Response node output in result`, {
+                nodeId,
+                statusCode: output.statusCode,
+              });
+              
+              return {
+                statusCode: output.statusCode || 200,
+                headers: output.headers || {},
+                body: output.body,
+                cookies: output.cookies || [],
+              };
+            }
+          }
+        }
+      }
+      
+      // If no HTTP Response node found, return the last node's output
+      const nodeIds = Object.keys(nodeResults);
+      if (nodeIds.length > 0) {
+        const lastNodeId = nodeIds[nodeIds.length - 1];
+        const lastResult = nodeResults[lastNodeId] as any;
+        
+        if (lastResult.data && lastResult.data.main && Array.isArray(lastResult.data.main) && lastResult.data.main.length > 0) {
+          const lastOutput = lastResult.data.main[0];
+          
+          if (lastOutput && lastOutput.json) {
+            console.log(`ℹ️  No HTTP Response node found, returning last node output`, { nodeId: lastNodeId });
+            return {
+              statusCode: 200,
+              headers: { "Content-Type": "application/json" },
+              body: lastOutput.json,
+              cookies: [],
+            };
+          }
+        }
+      }
+      
+      console.log(`⚠️  No suitable response data found in execution result`);
+      return null;
+    } catch (error) {
+      logger.error("Failed to extract response data from result:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract HTTP Response node data from execution result (database query)
    */
   private async extractResponseData(execution: any): Promise<any> {
     try {

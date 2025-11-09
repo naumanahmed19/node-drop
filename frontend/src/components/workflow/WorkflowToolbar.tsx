@@ -459,6 +459,10 @@ export function WorkflowToolbar({
           onClose={() => setShowSettingsModal(false)}
           onSave={(updates) => {
             updateWorkflow(updates)
+            // If name was updated, also update the title state
+            if (updates.name && updates.name !== mainWorkflowTitle) {
+              updateWorkflowTitle(updates.name)
+            }
             setDirty(true)
             setShowSettingsModal(false)
           }}

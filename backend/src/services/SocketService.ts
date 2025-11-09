@@ -672,7 +672,8 @@ export class SocketService {
         data.triggerNodeId,
         data.triggerData,
         data.workflowData.nodes,
-        data.workflowData.connections
+        data.workflowData.connections,
+        data.options // Pass options including saveToDatabase
       );
 
       // Return execution ID immediately
