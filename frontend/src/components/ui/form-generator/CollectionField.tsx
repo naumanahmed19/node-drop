@@ -93,11 +93,11 @@ export function CollectionField({
   const selectedFields = fields.filter(field => selectedOptions.has(field.name))
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {/* Header with expand/collapse */}
       {selectedFields.length > 0 && (
         <div
-          className="flex items-center gap-2 cursor-pointer hover:bg-accent/50 p-2 rounded-md transition-colors"
+          className="flex items-center gap-2 cursor-pointer hover:bg-accent/50 p-2 rounded-md transition-colors border border-border"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           {isExpanded ? (
@@ -113,9 +113,9 @@ export function CollectionField({
 
       {/* Selected fields */}
       {isExpanded && selectedFields.length > 0 && (
-        <div className="space-y-4 pl-6 border-l-2 border-border">
+        <div className="space-y-3">
           {selectedFields.map(field => (
-            <div key={field.name} className="space-y-2">
+            <div key={field.name} className="space-y-2 p-3 border border-border rounded-md bg-background">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">
                   {field.displayName}
@@ -162,8 +162,8 @@ export function CollectionField({
           }}
           disabled={disabled}
         >
-          <SelectTrigger className="w-full">
-            <div className="flex items-center gap-2">
+          <SelectTrigger className="w-full bg-primary text-primary-foreground hover:bg-primary/90 [&>svg]:text-primary-foreground">
+            <div className="flex items-center gap-2 text-primary-foreground">
               <Plus className="h-4 w-4" />
               <SelectValue placeholder={placeholder} />
             </div>
