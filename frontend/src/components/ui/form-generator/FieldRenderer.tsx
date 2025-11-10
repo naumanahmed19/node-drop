@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { CalendarDays, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
+import { CollectionField } from './CollectionField'
 import { ConditionRow } from './ConditionRow'
 import { KeyValueRow } from './KeyValueRow'
 import { getCustomComponent } from './customComponentRegistry'
@@ -162,6 +163,28 @@ export function FieldRenderer({
     )
   }
 
+  // Collection type without multipleValues - use CollectionField (single object with optional nested fields)
+  if (field.type === 'collection' && !field.typeOptions?.multipleValues) {
+    const nestedFields = field.options as any[] || []
+    const placeholder = field.placeholder || 'Add Option'
+    
+    return (
+      <CollectionField
+        displayName={field.displayName}
+        fields={nestedFields}
+        value={value || {}}
+        onChange={handleChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        allValues={allValues}
+        allFields={allFields}
+        onFieldChange={onFieldChange}
+        nodeId={nodeId}
+        nodeType={nodeType}
+      />
+    )
+  }
+
   // Collection type with multipleValues - use RepeatingField
   if (field.type === 'collection' && field.typeOptions?.multipleValues) {
     // Get nested fields from componentProps
@@ -191,6 +214,54 @@ export function FieldRenderer({
         fields={nestedFields}
         value={normalizedValue}
         onChange={handleChange}
+        addButtonText={buttonText}
+        titleField={titleField}
+        disabled={disabled}
+        minItems={field.validation?.min}
+        maxItems={field.validation?.max}
+        compact={field.componentProps?.compact}
+      />
+    )
+  }
+
+  // FixedCollection type - similar to collection but with predefined structure
+  if (field.type === 'fixedCollection' && field.typeOptions?.multipleValues) {
+    // Get the first option which contains the field definitions
+    const fixedCollectionOptions = field.options as any[]
+    if (!fixedCollectionOptions || fixedCollectionOptions.length === 0) {
+      return <div className="text-sm text-amber-600">No options defined for fixedCollection</div>
+    }
+    
+    const firstOption = fixedCollectionOptions[0]
+    const nestedFields = firstOption.values || []
+    const buttonText = field.typeOptions?.multipleValueButtonText || `Add ${firstOption.displayName || 'Item'}`
+    const titleField = field.componentProps?.titleField
+    
+    // Normalize value - fixedCollection stores items under the option name
+    const optionName = firstOption.name
+    const items = value?.[optionName] || []
+    
+    const normalizedValue = Array.isArray(items)
+      ? items.map((item: any, index: number) => {
+          if (item && typeof item === 'object' && 'id' in item && 'values' in item) {
+            return item
+          }
+          return {
+            id: item?.id || `item_${Date.now()}_${index}`,
+            values: item || {}
+          }
+        })
+      : []
+    
+    return (
+      <RepeatingField
+        displayName={field.displayName}
+        fields={nestedFields}
+        value={normalizedValue}
+        onChange={(newValue) => {
+          // Wrap the value back in the option name structure
+          handleChange({ [optionName]: newValue })
+        }}
         addButtonText={buttonText}
         titleField={titleField}
         disabled={disabled}

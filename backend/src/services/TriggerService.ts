@@ -77,6 +77,13 @@ export interface WebhookRequest {
   body: any;
   ip: string;
   userAgent?: string;
+  binary?: {
+    data: Buffer;
+    mimeType: string;
+    fileName: string;
+    fileSize: number;
+  };
+  rawBody?: string;
 }
 
 export class TriggerService {
@@ -581,6 +588,7 @@ export class TriggerService {
     executionId?: string; 
     error?: string;
     responseData?: any;
+    webhookOptions?: any;
   }> {
     try {
       // Try to match the webhook path (supports parameters)
@@ -767,6 +775,12 @@ export class TriggerService {
 
       const responseMode = webhookTriggerNode?.parameters?.responseMode || "onReceived";
       const shouldWaitForCompletion = responseMode === "lastNode";
+      
+      // Get webhook options from node parameters
+      const webhookOptions = webhookTriggerNode?.parameters?.options || {};
+      
+      // Validate webhook options
+      await this.validateWebhookOptions(webhookOptions, request);
 
       // Check workflow settings for database storage
       const workflowSettings = typeof workflow.settings === "string"
@@ -775,7 +789,7 @@ export class TriggerService {
       
       const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
 
-      // Create trigger execution request with webhook data (including path parameters)
+      // Create trigger execution request with webhook data (including path parameters, binary, and raw body)
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
         triggerType: "webhook",
@@ -790,6 +804,10 @@ export class TriggerService {
           params: pathParams, // Add extracted path parameters
           ip: request.ip,
           userAgent: request.userAgent,
+          // Add binary data if present
+          ...(request.binary && { binary: request.binary }),
+          // Add raw body if present
+          ...(request.rawBody && { rawBody: request.rawBody }),
         },
         options: {
           isolatedExecution: true, // Webhooks should run in isolation
@@ -940,6 +958,7 @@ export class TriggerService {
         success: true,
         executionId: result.executionId,
         responseData,
+        webhookOptions, // Return webhook options for response handling
       };
     } catch (error) {
       logger.error(`Error handling webhook trigger ${webhookId}:`, error);
@@ -1186,6 +1205,157 @@ export class TriggerService {
           "INVALID_TRIGGER_TYPE"
         );
     }
+  }
+
+  /**
+   * Validate webhook options (CORS, IP whitelist, bot detection)
+   */
+  private async validateWebhookOptions(
+    options: any,
+    request: WebhookRequest
+  ): Promise<void> {
+    // Check if bots should be ignored
+    if (options.ignoreBots) {
+      const userAgent = request.userAgent || "";
+      if (this.isBot(userAgent)) {
+        throw new AppError(
+          "Bot requests are not allowed",
+          403,
+          "BOT_REQUEST_BLOCKED"
+        );
+      }
+    }
+
+    // Check IP whitelist
+    if (options.ipWhitelist) {
+      const whitelist = options.ipWhitelist
+        .split(",")
+        .map((ip: string) => ip.trim())
+        .filter((ip: string) => ip);
+
+      if (whitelist.length > 0) {
+        const clientIp = request.ip;
+        if (!this.isIpWhitelisted(clientIp, whitelist)) {
+          throw new AppError(
+            "IP address not whitelisted",
+            403,
+            "IP_NOT_WHITELISTED"
+          );
+        }
+      }
+    }
+
+    // CORS validation is handled at the route level
+    // We just validate the origin here if needed
+    if (options.allowedOrigins && options.allowedOrigins !== "*") {
+      const origin = request.headers.origin;
+      if (origin && !this.isOriginAllowed(origin, options.allowedOrigins)) {
+        throw new AppError(
+          "Origin not allowed",
+          403,
+          "ORIGIN_NOT_ALLOWED"
+        );
+      }
+    }
+  }
+
+  /**
+   * Check if request is from a bot
+   */
+  private isBot(userAgent: string): boolean {
+    if (!userAgent) return false;
+
+    const botPatterns = [
+      /bot/i,
+      /crawler/i,
+      /spider/i,
+      /scraper/i,
+      /preview/i,
+      /facebookexternalhit/i,
+      /twitterbot/i,
+      /linkedinbot/i,
+      /slackbot/i,
+      /discordbot/i,
+      /whatsapp/i,
+      /telegram/i,
+    ];
+
+    return botPatterns.some((pattern) => pattern.test(userAgent));
+  }
+
+  /**
+   * Check if IP is whitelisted
+   */
+  private isIpWhitelisted(clientIp: string, whitelist: string[]): boolean {
+    if (!whitelist || whitelist.length === 0) return true;
+
+    for (const entry of whitelist) {
+      const trimmedEntry = entry.trim();
+
+      // Check for CIDR notation
+      if (trimmedEntry.includes("/")) {
+        if (this.isIpInCidr(clientIp, trimmedEntry)) {
+          return true;
+        }
+      } else {
+        // Direct IP match
+        if (clientIp === trimmedEntry) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if IP is in CIDR range
+   */
+  private isIpInCidr(ip: string, cidr: string): boolean {
+    try {
+      const [range, bits] = cidr.split("/");
+      const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+
+      const ipNum = this.ipToNumber(ip);
+      const rangeNum = this.ipToNumber(range);
+
+      return (ipNum & mask) === (rangeNum & mask);
+    } catch (error) {
+      logger.error(`Invalid CIDR notation: ${cidr}`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Convert IP to number
+   */
+  private ipToNumber(ip: string): number {
+    return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet), 0);
+  }
+
+  /**
+   * Check if origin is allowed
+   */
+  private isOriginAllowed(origin: string, allowedOrigins: string): boolean {
+    if (allowedOrigins === "*") return true;
+
+    const origins = allowedOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter((o) => o);
+
+    return origins.some((allowed) => {
+      // Exact match
+      if (allowed === origin) return true;
+
+      // Wildcard subdomain match (e.g., *.example.com)
+      if (allowed.startsWith("*.")) {
+        const domain = allowed.substring(2);
+        return origin.endsWith(domain);
+      }
+
+      return false;
+    });
   }
 
   private async validateWebhookAuthentication(

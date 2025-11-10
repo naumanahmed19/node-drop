@@ -287,7 +287,14 @@ const corsOriginFunction = (origin: string | undefined, callback: (err: Error | 
   return callback(new Error('Not allowed by CORS'), false);
 };
 
-app.use(
+// Apply CORS to all routes EXCEPT webhooks (webhooks have their own CORS logic)
+app.use((req, res, next) => {
+  // Skip global CORS for webhook routes - they handle CORS themselves
+  if (req.path.startsWith('/webhook')) {
+    return next();
+  }
+  
+  // Apply global CORS for all other routes
   cors({
     origin: corsOriginFunction,
     credentials: true,
@@ -296,11 +303,25 @@ app.use(
     exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
-  })
-);
+  })(req, res, next);
+});
 app.use(compression());
 app.use(cookieParser()); // Parse cookies
-app.use(express.json({ limit: "10mb" }));
+
+// Webhook body parsing middleware - MUST come before express.json()
+import { webhookBodyParser } from "./middleware/webhookBodyParser";
+
+// Apply webhook body parser for file uploads and special handling
+app.use("/webhook", webhookBodyParser);
+
+// Standard JSON parsing for all routes (including webhooks that aren't multipart)
+app.use(express.json({ limit: "10mb", verify: (req: any, res, buf, encoding) => {
+  // Store raw body for webhooks that might need it
+  if (req.originalUrl && req.originalUrl.startsWith('/webhook')) {
+    req.rawBody = buf;
+    req.rawBodyString = buf.toString('utf-8');
+  }
+}}));
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware

@@ -77,17 +77,68 @@ function getErrorTitle(statusCode: number): string {
 /**
  * Helper function to send webhook response
  * Handles both custom HTTP Response node data and standard responses
+ * Applies webhook options (CORS, custom headers, content-type, etc.)
  */
 function sendWebhookResponse(
   res: Response,
   result: any,
-  testMode: boolean
+  testMode: boolean,
+  webhookOptions: any = {}
 ): void {
   console.log(`🔍 DEBUG sendWebhookResponse called:`, {
     hasResponseData: !!result.responseData,
     hasStatusCode: result.responseData?.statusCode,
     testMode,
+    webhookOptions,
   });
+  
+  // Apply CORS headers from webhook options
+  if (webhookOptions.allowedOrigins) {
+    const origin = res.req.get('Origin');
+    if (webhookOptions.allowedOrigins === '*') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (origin) {
+      // Check if origin is allowed
+      const allowedOrigins = webhookOptions.allowedOrigins
+        .split(',')
+        .map((o: string) => o.trim());
+      
+      const isAllowed = allowedOrigins.some((allowed: string) => {
+        if (allowed === origin) return true;
+        if (allowed.startsWith('*.')) {
+          const domain = allowed.substring(2);
+          return origin.endsWith(domain);
+        }
+        return false;
+      });
+      
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  
+  // Apply custom response headers from webhook options
+  if (webhookOptions.responseHeaders?.entries) {
+    webhookOptions.responseHeaders.entries.forEach((header: any) => {
+      if (header.name && header.value) {
+        res.setHeader(header.name, header.value);
+      }
+    });
+  }
+  
+  // Determine content type
+  let contentType = 'application/json';
+  if (webhookOptions.responseContentType) {
+    if (webhookOptions.responseContentType === 'custom' && webhookOptions.customContentType) {
+      contentType = webhookOptions.customContentType;
+    } else if (webhookOptions.responseContentType !== 'custom') {
+      contentType = webhookOptions.responseContentType;
+    }
+  }
   
   // Check if we have custom HTTP Response data
   if (result.responseData && result.responseData.statusCode) {
@@ -110,18 +161,35 @@ function sendWebhookResponse(
       });
     }
 
-    // Set custom headers
+    // Set custom headers from HTTP Response node
     if (result.responseData.headers) {
       Object.entries(result.responseData.headers).forEach(([key, value]) => {
         res.setHeader(key, value as string);
       });
     }
+    
+    // Override content-type if not set by HTTP Response node
+    if (!result.responseData.headers?.['Content-Type'] && !result.responseData.headers?.['content-type']) {
+      res.setHeader('Content-Type', contentType);
+    }
 
-    // Send custom response
-    res.status(result.responseData.statusCode).send(result.responseData.body);
+    // Extract specific property if propertyName is set
+    let responseBody = result.responseData.body;
+    if (webhookOptions.propertyName && responseBody) {
+      responseBody = extractProperty(responseBody, webhookOptions.propertyName);
+    }
+    
+    // Handle noResponseBody option
+    if (webhookOptions.noResponseBody) {
+      res.status(result.responseData.statusCode).end();
+    } else {
+      res.status(result.responseData.statusCode).send(responseBody);
+    }
   } else {
     // Standard response (when no HTTP Response node or responseMode is "onReceived")
-    res.status(200).json({
+    res.setHeader('Content-Type', contentType);
+    
+    const responseData = {
       success: true,
       message: testMode
         ? "Webhook received - execution will be visible in editor"
@@ -129,8 +197,135 @@ function sendWebhookResponse(
       executionId: result.executionId,
       testMode,
       timestamp: new Date().toISOString(),
-    });
+    };
+    
+    // Extract specific property if propertyName is set
+    let finalResponse: any = responseData;
+    if (webhookOptions.propertyName) {
+      finalResponse = extractProperty(responseData, webhookOptions.propertyName);
+    }
+    
+    // Handle noResponseBody option
+    if (webhookOptions.noResponseBody) {
+      res.status(200).end();
+    } else {
+      // Format response based on content type
+      if (contentType.includes('json')) {
+        res.status(200).json(finalResponse);
+      } else {
+        res.status(200).send(String(finalResponse));
+      }
+    }
   }
+}
+
+/**
+ * Extract property from object using dot notation or array notation
+ * Examples: "data.result", "items[0]", "user.profile.email"
+ */
+function extractProperty(obj: any, path: string): any {
+  if (!path || !obj) return obj;
+  
+  try {
+    const keys = path.split('.');
+    let result = obj;
+    
+    for (const key of keys) {
+      // Handle array notation: items[0]
+      const arrayMatch = key.match(/^(\w+)\[(\d+)\]$/);
+      if (arrayMatch) {
+        const [, arrayKey, index] = arrayMatch;
+        result = result[arrayKey]?.[parseInt(index)];
+      } else {
+        result = result[key];
+      }
+      
+      if (result === undefined) return obj; // Return original if path not found
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error extracting property:', error);
+    return obj; // Return original object on error
+  }
+}
+
+/**
+ * Helper function to build webhook request object with binary and raw body support
+ */
+function buildWebhookRequest(req: Request): any {
+  const webhookRequest: any = {
+    method: req.method,
+    path: req.originalUrl || req.url || req.path,
+    headers: req.headers as Record<string, string>,
+    query: req.query as Record<string, any>,
+    body: req.body,
+    ip: req.ip || req.connection.remoteAddress || "unknown",
+    userAgent: req.get("User-Agent"),
+  };
+
+  // Add binary data if present (convert array to object with field names as keys)
+  if ((req as any).binaryData) {
+    const binaryFiles = (req as any).binaryData;
+    if (Array.isArray(binaryFiles)) {
+      webhookRequest.binary = {};
+      binaryFiles.forEach((file: any) => {
+        // Convert buffer to base64 to avoid memory issues with large files
+        const base64Data = Buffer.isBuffer(file.data) 
+          ? file.data.toString('base64')
+          : file.data;
+        
+        webhookRequest.binary[file.fieldName] = {
+          data: base64Data,
+          mimeType: file.mimeType,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+        };
+      });
+    } else {
+      // Legacy single file support - also convert to base64
+      const base64Data = Buffer.isBuffer(binaryFiles.data)
+        ? binaryFiles.data.toString('base64')
+        : binaryFiles.data;
+      
+      webhookRequest.binary = {
+        ...binaryFiles,
+        data: base64Data,
+      };
+    }
+  }
+
+  // Add raw body if present
+  if ((req as any).rawBodyString) {
+    webhookRequest.rawBody = (req as any).rawBodyString;
+  }
+
+  return webhookRequest;
+}
+
+/**
+ * Helper function to determine HTTP status code from error message
+ */
+function getStatusCodeFromError(errorMessage: string | undefined): number {
+  if (!errorMessage) return 400;
+  
+  // Check for specific error types in order of priority
+  if (errorMessage.includes("not found")) {
+    return 404;
+  }
+  if (errorMessage.includes("Origin not allowed") || 
+      errorMessage.includes("IP address not whitelisted") || 
+      errorMessage.includes("Bot requests are not allowed")) {
+    return 403;
+  }
+  if (errorMessage.includes("Method") && errorMessage.includes("not supported")) {
+    return 405;
+  }
+  if (errorMessage.includes("authentication") || errorMessage.includes("Unauthorized")) {
+    return 401;
+  }
+  
+  return 400; // Default bad request
 }
 
 // Use lazy initialization to get services when needed
@@ -231,21 +426,14 @@ router.all(
     console.log(`📝 Body:`, req.body);
     console.log(`📝 Query:`, req.query);
     console.log(`📝 Path: ${req.path}, URL: ${req.url}, OriginalURL: ${req.originalUrl}`);
+    console.log(`📝 Binary Data:`, (req as any).binaryData ? 'Present' : 'Not present');
 
     // Check for test mode - if ?test=true or ?visualize=true, notify frontend before executing
     const testMode = req.query.test === 'true' || req.query.visualize === 'true';
 
     console.log(`🔍 Test mode detection: req.query.test = "${req.query.test}", testMode = ${testMode}`);
 
-    const webhookRequest = {
-      method: req.method,
-      path: req.originalUrl || req.url || req.path,
-      headers: req.headers as Record<string, string>,
-      query: req.query as Record<string, any>,
-      body: req.body,
-      ip: req.ip || req.connection.remoteAddress || "unknown",
-      userAgent: req.get("User-Agent"),
-    };
+    const webhookRequest = buildWebhookRequest(req);
 
     try {
       const triggerService = await ensureTriggerServiceInitialized();
@@ -259,16 +447,10 @@ router.all(
         console.log(
           `✅ Webhook processed successfully - Execution ID: ${result.executionId}`
         );
-        sendWebhookResponse(res, result, testMode);
+        sendWebhookResponse(res, result, testMode, result.webhookOptions);
       } else {
         console.error(`❌ Webhook processing failed: ${result.error}`);
-        const statusCode = result.error?.includes("not found")
-          ? 404
-          : result.error?.includes("not allowed") || result.error?.includes("Method")
-            ? 405
-            : result.error?.includes("authentication")
-              ? 401
-              : 400;
+        const statusCode = getStatusCodeFromError(result.error);
 
         sendErrorResponse(
           res,
@@ -320,15 +502,7 @@ router.all(
 
     console.log(`🔍 Test mode detection: req.query.test = "${req.query.test}", testMode = ${testMode}`);
 
-    const webhookRequest = {
-      method: req.method,
-      path: req.originalUrl || req.url || req.path,
-      headers: req.headers as Record<string, string>,
-      query: req.query as Record<string, any>,
-      body: req.body,
-      ip: req.ip || req.connection.remoteAddress || "unknown",
-      userAgent: req.get("User-Agent"),
-    };
+    const webhookRequest = buildWebhookRequest(req);
 
     try {
       const triggerService = await ensureTriggerServiceInitialized();
@@ -342,16 +516,10 @@ router.all(
         console.log(
           `✅ Webhook processed successfully - Execution ID: ${result.executionId}`
         );
-        sendWebhookResponse(res, result, testMode);
+        sendWebhookResponse(res, result, testMode, result.webhookOptions);
       } else {
         console.error(`❌ Webhook processing failed: ${result.error}`);
-        const statusCode = result.error?.includes("not found")
-          ? 404
-          : result.error?.includes("not allowed") || result.error?.includes("Method")
-            ? 405
-            : result.error?.includes("authentication")
-              ? 401
-              : 400;
+        const statusCode = getStatusCodeFromError(result.error);
 
         sendErrorResponse(
           res,

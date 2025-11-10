@@ -6,6 +6,12 @@ export interface FormFieldOption {
   description?: string;
 }
 
+export interface FixedCollectionOption {
+  name: string;
+  displayName: string;
+  values: FormFieldConfig[];
+}
+
 export interface FormFieldConfig {
   name: string;
   displayName: string;
@@ -19,6 +25,7 @@ export interface FormFieldConfig {
   | "json"
   | "dateTime"
   | "collection"
+  | "fixedCollection"
   | "textarea"
   | "password"
   | "email"
@@ -48,8 +55,11 @@ export interface FormFieldConfig {
   component?: string; // Component name for custom rendering
   componentProps?: {
     fields?: FormFieldConfig[]; // Nested fields for collection type
+    titleField?: string; // Field name to use as title in repeating items
+    compact?: boolean; // Compact mode for repeating fields
     [key: string]: any;
   };
+  options?: FormFieldOption[] | FixedCollectionOption[]; // Can be regular options or fixedCollection options
   validation?: {
     min?: number;
     max?: number;

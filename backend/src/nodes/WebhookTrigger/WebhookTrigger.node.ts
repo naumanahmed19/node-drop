@@ -18,6 +18,10 @@ export const WebhookTriggerNode: NodeDefinition = {
     path: "",
     responseMode: "onReceived",
     responseData: "firstEntryJson",
+    allowedOrigins: "*",
+    ignoreBots: false,
+    noResponseBody: false,
+    rawBody: false,
   },
   inputs: [],
   outputs: ["main"],
@@ -96,53 +100,158 @@ export const WebhookTriggerNode: NodeDefinition = {
         { name: "No Data", value: "noData" },
       ],
     },
+    
+    // === OPTIONS SECTION ===
     {
-      displayName: "Include Headers",
-      name: "includeHeaders",
-      type: "boolean",
-      default: true,
-      description: "Include HTTP headers in the output",
-    },
-    {
-      displayName: "Specific Headers",
-      name: "headersToInclude",
-      type: "string",
-      default: "",
-      placeholder: "authorization, content-type, x-api-key",
-      description: "Comma-separated list of specific headers to include (leave empty for all)",
-      displayOptions: {
-        show: {
-          includeHeaders: [true],
+      displayName: "Options",
+      name: "options",
+      type: "collection",
+      placeholder: "Add Option",
+      default: {},
+      description: "Additional webhook configuration options",
+      options: [
+        {
+          name: "allowedOrigins",
+          displayName: "Allowed Origins (CORS)",
+          type: "string",
+          default: "*",
+          placeholder: "https://example.com, https://app.example.com",
+          description: "Comma-separated list of allowed origins for CORS. Use * to allow all origins.",
         },
-      },
-    },
-    {
-      displayName: "Include Query Parameters",
-      name: "includeQuery",
-      type: "boolean",
-      default: true,
-      description: "Include URL query parameters in the output",
-    },
-    {
-      displayName: "Include Body",
-      name: "includeBody",
-      type: "boolean",
-      default: true,
-      description: "Include request body in the output",
-    },
-    {
-      displayName: "Include Path",
-      name: "includePath",
-      type: "boolean",
-      default: true,
-      description: "Include request path in the output",
-    },
-    {
-      displayName: "Include Client Info",
-      name: "includeClientInfo",
-      type: "boolean",
-      default: false,
-      description: "Include client IP address and user agent",
+        {
+          name: "binaryProperty",
+          displayName: "Binary Property",
+          type: "string",
+          default: "data",
+          placeholder: "data",
+          description: "Name of the binary property to write received file data to. Enables receiving binary data like images or audio files.",
+        },
+        {
+          name: "ignoreBots",
+          displayName: "Ignore Bots",
+          type: "boolean",
+          default: false,
+          description: "Ignore requests from bots like link previewers and web crawlers",
+        },
+        {
+          name: "ipWhitelist",
+          displayName: "IP(s) Whitelist",
+          type: "string",
+          default: "",
+          placeholder: "192.168.1.1, 10.0.0.0/8",
+          description: "Comma-separated list of allowed IP addresses or CIDR ranges. Leave blank to allow all IPs.",
+        },
+        {
+          name: "noResponseBody",
+          displayName: "No Response Body",
+          type: "boolean",
+          default: false,
+          description: "Prevent sending a body with the response (only status code and headers)",
+        },
+        {
+          name: "rawBody",
+          displayName: "Raw Body",
+          type: "boolean",
+          default: false,
+          description: "Receive data in raw format (useful for webhooks that send non-JSON data like XML)",
+        },
+        {
+          name: "responseContentType",
+          displayName: "Response Content-Type",
+          type: "options",
+          default: "application/json",
+          description: "Content-Type header for the webhook response",
+          options: [
+            { name: "JSON", value: "application/json" },
+            { name: "Text", value: "text/plain" },
+            { name: "HTML", value: "text/html" },
+            { name: "XML", value: "application/xml" },
+            { name: "Custom", value: "custom" },
+          ],
+        },
+        {
+          name: "customContentType",
+          displayName: "Custom Content-Type",
+          type: "string",
+          default: "",
+          placeholder: "application/x-custom",
+          description: "Custom Content-Type value",
+          displayOptions: {
+            show: {
+              responseContentType: ["custom"],
+            },
+          },
+        },
+        {
+          name: "responseHeaders",
+          displayName: "Response Headers",
+          type: "fixedCollection",
+          typeOptions: {
+            multipleValues: true,
+          },
+          default: {},
+          description: "Additional headers to send with the webhook response",
+          options: [
+            {
+              name: "entries",
+              displayName: "Header",
+              values: [
+                {
+                  name: "name",
+                  displayName: "Name",
+                  type: "string",
+                  default: "",
+                  placeholder: "X-Custom-Header",
+                  description: "Header name",
+                },
+                {
+                  name: "value",
+                  displayName: "Value",
+                  type: "string",
+                  default: "",
+                  placeholder: "header-value",
+                  description: "Header value",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          name: "propertyName",
+          displayName: "Property Name",
+          type: "string",
+          default: "",
+          placeholder: "data.result",
+          description: "Return only a specific JSON property path instead of all data (e.g., 'data.result' or 'items[0]')",
+        },
+        {
+          name: "includeData",
+          displayName: "Include Data",
+          type: "multiOptions",
+          default: ["headers", "query", "body", "path"],
+          description: "Select which data to include in the webhook output",
+          options: [
+            { name: "Headers", value: "headers" },
+            { name: "Query Parameters", value: "query" },
+            { name: "Body", value: "body" },
+            { name: "Path", value: "path" },
+            { name: "Client Info (IP & User Agent)", value: "clientInfo" },
+          ],
+        },
+        {
+          name: "headersToInclude",
+          displayName: "Specific Headers",
+          type: "string",
+          default: "",
+          placeholder: "authorization, content-type, x-api-key",
+          description: "Comma-separated list of specific headers to include (leave empty for all)",
+          displayOptions: {
+            show: {
+              includeData: ["headers"],
+            },
+          },
+        },
+      ] as any,
     },
   ],
   execute: async function (
@@ -158,13 +267,17 @@ export const WebhookTriggerNode: NodeDefinition = {
     // Extract the actual webhook data - it might be nested in json property
     const actualData = webhookData.json || webhookData;
 
-    // Get options (with defaults)
-    const includeHeaders = (await this.getNodeParameter("includeHeaders") ?? true) as boolean;
-    const includeQuery = (await this.getNodeParameter("includeQuery") ?? true) as boolean;
-    const includeBody = (await this.getNodeParameter("includeBody") ?? true) as boolean;
-    const includePath = (await this.getNodeParameter("includePath") ?? true) as boolean;
-    const includeClientInfo = (await this.getNodeParameter("includeClientInfo") ?? false) as boolean;
-    const headersToInclude = (await this.getNodeParameter("headersToInclude") ?? "") as string;
+    // Get options (all from options collection now)
+    const options = (await this.getNodeParameter("options") ?? {}) as any;
+    const includeData = options.includeData ?? ["headers", "query", "body", "path"];
+    const includeHeaders = includeData.includes("headers");
+    const includeQuery = includeData.includes("query");
+    const includeBody = includeData.includes("body");
+    const includePath = includeData.includes("path");
+    const includeClientInfo = includeData.includes("clientInfo");
+    const headersToInclude = options.headersToInclude ?? "";
+    const binaryProperty = options.binaryProperty || "data";
+    const rawBody = options.rawBody || false;
 
     // Build the output with proper structure
     const output: any = {
@@ -207,9 +320,13 @@ export const WebhookTriggerNode: NodeDefinition = {
       output.query = actualData.query || {};
     }
 
-    // Add body
+    // Add body (raw or parsed)
     if (includeBody) {
-      output.body = actualData.body || {};
+      if (rawBody && actualData.rawBody) {
+        output.body = actualData.rawBody;
+      } else {
+        output.body = actualData.body || {};
+      }
     }
 
     // Add path
@@ -227,14 +344,28 @@ export const WebhookTriggerNode: NodeDefinition = {
       }
     }
 
-    return [
-      {
-        main: [
-          {
-            json: output,
-          },
-        ],
-      },
-    ];
+    // Handle binary data if present
+    const outputData: NodeOutputData = {
+      main: [
+        {
+          json: output,
+        },
+      ],
+    };
+
+    // If binary data is present, add it to the output
+    // Binary data comes from webhookData.binary, not actualData.binary
+    const binaryData = webhookData.binary || actualData.binary;
+    
+    if (binaryData && binaryProperty && outputData.main?.[0]) {
+      // Binary data from webhook route is structured as:
+      // { fieldName1: {data, mimeType, fileName, fileSize}, fieldName2: {...}, ... }
+      // Wrap all files under the binaryProperty name
+      outputData.main[0].binary = {
+        [binaryProperty]: binaryData
+      };
+    }
+
+    return [outputData];
   },
 };
