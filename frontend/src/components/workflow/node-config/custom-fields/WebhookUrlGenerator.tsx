@@ -2,15 +2,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { executionWebSocket } from "@/services/ExecutionWebSocket";
-import { Check, Copy, Globe, Loader2, Play, RefreshCw, Square, TestTube } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Copy, Globe, RefreshCw, TestTube } from "lucide-react";
+import { useState } from "react";
 
 interface WebhookUrlGeneratorProps {
-  value?: string; // webhookId, formId, or chatId
+  value?: string; // webhookId, formId, or chatId (UUID)
   onChange?: (value: string) => void;
   disabled?: boolean;
-  path?: string;
+  webhookPath?: string; // Custom webhook path from webhookPath field
   mode?: "test" | "production";
   urlType?: "webhook" | "form" | "chat"; // NEW: Type of URL to generate
 }
@@ -19,7 +18,7 @@ export function WebhookUrlGenerator({
   value,
   onChange,
   disabled = false,
-  path = "",
+  webhookPath = "",
   mode = "test",
   urlType = "webhook",
 }: WebhookUrlGeneratorProps) {
@@ -27,25 +26,6 @@ export function WebhookUrlGenerator({
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedTest, setCopiedTest] = useState(false);
   const [copiedProd, setCopiedProd] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  
-  // Check if ExecutionWebSocket is already connected
-  const [isListening, setIsListening] = useState(() => executionWebSocket.isConnected());
-  
-  // Update listening state when component mounts or dialog reopens
-  useEffect(() => {
-    const checkConnection = () => {
-      setIsListening(executionWebSocket.isConnected());
-    };
-    
-    // Check immediately
-    checkConnection();
-    
-    // Check periodically in case connection state changes
-    const interval = setInterval(checkConnection, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
 
   // Get base URLs from environment or use defaults
   const getBaseUrl = (environment: "test" | "production") => {
@@ -66,16 +46,16 @@ export function WebhookUrlGenerator({
         return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
       }
     } else {
-      // For webhooks, use webhook URL
-      if (environment === "test") {
-        return import.meta.env.VITE_WEBHOOK_TEST_URL || 
-               import.meta.env.VITE_API_URL?.replace('/api', '/webhook') || 
-               "http://localhost:4000/webhook";
-      } else {
-        return import.meta.env.VITE_WEBHOOK_PROD_URL || 
-               import.meta.env.VITE_WEBHOOK_BASE_URL || 
-               "https://your-domain.com/webhook";
+      // For webhooks, use same base URL for both test and production
+      if (import.meta.env.VITE_WEBHOOK_URL) {
+        return import.meta.env.VITE_WEBHOOK_URL;
       }
+      
+      // Build from API URL
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+      // Remove /api if present, then add /webhook
+      const baseUrl = apiUrl.replace(/\/api$/, '');
+      return `${baseUrl}/webhook`;
     }
   };
 
@@ -94,12 +74,7 @@ export function WebhookUrlGenerator({
     }
   }; */
 
-  // Generate webhook ID if not exists
-  useEffect(() => {
-    if (!webhookId) {
-      generateWebhookId();
-    }
-  }, []);
+  // Don't auto-generate UUID - let users decide if they want one
 
   const generateWebhookId = async () => {
     setIsGenerating(true);
@@ -136,9 +111,23 @@ export function WebhookUrlGenerator({
       // Chat URLs: http://localhost:4000/api/public/chats/{chatId}
       return `${baseUrl}/public/chats/${webhookId}`;
     } else {
-      // Webhook URLs: http://localhost:4000/webhook/{webhookId}[/path]
-      const cleanPath = path?.trim().replace(/^\/+/, "") || "";
-      return `${baseUrl}/${webhookId}${cleanPath ? "/" + cleanPath : ""}`;
+      // Webhook URLs: [uuid/]path (uuid is optional)
+      const cleanPath = webhookPath?.trim().replace(/^\/+/, "") || "";
+      const cleanId = webhookId?.trim() || "";
+      
+      if (cleanId && cleanPath) {
+        // Both ID and path: uuid/path
+        return `${baseUrl}/${cleanId}/${cleanPath}`;
+      } else if (cleanId) {
+        // Only ID: uuid
+        return `${baseUrl}/${cleanId}`;
+      } else if (cleanPath) {
+        // Only path: path
+        return `${baseUrl}/${cleanPath}`;
+      } else {
+        // Neither: just base URL
+        return baseUrl;
+      }
     }
   };
 
@@ -147,43 +136,6 @@ export function WebhookUrlGenerator({
   
   // Add ?test=true to test URL for visualization
   const testWebhookUrlWithVisualization = `${testWebhookUrl}?test=true`;
-  
-  // Start listening for webhook executions
-  const startListening = async () => {
-    setIsConnecting(true);
-    try {
-      console.log('🔌 Connecting ExecutionWebSocket for webhook listening...');
-      
-      // Connect the ExecutionWebSocket (singleton instance)
-      await executionWebSocket.connect();
-      
-      setIsListening(true);
-      console.log('✅ Started listening for webhook executions');
-      console.log('💡 Now trigger your webhook with ?test=true to see execution in real-time');
-      
-    } catch (error) {
-      console.error('❌ Failed to start listening:', error);
-      setIsListening(false);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-  
-  // Stop listening for webhook executions
-  const stopListening = () => {
-    try {
-      console.log('🔌 Disconnecting ExecutionWebSocket...');
-      
-      // Disconnect the ExecutionWebSocket
-      executionWebSocket.disconnect();
-      
-      setIsListening(false);
-      console.log('✅ Stopped listening for webhook executions');
-      
-    } catch (error) {
-      console.error('❌ Failed to stop listening:', error);
-    }
-  };
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: "test" | "production") => {
@@ -253,7 +205,7 @@ export function WebhookUrlGenerator({
               variant="outline"
               size="sm"
               onClick={() => copyToClipboard(testWebhookUrlWithVisualization, "test")}
-              disabled={disabled || !webhookId}
+              disabled={disabled || (!webhookId && !webhookPath)}
               className="shrink-0 h-9 w-9 p-0"
               title="Copy test URL with visualization"
             >
@@ -264,41 +216,6 @@ export function WebhookUrlGenerator({
               )}
             </Button>
           </div>
-          
-          {/* Start/Stop Listening Button for Webhooks */}
-          {urlType === "webhook" && (
-            <Button
-              type="button"
-              variant={isListening ? "default" : "outline"}
-              size="sm"
-              onClick={isListening ? stopListening : startListening}
-              disabled={disabled || !webhookId || isConnecting}
-              className="w-full h-8 text-xs"
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                  Connecting...
-                </>
-              ) : isListening ? (
-                <>
-                  <Square className="w-3 h-3 mr-1.5" />
-                  Stop Listening
-                </>
-              ) : (
-                <>
-                  <Play className="w-3 h-3 mr-1.5" />
-                  Start Listening
-                </>
-              )}
-            </Button>
-          )}
-          
-          {isListening && urlType === "webhook" && (
-            <p className="text-xs text-muted-foreground">
-              💡 Trigger the webhook above to see execution in real-time
-            </p>
-          )}
         </TabsContent>
 
         {/* Production URL Content */}
@@ -315,7 +232,7 @@ export function WebhookUrlGenerator({
               variant="outline"
               size="sm"
               onClick={() => copyToClipboard(productionWebhookUrl, "production")}
-              disabled={disabled || !webhookId}
+              disabled={disabled || (!webhookId && !webhookPath)}
               className="shrink-0 h-9 w-9 p-0"
             >
               {copiedProd ? (
@@ -327,17 +244,24 @@ export function WebhookUrlGenerator({
           </div>
         </TabsContent>
 
-        {/* Webhook/Form ID Display */}
+        {/* Webhook/Form/Chat ID Display */}
         <div className="flex gap-1.5 items-end">
           <div className="flex-1">
             <Label className="text-xs text-muted-foreground mb-1">
-              {urlType === "form" ? "Form ID" : urlType === "chat" ? "Chat ID" : "Webhook ID"}
+              {urlType === "form" ? "Form ID" : urlType === "chat" ? "Chat ID" : "Webhook ID (optional)"}
             </Label>
             <Input
               value={webhookId}
-              readOnly
+              onChange={(e) => {
+                const newId = e.target.value;
+                setWebhookId(newId);
+                if (onChange) {
+                  onChange(newId);
+                }
+              }}
               disabled={disabled}
-              className="font-mono text-xs h-8 text-muted-foreground"
+              placeholder="Auto-generated UUID (can be removed)"
+              className="font-mono text-xs h-8"
             />
           </div>
           <Button
@@ -347,10 +271,25 @@ export function WebhookUrlGenerator({
             onClick={generateWebhookId}
             disabled={disabled || isGenerating}
             className="shrink-0 h-8 w-8 p-0"
+            title="Generate random UUID"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
           </Button>
         </div>
+        
+        {/* Show info when custom path is used */}
+        {urlType === "webhook" && webhookPath?.trim() && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Path: <span className="font-mono font-medium">{webhookPath.trim().replace(/^\/+/, "")}</span>
+            </p>
+            {webhookPath.includes(':') && (
+              <p className="text-xs text-muted-foreground">
+                💡 Parameters will be available in the workflow output (e.g., <span className="font-mono">params.userId</span>)
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </Tabs>
   );

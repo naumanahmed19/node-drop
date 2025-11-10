@@ -39,6 +39,7 @@ import {
   Zap
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { WebhookTriggerInput } from './WebhookTriggerInput'
 
 /**
  * Main props for the InputsColumn component
@@ -554,43 +555,21 @@ export function InputsColumn({ node }: InputsColumnProps) {
   if (isTriggerNode) {
     return (
       <div className="flex w-full h-full border-r flex-col">
-        <div className="p-4 border-b h-[72px] flex items-center">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center space-x-2">
-              <ArrowLeft className="w-4 h-4 text-gray-500" />
-              <h3 className="font-medium">Inputs</h3>
-              <Badge variant="outline">N/A</Badge>
+        {/* No header for trigger nodes - they don't have inputs */}
+        <div className="h-full overflow-y-auto flex items-center justify-center">
+          {/* Show webhook-specific UI for webhook triggers */}
+          {node.type === 'webhook-trigger' ? (
+            <WebhookTriggerInput node={node} />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center space-y-4">
+              <div>
+                <Zap className="w-8 h-8 text-yellow-400 mb-2 mx-auto" />
+                <p className="text-sm font-medium text-gray-700">Trigger Node</p>
+                <p className="text-xs text-gray-500 mt-1">Triggers don't accept inputs</p>
+                <p className="text-xs text-gray-400 mt-2">They are the starting point of your workflow</p>
+              </div>
             </div>
-            <HoverCard>
-              <HoverCardTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                  <Info className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-                </Button>
-              </HoverCardTrigger>
-              <HoverCardContent className="w-80" side="bottom" align="end">
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">Trigger Nodes</h4>
-                  <p className="text-sm text-gray-600">
-                    Trigger nodes are the starting point of workflows and do not accept input connections.
-                  </p>
-                  <div className="text-xs text-gray-500">
-                    • Triggers initiate workflow execution<br />
-                    • They generate data, not consume it<br />
-                    • Connect other nodes to the trigger's output
-                  </div>
-                </div>
-              </HoverCardContent>
-            </HoverCard>
-          </div>
-        </div>
-
-        <div className="h-[calc(100dvh-222px)] overflow-y-auto p-4">
-          <div className="flex flex-col items-center justify-center h-32 text-center">
-            <Zap className="w-8 h-8 text-yellow-400 mb-2" />
-            <p className="text-sm font-medium text-gray-700">Trigger Node</p>
-            <p className="text-xs text-gray-500 mt-1">Triggers don't accept inputs</p>
-            <p className="text-xs text-gray-400 mt-2">They are the starting point of your workflow</p>
-          </div>
+          )}
         </div>
       </div>
     )

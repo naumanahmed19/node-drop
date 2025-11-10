@@ -1469,11 +1469,11 @@ export class ExecutionService {
 
           // Skip database save for individual node executions
           // Individual node executions are for testing/debugging and shouldn't clutter execution history
-          logger.info(`Skipping database save for individual node execution`, {
-            executionId,
-            nodeId,
-            workflowId,
-          });
+          // logger.info(`Skipping database save for individual node execution`, {
+          //   executionId,
+          //   nodeId,
+          //   workflowId,
+          // });
 
 
 

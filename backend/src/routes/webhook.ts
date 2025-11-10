@@ -16,6 +16,65 @@ const router = Router();
 const prisma = new PrismaClient();
 
 /**
+ * Helper function to send standardized error response
+ * Follows RFC 7231 HTTP standards
+ */
+function sendErrorResponse(
+  res: Response,
+  statusCode: number,
+  error: string,
+  details?: {
+    allowedMethods?: string[];
+    webhookId?: string;
+    [key: string]: any;
+  }
+): void {
+  // Add Allow header for 405 Method Not Allowed responses
+  if (statusCode === 405 && details?.allowedMethods) {
+    res.setHeader('Allow', details.allowedMethods.join(', '));
+  }
+
+  // Standard error response format
+  const errorResponse: any = {
+    success: false,
+    status: statusCode,
+    error: getErrorTitle(statusCode),
+    message: error,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Add optional details
+  if (details?.allowedMethods) {
+    errorResponse.allowed_methods = details.allowedMethods;
+  }
+  if (details?.webhookId) {
+    errorResponse.webhook_id = details.webhookId;
+  }
+
+  res.status(statusCode).json(errorResponse);
+}
+
+/**
+ * Get standard error title for HTTP status code
+ */
+function getErrorTitle(statusCode: number): string {
+  const titles: Record<number, string> = {
+    400: "Bad Request",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not Found",
+    405: "Method Not Allowed",
+    409: "Conflict",
+    422: "Unprocessable Entity",
+    429: "Too Many Requests",
+    500: "Internal Server Error",
+    502: "Bad Gateway",
+    503: "Service Unavailable",
+  };
+  return titles[statusCode] || "Error";
+}
+
+/**
  * Helper function to send webhook response
  * Handles both custom HTTP Response node data and standard responses
  */
@@ -162,11 +221,16 @@ router.all(
   "/:webhookId",
   asyncHandler(async (req: Request, res: Response) => {
     const { webhookId } = req.params;
+    
+    // Extract the full path after /webhook/ for pattern matching
+    // e.g., /webhook/users/123 -> users/123
+    const fullPath = req.path.replace(/^\//, ''); // Remove leading slash
 
-    console.log(`📨 Webhook received: ${req.method} /webhook/${webhookId}`);
+    console.log(`📨 Webhook received: ${req.method} /webhook/${fullPath}`);
     console.log(`📝 Headers:`, req.headers);
     console.log(`📝 Body:`, req.body);
     console.log(`📝 Query:`, req.query);
+    console.log(`📝 Path: ${req.path}, URL: ${req.url}, OriginalURL: ${req.originalUrl}`);
 
     // Check for test mode - if ?test=true or ?visualize=true, notify frontend before executing
     const testMode = req.query.test === 'true' || req.query.visualize === 'true';
@@ -175,7 +239,7 @@ router.all(
 
     const webhookRequest = {
       method: req.method,
-      path: req.path,
+      path: req.originalUrl || req.url || req.path,
       headers: req.headers as Record<string, string>,
       query: req.query as Record<string, any>,
       body: req.body,
@@ -186,7 +250,7 @@ router.all(
     try {
       const triggerService = await ensureTriggerServiceInitialized();
       const result = await triggerService.handleWebhookTrigger(
-        webhookId,
+        fullPath, // Pass full path for pattern matching
         webhookRequest,
         testMode // Pass test mode flag
       );
@@ -200,24 +264,34 @@ router.all(
         console.error(`❌ Webhook processing failed: ${result.error}`);
         const statusCode = result.error?.includes("not found")
           ? 404
-          : result.error?.includes("authentication")
-            ? 401
-            : 400;
+          : result.error?.includes("not allowed") || result.error?.includes("Method")
+            ? 405
+            : result.error?.includes("authentication")
+              ? 401
+              : 400;
 
-        res.status(statusCode).json({
-          success: false,
-          error: result.error || "Failed to process webhook",
-          timestamp: new Date().toISOString(),
-        });
+        sendErrorResponse(
+          res,
+          statusCode,
+          result.error || "Failed to process webhook",
+          { webhookId }
+        );
       }
     } catch (error: any) {
       console.error(`❌ Webhook error:`, error);
-      res.status(500).json({
-        success: false,
-        error: "Internal server error processing webhook",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-      });
+      
+      // Handle AppError with specific status codes
+      const statusCode = error.statusCode || 500;
+      
+      sendErrorResponse(
+        res,
+        statusCode,
+        error.message || "An unexpected error occurred while processing the webhook",
+        {
+          webhookId,
+          allowedMethods: error.allowedMethods,
+        }
+      );
     }
   })
 );
@@ -228,13 +302,18 @@ router.all(
   asyncHandler(async (req: Request, res: Response) => {
     const { webhookId } = req.params;
     const pathSuffix = req.params[0] || "";
+    
+    // Extract the full path after /webhook/ for pattern matching
+    // e.g., /webhook/users/123/posts -> users/123/posts
+    const fullPath = req.path.replace(/^\//, ''); // Remove leading slash
 
     console.log(
-      `📨 Webhook received: ${req.method} /webhook/${webhookId}/${pathSuffix}`
+      `📨 Webhook received: ${req.method} /webhook/${fullPath}`
     );
     console.log(`📝 Headers:`, req.headers);
     console.log(`📝 Body:`, req.body);
     console.log(`📝 Query:`, req.query);
+    console.log(`📝 Path: ${req.path}, URL: ${req.url}, OriginalURL: ${req.originalUrl}`);
 
     // Check for test mode - if ?test=true or ?visualize=true, notify frontend before executing
     const testMode = req.query.test === 'true' || req.query.visualize === 'true';
@@ -243,7 +322,7 @@ router.all(
 
     const webhookRequest = {
       method: req.method,
-      path: req.path,
+      path: req.originalUrl || req.url || req.path,
       headers: req.headers as Record<string, string>,
       query: req.query as Record<string, any>,
       body: req.body,
@@ -254,7 +333,7 @@ router.all(
     try {
       const triggerService = await ensureTriggerServiceInitialized();
       const result = await triggerService.handleWebhookTrigger(
-        webhookId,
+        fullPath, // Pass full path for pattern matching
         webhookRequest,
         testMode // Pass test mode flag
       );
@@ -268,24 +347,34 @@ router.all(
         console.error(`❌ Webhook processing failed: ${result.error}`);
         const statusCode = result.error?.includes("not found")
           ? 404
-          : result.error?.includes("authentication")
-            ? 401
-            : 400;
+          : result.error?.includes("not allowed") || result.error?.includes("Method")
+            ? 405
+            : result.error?.includes("authentication")
+              ? 401
+              : 400;
 
-        res.status(statusCode).json({
-          success: false,
-          error: result.error || "Failed to process webhook",
-          timestamp: new Date().toISOString(),
-        });
+        sendErrorResponse(
+          res,
+          statusCode,
+          result.error || "Failed to process webhook",
+          { webhookId }
+        );
       }
     } catch (error: any) {
       console.error(`❌ Webhook error:`, error);
-      res.status(500).json({
-        success: false,
-        error: "Internal server error processing webhook",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-      });
+      
+      // Handle AppError with specific status codes
+      const statusCode = error.statusCode || 500;
+      
+      sendErrorResponse(
+        res,
+        statusCode,
+        error.message || "An unexpected error occurred while processing the webhook",
+        {
+          webhookId,
+          allowedMethods: error.allowedMethods,
+        }
+      );
     }
   })
 );
@@ -315,12 +404,12 @@ router.post(
         timestamp: new Date().toISOString(),
       });
     } else {
-      res.status(404).json({
-        success: false,
-        error: "Webhook not found or not active",
-        webhookId,
-        timestamp: new Date().toISOString(),
-      });
+      sendErrorResponse(
+        res,
+        404,
+        "Webhook not found or not active",
+        { webhookId }
+      );
     }
   })
 );

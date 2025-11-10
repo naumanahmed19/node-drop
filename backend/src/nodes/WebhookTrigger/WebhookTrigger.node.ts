@@ -11,8 +11,8 @@ export const WebhookTriggerNode: NodeDefinition = {
   group: ["trigger"],
   version: 1,
   description: "Triggers workflow execution when a webhook is called",
-  icon: "🪝",
-  color: "#FF6B35",
+  icon: "Webhook",
+  color: "#3B82F6",
   defaults: {
     httpMethod: "POST",
     path: "",
@@ -34,6 +34,15 @@ export const WebhookTriggerNode: NodeDefinition = {
       allowedTypes: ["httpBasicAuth", "httpHeaderAuth", "webhookQueryAuth"],
     },
     {
+      displayName: "Webhook Path",
+      name: "webhookPath",
+      type: "string",
+      required: false,
+      default: "",
+      placeholder: "e.g., users, orders/:orderId, users/:userId/posts",
+      description: "Custom webhook path. Supports parameters with :paramName syntax. Production URLs will include a unique ID.",
+    },
+    {
       displayName: "Webhook URL",
       name: "webhookUrl",
       type: "custom",
@@ -43,6 +52,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       component: "WebhookUrlGenerator",
       componentProps: {
         mode: "test",
+        dependsOn: ["webhookPath"],
       },
     },
     {
@@ -59,14 +69,6 @@ export const WebhookTriggerNode: NodeDefinition = {
         { name: "DELETE", value: "DELETE" },
         { name: "PATCH", value: "PATCH" },
       ],
-    },
-    {
-      displayName: "Path",
-      name: "path",
-      type: "string",
-      required: false,
-      default: "",
-      description: "Optional path to append to the webhook URL",
     },
     {
       displayName: "Response Mode",
@@ -94,6 +96,54 @@ export const WebhookTriggerNode: NodeDefinition = {
         { name: "No Data", value: "noData" },
       ],
     },
+    {
+      displayName: "Include Headers",
+      name: "includeHeaders",
+      type: "boolean",
+      default: true,
+      description: "Include HTTP headers in the output",
+    },
+    {
+      displayName: "Specific Headers",
+      name: "headersToInclude",
+      type: "string",
+      default: "",
+      placeholder: "authorization, content-type, x-api-key",
+      description: "Comma-separated list of specific headers to include (leave empty for all)",
+      displayOptions: {
+        show: {
+          includeHeaders: [true],
+        },
+      },
+    },
+    {
+      displayName: "Include Query Parameters",
+      name: "includeQuery",
+      type: "boolean",
+      default: true,
+      description: "Include URL query parameters in the output",
+    },
+    {
+      displayName: "Include Body",
+      name: "includeBody",
+      type: "boolean",
+      default: true,
+      description: "Include request body in the output",
+    },
+    {
+      displayName: "Include Path",
+      name: "includePath",
+      type: "boolean",
+      default: true,
+      description: "Include request path in the output",
+    },
+    {
+      displayName: "Include Client Info",
+      name: "includeClientInfo",
+      type: "boolean",
+      default: false,
+      description: "Include client IP address and user agent",
+    },
   ],
   execute: async function (
     inputData: NodeInputData
@@ -105,17 +155,83 @@ export const WebhookTriggerNode: NodeDefinition = {
     // The webhook data is passed through the execution context
     const webhookData = inputData.main?.[0]?.[0] || {};
 
+    // Extract the actual webhook data - it might be nested in json property
+    const actualData = webhookData.json || webhookData;
+
+    // Get options (with defaults)
+    const includeHeaders = (await this.getNodeParameter("includeHeaders") ?? true) as boolean;
+    const includeQuery = (await this.getNodeParameter("includeQuery") ?? true) as boolean;
+    const includeBody = (await this.getNodeParameter("includeBody") ?? true) as boolean;
+    const includePath = (await this.getNodeParameter("includePath") ?? true) as boolean;
+    const includeClientInfo = (await this.getNodeParameter("includeClientInfo") ?? false) as boolean;
+    const headersToInclude = (await this.getNodeParameter("headersToInclude") ?? "") as string;
+
+    // Build the output with proper structure
+    const output: any = {
+      method: actualData.method || "GET",
+      timestamp: new Date().toISOString(),
+    };
+
+    // Add path parameters (e.g., userId from /users/:userId)
+    if (actualData.params && Object.keys(actualData.params).length > 0) {
+      output.params = actualData.params;
+    }
+
+    // Add headers (all or filtered)
+    if (includeHeaders) {
+      if (headersToInclude) {
+        // Include only specific headers
+        const headerNames = headersToInclude
+          .split(",")
+          .map((h: string) => h.trim().toLowerCase())
+          .filter((h: string) => h);
+        
+        const filteredHeaders: any = {};
+        const allHeaders = actualData.headers || {};
+        
+        for (const headerName of headerNames) {
+          if (allHeaders[headerName]) {
+            filteredHeaders[headerName] = allHeaders[headerName];
+          }
+        }
+        
+        output.headers = filteredHeaders;
+      } else {
+        // Include all headers
+        output.headers = actualData.headers || {};
+      }
+    }
+
+    // Add query parameters
+    if (includeQuery) {
+      output.query = actualData.query || {};
+    }
+
+    // Add body
+    if (includeBody) {
+      output.body = actualData.body || {};
+    }
+
+    // Add path
+    if (includePath) {
+      output.path = actualData.path || "/";
+    }
+
+    // Add client info (IP and user agent)
+    if (includeClientInfo) {
+      if (actualData.ip) {
+        output.ip = actualData.ip;
+      }
+      if (actualData.userAgent) {
+        output.userAgent = actualData.userAgent;
+      }
+    }
+
     return [
       {
         main: [
           {
-            json: {
-              headers: webhookData.headers || {},
-              params: webhookData.query || {},
-              body: webhookData.body || {},
-              method: webhookData.method || "POST",
-              timestamp: new Date().toISOString(),
-            },
+            json: output,
           },
         ],
       },

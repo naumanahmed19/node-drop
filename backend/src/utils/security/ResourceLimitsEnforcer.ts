@@ -17,7 +17,7 @@ export interface ResourceLimits {
 
 export class ResourceLimitsEnforcer {
   private static readonly DEFAULT_LIMITS: ResourceLimits = {
-    maxMemoryMB: 128,
+    maxMemoryMB: 512,
     maxExecutionTimeMs: 30000,
     maxNetworkRequests: 10,
     maxDataTransferMB: 50,

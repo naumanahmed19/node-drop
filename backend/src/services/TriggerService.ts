@@ -26,9 +26,9 @@ export interface TriggerDefinition {
 export interface TriggerSettings {
   // Webhook settings
   webhookId?: string;
-  webhookUrl?: string; // The generated webhook ID from the frontend
+  webhookUrl?: string; // The generated UUID for the webhook
+  webhookPath?: string; // Custom webhook path (e.g., "users", "orders")
   httpMethod?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  path?: string;
 
   // Authentication settings (old format - stored at settings level)
   authentication?:
@@ -88,6 +88,7 @@ export class TriggerService {
   private credentialService: CredentialService;
   private triggerManager: TriggerManager;
   private scheduledTasks: Map<string, cron.ScheduledTask> = new Map();
+  // Map webhook key (path or path/uuid) to trigger definition
   private webhookTriggers: Map<string, TriggerDefinition> = new Map();
 
   constructor(
@@ -389,8 +390,12 @@ export class TriggerService {
   async deactivateTrigger(triggerId: string): Promise<void> {
     try {
       // Remove from webhook triggers
-      if (this.webhookTriggers.has(triggerId)) {
-        this.webhookTriggers.delete(triggerId);
+      for (const [webhookKey, trigger] of this.webhookTriggers.entries()) {
+        if (trigger.id === triggerId) {
+          this.webhookTriggers.delete(webhookKey);
+          logger.info(`🗑️  Deactivated webhook: ${webhookKey} (trigger ID: ${triggerId})`);
+          break;
+        }
       }
 
       // Remove from scheduled tasks
@@ -400,6 +405,7 @@ export class TriggerService {
           task.stop();
         }
         this.scheduledTasks.delete(triggerId);
+        logger.info(`🗑️  Deactivated scheduled task: ${triggerId}`);
       }
 
 
@@ -412,23 +418,44 @@ export class TriggerService {
   private async activateWebhookTrigger(
     trigger: TriggerDefinition
   ): Promise<void> {
-    // Use webhookUrl parameter as webhookId if provided, otherwise generate
-    if (!trigger.settings.webhookId) {
-      // Check if webhookUrl parameter contains the webhookId
-      if (
-        trigger.settings.webhookUrl &&
-        typeof trigger.settings.webhookUrl === "string"
-      ) {
-        trigger.settings.webhookId = trigger.settings.webhookUrl;
-      } else {
-        trigger.settings.webhookId = uuidv4();
+    // First, remove this trigger from any existing webhook keys
+    // This ensures we remove old paths when the webhook path is changed
+    for (const [webhookKey, existingTrigger] of this.webhookTriggers.entries()) {
+      if (existingTrigger.id === trigger.id && existingTrigger.nodeId === trigger.nodeId) {
+        this.webhookTriggers.delete(webhookKey);
+        logger.info(`🔄 Removing trigger ${trigger.id} from old webhook key: ${webhookKey}`);
       }
     }
-
-    // Store webhook trigger for lookup
-    if (trigger.settings.webhookId) {
-      this.webhookTriggers.set(trigger.settings.webhookId, trigger);
+    
+    // Clean the webhook URL and custom path
+    const webhookUrlId = trigger.settings.webhookUrl?.trim() || "";
+    const customPath = trigger.settings.webhookPath?.trim().replace(/^\/+|\/+$/g, "") || "";
+    
+    // Build webhook path: [uuid/]path
+    let webhookPath = "";
+    
+    if (webhookUrlId && customPath) {
+      // Both ID and path: uuid/path
+      webhookPath = `${webhookUrlId}/${customPath}`;
+    } else if (webhookUrlId) {
+      // Only ID: uuid
+      webhookPath = webhookUrlId;
+    } else if (customPath) {
+      // Only path (no UUID): path
+      webhookPath = customPath;
+    } else {
+      // Neither - must have at least one, generate UUID as fallback
+      trigger.settings.webhookUrl = uuidv4();
+      webhookPath = trigger.settings.webhookUrl;
+      logger.warn(`⚠️  No webhook ID or path provided, generated UUID: ${webhookPath}`);
     }
+    
+    // Store the webhook path
+    trigger.settings.webhookId = webhookPath;
+    
+    // Register webhook (same URL for test and production, differentiated by ?test=true)
+    this.webhookTriggers.set(webhookPath, trigger);
+    logger.info(`✅ Activated webhook: ${webhookPath}`);
 
 
   }
@@ -481,6 +508,70 @@ export class TriggerService {
 
   }
 
+  /**
+   * Match a webhook path against registered patterns
+   * Supports parameters like /users/:userId or /orders/:orderId/:itemId
+   * Returns ALL matching triggers (allows multiple workflows to use same path)
+   */
+  private matchWebhookPath(requestPath: string): { 
+    triggers: TriggerDefinition[]; 
+    params: Record<string, string>;
+  } | null {
+    // Clean the request path (remove query string and leading/trailing slashes)
+    const cleanPath = requestPath.split('?')[0].replace(/^\/+|\/+$/g, '');
+    
+    logger.info(`🔍 Matching webhook path: "${cleanPath}"`);
+    
+    const matchedTriggers: TriggerDefinition[] = [];
+    let matchedParams: Record<string, string> = {};
+    
+    // Check all registered webhooks
+    for (const [webhookKey, trigger] of this.webhookTriggers.entries()) {
+      const webhookPath = trigger.settings.webhookId || "";
+      
+      // Try exact match first
+      if (webhookPath === cleanPath) {
+        logger.info(`✅ Exact match: "${cleanPath}" -> ${webhookKey}`);
+        matchedTriggers.push(trigger);
+        continue;
+      }
+      
+      // Try pattern matching if path contains parameters
+      if (webhookPath.includes(':')) {
+        // Convert pattern to regex
+        // e.g., "users/:userId" -> /^users\/([^\/]+)$/
+        const paramNames: string[] = [];
+        const regexPattern = webhookPath.replace(/:([^\/]+)/g, (_, paramName) => {
+          paramNames.push(paramName);
+          return '([^/]+)';
+        });
+        
+        const regex = new RegExp(`^${regexPattern}$`);
+        const match = cleanPath.match(regex);
+        
+        if (match) {
+          // Extract parameters
+          const params: Record<string, string> = {};
+          paramNames.forEach((name, index) => {
+            params[name] = match[index + 1];
+          });
+          
+          logger.info(`✅ Pattern match: "${webhookPath}" -> ${webhookKey}`, params);
+          matchedTriggers.push(trigger);
+          matchedParams = params; // Use params from last match (they should all be the same)
+        }
+      }
+    }
+    
+    if (matchedTriggers.length > 0) {
+      logger.info(`✅ Found ${matchedTriggers.length} matching trigger(s) for path: "${cleanPath}"`);
+      return { triggers: matchedTriggers, params: matchedParams };
+    }
+    
+    logger.warn(`❌ No webhook match found for path: "${cleanPath}"`);
+    return null;
+  }
+
   async handleWebhookTrigger(
     webhookId: string,
     request: WebhookRequest,
@@ -492,13 +583,45 @@ export class TriggerService {
     responseData?: any;
   }> {
     try {
-      const trigger = this.webhookTriggers.get(webhookId);
-      if (!trigger) {
+      // Try to match the webhook path (supports parameters)
+      const match = this.matchWebhookPath(webhookId);
+      
+      if (!match || match.triggers.length === 0) {
         throw new AppError(
           "Webhook trigger not found",
           404,
           "WEBHOOK_NOT_FOUND"
         );
+      }
+      
+      // If multiple triggers match, execute the first one
+      // TODO: In the future, we could execute all of them in parallel
+      const trigger = match.triggers[0];
+      const pathParams = match.params;
+      
+      if (match.triggers.length > 1) {
+        logger.info(`⚠️  Multiple triggers (${match.triggers.length}) matched webhook path. Executing first one: ${trigger.workflowId}`);
+      }
+
+      // Validate HTTP method matches the configured method
+      const configuredMethod = trigger.settings.httpMethod;
+      if (configuredMethod && request.method !== configuredMethod) {
+        logger.warn(`Webhook HTTP method mismatch`, {
+          webhookId,
+          expected: configuredMethod,
+          received: request.method,
+          ip: request.ip,
+        });
+        
+        // Create error with allowed methods info for proper HTTP response
+        const error = new AppError(
+          `The ${request.method} method is not supported for this route. Supported methods: ${configuredMethod}.`,
+          405,
+          "METHOD_NOT_ALLOWED"
+        );
+        // Store allowed method for response header
+        (error as any).allowedMethods = [configuredMethod];
+        throw error;
       }
 
       // Validate authentication if configured
@@ -652,7 +775,7 @@ export class TriggerService {
       
       const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
 
-      // Create trigger execution request with webhook data
+      // Create trigger execution request with webhook data (including path parameters)
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
         triggerType: "webhook",
@@ -664,6 +787,7 @@ export class TriggerService {
           headers: request.headers,
           query: request.query,
           body: request.body,
+          params: pathParams, // Add extracted path parameters
           ip: request.ip,
           userAgent: request.userAgent,
         },
