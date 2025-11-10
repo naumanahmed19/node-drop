@@ -5,6 +5,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { WorkflowToolbar } from '@/components/workflow/WorkflowToolbar'
 import {
   useWorkflowOperations
@@ -37,6 +38,7 @@ export function WorkflowEditorPage() {
   const { activeNodeTypes: nodeTypes, isLoading: isLoadingNodeTypes } = useNodeTypes()
   const [execution, setExecution] = useState<ExecutionDetails | null>(null)
   const [isLoadingExecution, setIsLoadingExecution] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Workflow operations for toolbar
   const {
@@ -46,6 +48,45 @@ export function WorkflowEditorPage() {
   // Toolbar handlers
   const handleSave = async () => {
     await saveWorkflow()
+  }
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = async (data: {
+    name: string
+    category: string
+    saveExecutionHistory: boolean
+  }) => {
+    if (!workflow) return
+
+    // Save the workflow with basic info first
+    try {
+      const savedWorkflow = await workflowService.createWorkflow({
+        name: data.name,
+        description: '',
+        category: data.category || undefined,
+        tags: [],
+      })
+
+      // Update the workflow settings with execution history preference
+      const updatedWorkflow = await workflowService.updateWorkflow(savedWorkflow.id, {
+        settings: {
+          timezone: 'UTC',
+          saveDataSuccessExecution: data.saveExecutionHistory ? 'all' : 'none',
+          saveDataErrorExecution: data.saveExecutionHistory ? 'all' : 'none',
+          saveManualExecutions: true,
+          callerPolicy: 'workflowsFromSameOwner',
+        },
+      })
+
+      setWorkflow(updatedWorkflow)
+      setShowOnboarding(false)
+
+      // Navigate to the new workflow
+      navigate(`/workflows/${updatedWorkflow.id}/edit`, { replace: true })
+    } catch (error) {
+      console.error('Failed to create workflow:', error)
+      setError('Failed to create workflow. Please try again.')
+    }
   }
 
   // Subscribe to workflow socket events for real-time webhook execution updates
@@ -275,7 +316,9 @@ export function WorkflowEditorPage() {
       }
 
       if (id === 'new') {
-        // Create new workflow
+        // Show onboarding dialog for new workflows
+        setShowOnboarding(true)
+        // Create temporary workflow
         const newWorkflow: Workflow = {
           id: 'new',
           name: 'New Workflow',
@@ -314,7 +357,7 @@ export function WorkflowEditorPage() {
     }
 
     loadWorkflow()
-  }, [id, executionId, setWorkflow, setLoading])
+  }, [id, executionId, setWorkflow, setLoading, user?.id])
 
   if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
     return (
@@ -397,6 +440,13 @@ export function WorkflowEditorPage() {
           </div>
         </SidebarInset>
       </SidebarProvider>
+
+      {/* Onboarding Dialog */}
+      <WorkflowOnboardingDialog
+        isOpen={showOnboarding}
+        onStartBuilding={handleOnboardingComplete}
+        onClose={() => navigate('/workflows')}
+      />
     </TooltipProvider>
   )
 }
