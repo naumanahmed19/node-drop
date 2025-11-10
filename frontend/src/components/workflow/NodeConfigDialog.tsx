@@ -156,7 +156,7 @@ export function NodeConfigDialog({ node, nodeType, isOpen, onClose, readOnly = f
             <ResizableHandle withHandle />
 
             {/* Middle Column - Node Configuration */}
-            <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+            <ResizablePanel defaultSize={25} minSize={25} maxSize={25}>
               <MiddleColumn 
                 node={node} 
                 nodeType={nodeType} 

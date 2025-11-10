@@ -111,8 +111,8 @@ export function ConfigTab({ node, nodeType, readOnly = false }: ConfigTabProps) 
   }
 
   return (
-    <div className="h-[calc(100dvh-222px)] overflow-y-auto p-4">
-      <div className="space-y-6 max-w-lg">
+    <div className="h-[calc(100dvh-222px)] overflow-y-auto p-4 pb-8 bg-muted/30">
+      <div className="space-y-6 max-w-lg mb-8">
         {/* Unified Form - includes all properties (including credential fields) */}
         {formFields.length > 0 && (
           <FormGenerator
