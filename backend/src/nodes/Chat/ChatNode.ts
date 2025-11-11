@@ -48,7 +48,7 @@ export const ChatNode: NodeDefinition = {
       required: false,
       default: "",
       description: "Generated public URL for accessing the chat widget",
-      component: "WebhookUrlGenerator",
+      component: "UrlGenerator",
       componentProps: {
         mode: "production",
         urlType: "chat",

@@ -6,7 +6,7 @@ import { Check, Copy, Globe, TestTube, Sparkles, Info } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
-interface WebhookUrlGeneratorProps {
+interface UrlGeneratorProps {
   value?: string; // webhookId, formPath, or chatId (UUID or path string)
   onChange?: (value: string) => void;
   disabled?: boolean;
@@ -16,7 +16,7 @@ interface WebhookUrlGeneratorProps {
   nodeId?: string; // Node ID for expression context
 }
 
-export function WebhookUrlGenerator({
+export function UrlGenerator({
   value,
   onChange,
   disabled = false,
@@ -24,7 +24,7 @@ export function WebhookUrlGenerator({
   mode = "test",
   urlType = "webhook",
   nodeId,
-}: WebhookUrlGeneratorProps) {
+}: UrlGeneratorProps) {
   const [webhookId, setWebhookId] = useState<string>(() => {
     // For forms, don't auto-generate - let user provide the path
     if (urlType === "form") {

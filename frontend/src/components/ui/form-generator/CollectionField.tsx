@@ -93,104 +93,119 @@ export function CollectionField({
   const selectedFields = fields.filter(field => selectedOptions.has(field.name))
 
   return (
-    <div className="space-y-3">
-      {/* Header with expand/collapse */}
-      {selectedFields.length > 0 && (
-        <div
-          className="flex items-center gap-2 cursor-pointer hover:bg-accent/50 p-2 rounded-md transition-colors border border-border"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-          <span className="text-sm font-medium">
-            {displayName} ({selectedFields.length})
-          </span>
-        </div>
-      )}
-
-      {/* Selected fields */}
-      {isExpanded && selectedFields.length > 0 && (
-        <div className="space-y-3">
-          {selectedFields.map(field => (
-            <div key={field.name} className="space-y-2 p-3 border border-border rounded-md bg-background">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">
-                  {field.displayName}
-                  {field.required && <span className="text-destructive ml-1">*</span>}
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveOption(field.name)}
-                  disabled={disabled}
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                >
-                  Remove
-                </Button>
-              </div>
-              <FieldRenderer
-                field={field}
-                value={value[field.name]}
-                onChange={(newValue) => handleFieldChange(field.name, newValue)}
+    <div className="w-full space-y-2.5">
+      {/* Unified Collection Card */}
+      <div className="rounded-md border bg-card overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            {selectedFields.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
                 disabled={disabled}
-                allValues={allValues}
-                allFields={allFields}
-                onFieldChange={onFieldChange}
-                nodeId={nodeId}
-                nodeType={nodeType}
-              />
-              {field.description && (
-                <p className="text-sm text-muted-foreground">{field.description}</p>
+                className="p-0 hover:bg-accent/50 rounded transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </button>
+            )}
+            <span className="text-xs font-semibold">
+              {displayName}
+              {selectedFields.length > 0 && (
+                <span className="text-muted-foreground ml-1">({selectedFields.length})</span>
               )}
-            </div>
-          ))}
+            </span>
+          </div>
+
+          {/* Add option selector in header */}
+          {availableOptions.length > 0 && (
+            <Select
+              value=""
+              onValueChange={(value) => {
+                if (value) {
+                  handleAddOption(value)
+                }
+              }}
+              disabled={disabled}
+            >
+              <SelectTrigger className="w-auto h-6 text-[11px] gap-1 px-2">
+                <Plus className="h-3 w-3" />
+                <SelectValue placeholder={placeholder} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableOptions.map(field => (
+                  <SelectItem key={field.name} value={field.name}>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-xs">{field.displayName}</span>
+                      {field.description && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {field.description}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-      )}
 
-      {/* Add option button */}
-      {availableOptions.length > 0 && (
-        <Select
-          value=""
-          onValueChange={(value) => {
-            if (value) {
-              handleAddOption(value)
-            }
-          }}
-          disabled={disabled}
-        >
-          <SelectTrigger className="w-full bg-primary text-primary-foreground hover:bg-primary/90 [&>svg]:text-primary-foreground">
-            <div className="flex items-center gap-2 text-primary-foreground">
-              <Plus className="h-4 w-4" />
-              <SelectValue placeholder={placeholder} />
-            </div>
-          </SelectTrigger>
-          <SelectContent>
-            {availableOptions.map(field => (
-              <SelectItem key={field.name} value={field.name}>
-                <div className="flex flex-col">
-                  <span className="font-medium">{field.displayName}</span>
-                  {field.description && (
-                    <span className="text-xs text-muted-foreground">
-                      {field.description}
-                    </span>
-                  )}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+        {/* Content */}
+        {selectedFields.length > 0 && (
+          <div className="p-3 space-y-2.5">
+            {/* Selected fields */}
+            {isExpanded && (
+              <div className="space-y-2.5">
+                {selectedFields.map(field => (
+                  <div key={field.name} className="space-y-1.5 p-2.5 border border-border rounded-md bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium">
+                        {field.displayName}
+                        {field.required && <span className="text-destructive ml-1">*</span>}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveOption(field.name)}
+                        disabled={disabled}
+                        className="h-5 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <FieldRenderer
+                      field={field}
+                      value={value[field.name]}
+                      onChange={(newValue) => handleFieldChange(field.name, newValue)}
+                      disabled={disabled}
+                      allValues={allValues}
+                      allFields={allFields}
+                      onFieldChange={onFieldChange}
+                      nodeId={nodeId}
+                      nodeType={nodeType}
+                    />
+                    {field.description && (
+                      <p className="text-[10px] text-muted-foreground">{field.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-      {/* Show message when all options are selected */}
-      {availableOptions.length === 0 && selectedFields.length === fields.length && (
-        <p className="text-xs text-muted-foreground italic">
-          All options have been added
-        </p>
-      )}
+            {/* Show message when all options are selected */}
+            {availableOptions.length === 0 && selectedFields.length === fields.length && (
+              <p className="text-[10px] text-muted-foreground italic">
+                All options have been added
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

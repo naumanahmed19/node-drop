@@ -45,7 +45,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       required: false,
       default: "",
       description: "Generated webhook URL for test and production environments",
-      component: "WebhookUrlGenerator",
+      component: "UrlGenerator",
       componentProps: {
         mode: "test",
       },
@@ -94,7 +94,7 @@ export const WebhookTriggerNode: NodeDefinition = {
     
     // === OPTIONS SECTION ===
     {
-      displayName: "Options",
+    
       name: "options",
       type: "collection",
       placeholder: "Add Option",

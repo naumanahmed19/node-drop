@@ -219,13 +219,13 @@ interface FormFieldLabelProps {
 }
 
 function FormFieldLabel({ field, showRequiredIndicator, requiredIndicator }: FormFieldLabelProps) {
-  // Don't show label for boolean, switch, custom component types, and collection with multipleValues (RepeatingField)
-  // RepeatingField renders its own header with displayName
+  // Don't show label for boolean, switch, custom component types, and collection types
+  // Collection components (both CollectionField and RepeatingField) render their own header with displayName
   if (
     field.type === 'boolean' || 
     field.type === 'switch' || 
     field.type === 'custom' ||
-    (field.type === 'collection' && field.typeOptions?.multipleValues)
+    field.type === 'collection'
   ) {
     return null
   }
