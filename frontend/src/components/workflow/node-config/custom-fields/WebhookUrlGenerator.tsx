@@ -1,17 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, Copy, Globe, RefreshCw, TestTube } from "lucide-react";
-import { useState } from "react";
+import { ExpressionInput } from "@/components/ui/form-generator/ExpressionInput";
+import { Check, Copy, Globe, TestTube, Sparkles, Info } from "lucide-react";
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
 
 interface WebhookUrlGeneratorProps {
-  value?: string; // webhookId, formId, or chatId (UUID)
+  value?: string; // webhookId, formPath, or chatId (UUID or path string)
   onChange?: (value: string) => void;
   disabled?: boolean;
-  webhookPath?: string; // Custom webhook path from webhookPath field
+  webhookPath?: string; // Custom webhook path from webhookPath field (only for webhook type)
   mode?: "test" | "production";
-  urlType?: "webhook" | "form" | "chat"; // NEW: Type of URL to generate
+  urlType?: "webhook" | "form" | "chat"; // Type of URL to generate
+  nodeId?: string; // Node ID for expression context
 }
 
 export function WebhookUrlGenerator({
@@ -21,30 +23,47 @@ export function WebhookUrlGenerator({
   webhookPath = "",
   mode = "test",
   urlType = "webhook",
+  nodeId,
 }: WebhookUrlGeneratorProps) {
-  const [webhookId, setWebhookId] = useState<string>(value || "");
+  const [webhookId, setWebhookId] = useState<string>(() => {
+    // For forms, don't auto-generate - let user provide the path
+    if (urlType === "form") {
+      return value || "";
+    }
+    
+    // Auto-generate UUID on mount if no value provided (for webhooks and chats)
+    if (!value) {
+      try {
+        return crypto.randomUUID();
+      } catch (error) {
+        console.error("Error generating webhook ID:", error);
+        return `webhook_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      }
+    }
+    return value;
+  });
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedTest, setCopiedTest] = useState(false);
   const [copiedProd, setCopiedProd] = useState(false);
+  const [activeTab, setActiveTab] = useState<"test" | "production">(mode);
+
+  // Notify parent of auto-generated ID (skip for forms)
+  useEffect(() => {
+    if (urlType !== "form" && !value && webhookId && onChange) {
+      onChange(webhookId);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get base URLs from environment or use defaults
-  const getBaseUrl = (environment: "test" | "production") => {
+  // Production and test use the same base URL for all types
+  const getBaseUrl = () => {
     if (urlType === "form") {
       // For forms, use frontend URL
-      if (environment === "test") {
-        return import.meta.env.VITE_APP_URL || "http://localhost:3000";
-      } else {
-        return import.meta.env.VITE_APP_PROD_URL || "https://your-domain.com";
-      }
+      return import.meta.env.VITE_APP_URL || "http://localhost:3000";
     } else if (urlType === "chat") {
       // For chats, use API URL (add /api if not present)
-      if (environment === "test") {
-        const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
-        return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
-      } else {
-        const apiUrl = import.meta.env.VITE_API_PROD_URL || "https://your-domain.com";
-        return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
-      }
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+      return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
     } else {
       // For webhooks, use same base URL for both test and production
       if (import.meta.env.VITE_WEBHOOK_URL) {
@@ -58,23 +77,6 @@ export function WebhookUrlGenerator({
       return `${baseUrl}/webhook`;
     }
   };
-
-  // Get widget script URLs
-  /* const getWidgetScriptUrl = (environment: "test" | "production") => {
-    const baseUrl = environment === "test" 
-      ? (import.meta.env.VITE_APP_URL || "http://localhost:3000")
-      : (import.meta.env.VITE_APP_PROD_URL || "https://your-domain.com");
-    
-    if (urlType === "chat") {
-      return `${baseUrl}/widgets/chat/nd-chat-widget.umd.js`;
-    } else if (urlType === "form") {
-      return `${baseUrl}/widgets/form/nd-form-widget.umd.js`;
-    } else {
-      return `${baseUrl}/widgets/webhook/nd-webhook-widget.umd.js`;
-    }
-  }; */
-
-  // Don't auto-generate UUID - let users decide if they want one
 
   const generateWebhookId = async () => {
     setIsGenerating(true);
@@ -90,7 +92,7 @@ export function WebhookUrlGenerator({
     } catch (error) {
       console.error("Error generating webhook ID:", error);
       // Fallback to simple ID generation
-      const fallbackId = `webhook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const fallbackId = `webhook_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       setWebhookId(fallbackId);
       if (onChange) {
         onChange(fallbackId);
@@ -101,12 +103,14 @@ export function WebhookUrlGenerator({
   };
 
   // Construct full webhook/form/chat URLs
-  const constructWebhookUrl = (environment: "test" | "production") => {
-    const baseUrl = getBaseUrl(environment);
+  const constructWebhookUrl = () => {
+    const baseUrl = getBaseUrl();
     
     if (urlType === "form") {
-      // Form URLs: http://localhost:3000/form/{formId}
-      return `${baseUrl}/form/${webhookId}`;
+      // Form URLs: http://localhost:3000/form/{formPath}
+      // Use the value directly as the form path
+      const formPath = webhookId?.trim().replace(/^\/+/, "") || "";
+      return formPath ? `${baseUrl}/form/${formPath}` : baseUrl;
     } else if (urlType === "chat") {
       // Chat URLs: http://localhost:4000/api/public/chats/{chatId}
       return `${baseUrl}/public/chats/${webhookId}`;
@@ -131,11 +135,8 @@ export function WebhookUrlGenerator({
     }
   };
 
-  const testWebhookUrl = constructWebhookUrl("test");
-  const productionWebhookUrl = constructWebhookUrl("production");
-  
-  // Add ?test=true to test URL for visualization
-  const testWebhookUrlWithVisualization = `${testWebhookUrl}?test=true`;
+  const webhookUrl = constructWebhookUrl();
+  const testWebhookUrlWithVisualization = `${webhookUrl}?test=true`;
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: "test" | "production") => {
@@ -172,125 +173,173 @@ export function WebhookUrlGenerator({
   };
 
   return (
-    <Tabs defaultValue={mode} className="w-full">
-      <div className="space-y-3">
-        {/* Label and Tabs in one row */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">
+    <div className="w-full space-y-2.5">
+      {/* Path Info Banner */}
+      {urlType === "webhook" && webhookPath?.trim() && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-2">
+          <div className="flex items-center gap-1.5 text-xs">
+            <Info className="w-3 h-3 text-amber-600 dark:text-amber-500 shrink-0" />
+            <span className="text-amber-900 dark:text-amber-100">Path:</span>
+            <code className="font-mono font-medium bg-amber-100 dark:bg-amber-900/30 px-1 py-0.5 rounded">
+              {webhookPath.trim().replace(/^\/+/, "")}
+            </code>
+            {webhookPath.includes(':') && (
+              <span className="text-amber-700 dark:text-amber-300 ml-1">
+                → <code className="font-mono">params.*</code>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Unified URL Generator Card */}
+      <div className="rounded-md border bg-card overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <Label className="text-xs font-semibold flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-muted-foreground" />
             {urlType === "form" ? "Public Form URL" : urlType === "chat" ? "Public Chat URL" : "Webhook URL"}
           </Label>
-          <TabsList className="inline-flex h-9">
-            <TabsTrigger value="test" className="text-xs" disabled={disabled}>
-              <TestTube className="w-3 h-3 mr-1" />
+          <div className="flex gap-0.5 bg-background rounded p-0.5 border">
+            <button
+              type="button"
+              onClick={() => setActiveTab("test")}
+              disabled={disabled}
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                activeTab === "test"
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <TestTube className="w-2.5 h-2.5" />
               Test
-            </TabsTrigger>
-            <TabsTrigger value="production" className="text-xs" disabled={disabled}>
-              <Globe className="w-3 h-3 mr-1" />
-              Production
-            </TabsTrigger>
-          </TabsList>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("production")}
+              disabled={disabled}
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                activeTab === "production"
+                  ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Globe className="w-2.5 h-2.5" />
+              Prod
+            </button>
+          </div>
         </div>
 
-        {/* Test URL Content */}
-        <TabsContent value="test" className="mt-0 space-y-2">
-          <div className="flex gap-2">
-            <Input
-              value={testWebhookUrlWithVisualization}
-              readOnly
-              disabled={disabled}
-              className="font-mono text-xs h-9 bg-blue-50 border-blue-200"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => copyToClipboard(testWebhookUrlWithVisualization, "test")}
-              disabled={disabled || (!webhookId && !webhookPath)}
-              className="shrink-0 h-9 w-9 p-0"
-              title="Copy test URL with visualization"
-            >
-              {copiedTest ? (
-                <Check className="w-3.5 h-3.5 text-green-600" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
+        {/* Content */}
+        <div className="p-3 space-y-2.5">
+          {/* ID/Path Configuration */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] font-medium text-muted-foreground">
+                {urlType === "form" ? "Form Path" : urlType === "chat" ? "Chat ID" : "Webhook ID"}
+                {urlType === "webhook" && <span className="text-muted-foreground/60"> (optional)</span>}
+              </Label>
+              {urlType !== "form" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={generateWebhookId}
+                  disabled={disabled || isGenerating}
+                  className="h-5 px-2 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                  title="Generate random UUID"
+                >
+                  <Sparkles className={cn("w-2.5 h-2.5", isGenerating && "animate-spin")} />
+                  Generate
+                </Button>
               )}
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Production URL Content */}
-        <TabsContent value="production" className="mt-0">
-          <div className="flex gap-2">
-            <Input
-              value={productionWebhookUrl}
-              readOnly
-              disabled={disabled}
-              className="font-mono text-xs h-9 bg-green-50 border-green-200"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => copyToClipboard(productionWebhookUrl, "production")}
-              disabled={disabled || (!webhookId && !webhookPath)}
-              className="shrink-0 h-9 w-9 p-0"
-            >
-              {copiedProd ? (
-                <Check className="w-3.5 h-3.5 text-green-600" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Webhook/Form/Chat ID Display */}
-        <div className="flex gap-1.5 items-end">
-          <div className="flex-1">
-            <Label className="text-xs text-muted-foreground mb-1">
-              {urlType === "form" ? "Form ID" : urlType === "chat" ? "Chat ID" : "Webhook ID (optional)"}
-            </Label>
-            <Input
+            </div>
+            <ExpressionInput
               value={webhookId}
-              onChange={(e) => {
-                const newId = e.target.value;
+              onChange={(newId) => {
                 setWebhookId(newId);
                 if (onChange) {
                   onChange(newId);
                 }
               }}
               disabled={disabled}
-              placeholder="Auto-generated UUID (can be removed)"
-              className="font-mono text-xs h-8"
+              placeholder={urlType === "form" ? "e.g., contact-us, feedback" : "Leave empty or {{expression}}"}
+              nodeId={nodeId}
+              singleLine={true}
+              hideHelperText={true}
+              className="font-mono text-xs w-full"
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={generateWebhookId}
-            disabled={disabled || isGenerating}
-            className="shrink-0 h-8 w-8 p-0"
-            title="Generate random UUID"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-        
-        {/* Show info when custom path is used */}
-        {urlType === "webhook" && webhookPath?.trim() && (
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Path: <span className="font-mono font-medium">{webhookPath.trim().replace(/^\/+/, "")}</span>
-            </p>
-            {webhookPath.includes(':') && (
-              <p className="text-xs text-muted-foreground">
-                💡 Parameters will be available in the workflow output (e.g., <span className="font-mono">params.userId</span>)
-              </p>
+
+          {/* Divider */}
+          <div className="border-t -mx-3" />
+
+          {/* URL Display */}
+          <div className="space-y-2">
+            {activeTab === "test" ? (
+              <>
+                <div className="flex gap-1.5">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={testWebhookUrlWithVisualization}
+                      readOnly
+                      disabled={disabled}
+                      className="font-mono text-[11px] h-8 pr-8 bg-blue-50/50 border-blue-200 dark:bg-blue-950/10 dark:border-blue-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(testWebhookUrlWithVisualization, "test")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                      title={copiedTest ? "Copied!" : "Copy URL"}
+                    >
+                      {copiedTest ? (
+                        <Check className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Info className="w-2.5 h-2.5 shrink-0" />
+                  Includes <code className="font-mono bg-muted px-1 rounded">?test=true</code> for debugging
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex gap-1.5">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={webhookUrl}
+                      readOnly
+                      disabled={disabled}
+                      className="font-mono text-[11px] h-8 pr-8 bg-green-50/50 border-green-200 dark:bg-green-950/10 dark:border-green-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(webhookUrl, "production")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors cursor-pointer"
+                      title={copiedProd ? "Copied!" : "Copy URL"}
+                    >
+                      {copiedProd ? (
+                        <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-green-600 dark:text-green-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Info className="w-2.5 h-2.5 shrink-0" />
+                  Ready for external use
+                </p>
+              </>
             )}
           </div>
-        )}
+        </div>
       </div>
-    </Tabs>
+    </div>
   );
 }

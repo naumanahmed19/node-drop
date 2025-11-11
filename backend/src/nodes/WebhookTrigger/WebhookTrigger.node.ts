@@ -37,15 +37,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       placeholder: "None (allow all requests)",
       allowedTypes: ["httpBasicAuth", "httpHeaderAuth", "webhookQueryAuth"],
     },
-    {
-      displayName: "Webhook Path",
-      name: "webhookPath",
-      type: "string",
-      required: false,
-      default: "",
-      placeholder: "e.g., users, orders/:orderId, users/:userId/posts",
-      description: "Custom webhook path. Supports parameters with :paramName syntax. Production URLs will include a unique ID.",
-    },
+
     {
       displayName: "Webhook URL",
       name: "webhookUrl",
@@ -56,7 +48,6 @@ export const WebhookTriggerNode: NodeDefinition = {
       component: "WebhookUrlGenerator",
       componentProps: {
         mode: "test",
-        dependsOn: ["webhookPath"],
       },
     },
     {
