@@ -1585,7 +1585,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               );
 
               if (nodeExecution) {
-                nodeOutputData = nodeExecution.outputData;
+                // Use 'data' property to match the structure from external webhook triggers
+                nodeOutputData = nodeExecution.data || nodeExecution.outputData; // Fallback for backward compatibility
                 nodeError = serializeError(nodeExecution.error);
               }
             }
@@ -2504,21 +2505,27 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "node-completed":
             if (data.nodeId && data.executionId) {
+              // Extract the actual output data from the node execution result
+              // data.data contains the full node execution result: { nodeId, status, data, duration }
+              // We need to extract just the 'data' property which contains the actual output
+              const nodeExecutionResult = data.data;
+              const actualOutputData = nodeExecutionResult?.data || nodeExecutionResult?.outputData || nodeExecutionResult;
+              
               // Update node execution result for Results tab
               get().updateNodeExecutionResult(data.nodeId, {
                 nodeId: data.nodeId,
                 nodeName,
                 status: "success",
                 endTime: timestamp,
-                data: data.data?.outputData || data.data,
-                duration: data.data?.duration,
+                data: actualOutputData,
+                duration: nodeExecutionResult?.duration,
               });
 
               // Update node execution state for visual indicators
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.COMPLETED, {
                 endTime: timestamp,
                 progress: 100,
-                outputData: data.data?.outputData || data.data,
+                outputData: actualOutputData,
               });
 
               // NEW: Update edge animation state

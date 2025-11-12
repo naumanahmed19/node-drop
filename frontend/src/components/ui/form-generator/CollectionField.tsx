@@ -6,7 +6,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ChevronDown, ChevronRight, HelpCircle, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { FieldRenderer } from './FieldRenderer'
 import { FormFieldConfig } from './types'
@@ -46,6 +47,8 @@ export function CollectionField({
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(
     new Set(Object.keys(value).filter(key => value[key] !== undefined && value[key] !== ''))
   )
+
+  const selectedFields = fields.filter(field => selectedOptions.has(field.name))
 
   // Get available options (fields that haven't been added yet)
   const availableOptions = fields.filter(field => !selectedOptions.has(field.name))
@@ -89,8 +92,6 @@ export function CollectionField({
     }
     onChange(newValue)
   }
-
-  const selectedFields = fields.filter(field => selectedOptions.has(field.name))
 
   return (
     <div className="w-full space-y-2.5">
@@ -163,9 +164,21 @@ export function CollectionField({
                 {selectedFields.map(field => (
                   <div key={field.name} className="space-y-1.5 p-2.5 border border-border rounded-md bg-muted/20">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-medium">
+                      <label className="text-[11px] font-medium flex items-center gap-1.5">
                         {field.displayName}
                         {field.required && <span className="text-destructive ml-1">*</span>}
+                        {field.tooltip ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" className="inline-flex items-center justify-center">
+                                <HelpCircle className="h-3 w-3 text-muted-foreground hover:text-foreground cursor-help transition-colors" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                              <p>{field.tooltip}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
                       </label>
                       <Button
                         type="button"

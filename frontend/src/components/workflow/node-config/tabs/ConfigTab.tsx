@@ -50,6 +50,7 @@ export function ConfigTab({ node, nodeType, readOnly = false }: ConfigTabProps) 
       required: property.required,
       default: property.default,
       description: property.description,
+      tooltip: property.tooltip, // Add tooltip support
       placeholder: property.placeholder,
       options: property.options,
       displayOptions: property.displayOptions,

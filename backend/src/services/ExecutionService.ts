@@ -1504,6 +1504,16 @@ export class ExecutionService {
             };
           }
 
+          // Format the response to match the structure from external webhook triggers
+          // This ensures consistency between execute button and actual webhook triggers
+          const nodeExecutionResult = {
+            nodeId: nodeId,
+            status: nodeResult.success ? "completed" : "failed",
+            data: nodeResult.data ? JSON.parse(JSON.stringify(nodeResult.data)) : undefined,
+            error: executionError,
+            duration,
+          };
+
           return {
             success: true, // Execution started and ran, even if node failed
             data: {
@@ -1513,12 +1523,8 @@ export class ExecutionService {
               failedNodes: nodeResult.success ? [] : [nodeId],
               duration,
               hasFailures: !nodeResult.success,
-              // Include output data directly since we're not saving to database
-              nodeExecutions: [{
-                nodeId: nodeId,
-                outputData: nodeResult.data ? JSON.parse(JSON.stringify(nodeResult.data)) : undefined,
-                error: executionError,
-              }],
+              // Include output data in the same format as FlowExecutionEngine emits via socket
+              nodeExecutions: [nodeExecutionResult],
             },
             error: executionError,
           };

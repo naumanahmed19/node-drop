@@ -32,7 +32,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       type: "credential",
       required: false,
       default: "",
-      description:
+      tooltip:
         "Require authentication for incoming webhook requests (optional)",
       placeholder: "None (allow all requests)",
       allowedTypes: ["httpBasicAuth", "httpHeaderAuth", "webhookQueryAuth"],
@@ -44,7 +44,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       type: "custom",
       required: false,
       default: "",
-      description: "Generated webhook URL for test and production environments",
+      tooltip: "Generated webhook URL for test and production environments",
       component: "UrlGenerator",
       componentProps: {
         mode: "test",
@@ -56,7 +56,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       type: "options",
       required: true,
       default: "POST",
-      description: "The HTTP method to listen for",
+      tooltip: "The HTTP method to listen for",
       options: [
         { name: "GET", value: "GET" },
         { name: "POST", value: "POST" },
@@ -71,7 +71,7 @@ export const WebhookTriggerNode: NodeDefinition = {
       type: "options",
       required: true,
       default: "onReceived",
-      description: "When to respond to the webhook",
+      tooltip: "Control when the webhook responds",
       options: [
         { name: "Immediately", value: "onReceived" },
         { name: "When Workflow Finishes", value: "lastNode" },
@@ -83,7 +83,8 @@ export const WebhookTriggerNode: NodeDefinition = {
       type: "options",
       required: true,
       default: "firstEntryJson",
-      description: "What data to return in the response",
+
+      tooltip: "What data to return in the response",
       options: [
         { name: "First Entry JSON", value: "firstEntryJson" },
         { name: "First Entry Binary", value: "firstEntryBinary" },
@@ -94,12 +95,12 @@ export const WebhookTriggerNode: NodeDefinition = {
     
     // === OPTIONS SECTION ===
     {
-    
+      displayName: "Options",
       name: "options",
       type: "collection",
       placeholder: "Add Option",
       default: {},
-      description: "Additional webhook configuration options",
+      tooltip: "Additional webhook configuration options",
       options: [
         {
           name: "allowedOrigins",
@@ -107,7 +108,8 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "*",
           placeholder: "https://example.com, https://app.example.com",
-          description: "Comma-separated list of allowed origins for CORS. Use * to allow all origins.",
+         
+          tooltip: "Comma-separated list of allowed origins for CORS. Use * to allow all origins.",
         },
         {
           name: "binaryProperty",
@@ -115,14 +117,16 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "data",
           placeholder: "data",
-          description: "Name of the binary property to write received file data to. Enables receiving binary data like images or audio files.",
+         
+          tooltip: "Name of the binary property to write received file data to. Enables receiving binary data like images or audio files.",
         },
         {
           name: "ignoreBots",
           displayName: "Ignore Bots",
           type: "boolean",
           default: false,
-          description: "Ignore requests from bots like link previewers and web crawlers",
+       
+          tooltip: "Ignore requests from bots like link previewers and web crawlers",
         },
         {
           name: "ipWhitelist",
@@ -130,6 +134,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "",
           placeholder: "192.168.1.1, 10.0.0.0/8",
+          tooltip: "Restrict access by IP address",
           description: "Comma-separated list of allowed IP addresses or CIDR ranges. Leave blank to allow all IPs.",
         },
         {
@@ -137,6 +142,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           displayName: "No Response Body",
           type: "boolean",
           default: false,
+          tooltip: "Send empty response body",
           description: "Prevent sending a body with the response (only status code and headers)",
         },
         {
@@ -144,6 +150,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           displayName: "Raw Body",
           type: "boolean",
           default: false,
+          tooltip: "Receive unparsed request body",
           description: "Receive data in raw format (useful for webhooks that send non-JSON data like XML)",
         },
         {
@@ -151,6 +158,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           displayName: "Response Content-Type",
           type: "options",
           default: "application/json",
+          tooltip: "Set response format type",
           description: "Content-Type header for the webhook response",
           options: [
             { name: "JSON", value: "application/json" },
@@ -166,6 +174,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "",
           placeholder: "application/x-custom",
+          tooltip: "Enter custom MIME type",
           description: "Custom Content-Type value",
           displayOptions: {
             show: {
@@ -181,6 +190,7 @@ export const WebhookTriggerNode: NodeDefinition = {
             multipleValues: true,
           },
           default: {},
+          tooltip: "Add custom HTTP headers to response",
           description: "Additional headers to send with the webhook response",
           options: [
             {
@@ -213,6 +223,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "",
           placeholder: "data.result",
+          tooltip: "Extract specific property from response",
           description: "Return only a specific JSON property path instead of all data (e.g., 'data.result' or 'items[0]')",
         },
         {
@@ -220,6 +231,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           displayName: "Include Data",
           type: "multiOptions",
           default: ["headers", "query", "body", "path"],
+          tooltip: "Choose which request data to capture",
           description: "Select which data to include in the webhook output",
           options: [
             { name: "Headers", value: "headers" },
@@ -235,6 +247,7 @@ export const WebhookTriggerNode: NodeDefinition = {
           type: "string",
           default: "",
           placeholder: "authorization, content-type, x-api-key",
+          tooltip: "Filter which headers to capture",
           description: "Comma-separated list of specific headers to include (leave empty for all)",
           displayOptions: {
             show: {

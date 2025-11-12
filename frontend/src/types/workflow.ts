@@ -205,6 +205,7 @@ export interface NodeProperty {
   required?: boolean;
   default?: any;
   description?: string;
+  tooltip?: string; // Tooltip text shown as help icon next to label
   placeholder?: string;
   options?: Array<{ name: string; value: any }>;
   displayOptions?: {
