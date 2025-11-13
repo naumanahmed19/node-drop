@@ -45,6 +45,7 @@
 
 export { useAutoLayout } from "./useAutoLayout";
 export { useCopyPaste } from "./useCopyPaste";
+export { useDeleteNodes } from "./useDeleteNodes";
 export { default as useDetachNodes } from "./useDetachNodes";
 export {
   useEdgeAnimation,

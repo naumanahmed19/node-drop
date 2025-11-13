@@ -64,63 +64,6 @@ describe('Node Interaction Store', () => {
     expect(result.current.contextMenuPosition).toBe(null)
   })
 
-  it('should clean up node interaction state when node is removed', () => {
-    const { result } = renderHook(() => useWorkflowStore())
-
-    // Set up a workflow with a node
-    const mockWorkflow = {
-      id: 'test-workflow',
-      name: 'Test Workflow',
-      description: '',
-      nodes: [
-        {
-          id: 'node-1',
-          type: 'test',
-          name: 'Test Node',
-          parameters: {},
-          position: { x: 0, y: 0 },
-          credentials: [],
-          disabled: false
-        }
-      ],
-      connections: [],
-      settings: {},
-      active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userId: 'user-1'
-    }
-
-    act(() => {
-      result.current.setWorkflow(mockWorkflow)
-    })
-
-    // Open property panel for the node
-    act(() => {
-      result.current.openNodeProperties('node-1')
-    })
-
-    // Show context menu for the node
-    act(() => {
-      result.current.showContextMenu('node-1', { x: 100, y: 200 })
-    })
-
-    expect(result.current.showPropertyPanel).toBe(true)
-    expect(result.current.contextMenuVisible).toBe(true)
-
-    // Remove the node
-    act(() => {
-      result.current.removeNode('node-1')
-    })
-
-    // Property panel and context menu should be closed
-    expect(result.current.showPropertyPanel).toBe(false)
-    expect(result.current.propertyPanelNodeId).toBe(null)
-    expect(result.current.contextMenuVisible).toBe(false)
-    expect(result.current.contextMenuNodeId).toBe(null)
-    expect(result.current.contextMenuPosition).toBe(null)
-  })
-
   it('should reset node interaction state when workflow is changed', () => {
     const { result } = renderHook(() => useWorkflowStore())
 

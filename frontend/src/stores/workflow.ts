@@ -91,7 +91,7 @@ interface WorkflowStore extends WorkflowEditorState {
     updates: Partial<WorkflowNode>,
     skipHistory?: boolean
   ) => void;
-  removeNode: (nodeId: string) => void;
+
   addConnection: (connection: WorkflowConnection) => void;
   removeConnection: (connectionId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
@@ -424,40 +424,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         }
       },
 
-      removeNode: (nodeId) => {
-        const current = get().workflow;
-        if (!current) return;
 
-        const updated = {
-          ...current,
-          nodes: current.nodes.filter((node) => node.id !== nodeId),
-          connections: current.connections.filter(
-            (conn) =>
-              conn.sourceNodeId !== nodeId && conn.targetNodeId !== nodeId
-          ),
-        };
-
-        // Clean up node interaction state if the removed node was selected
-        const stateUpdates: any = {
-          workflow: updated,
-          isDirty: true,
-          selectedNodeId: null,
-        };
-
-        if (get().propertyPanelNodeId === nodeId) {
-          stateUpdates.showPropertyPanel = false;
-          stateUpdates.propertyPanelNodeId = null;
-        }
-
-        if (get().contextMenuNodeId === nodeId) {
-          stateUpdates.contextMenuVisible = false;
-          stateUpdates.contextMenuNodeId = null;
-          stateUpdates.contextMenuPosition = null;
-        }
-
-        set(stateUpdates);
-        get().saveToHistory(`Remove node: ${nodeId}`);
-      },
 
       addConnection: (connection) => {
         const current = get().workflow;

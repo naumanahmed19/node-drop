@@ -1,4 +1,4 @@
-import { useDetachNodes } from "@/hooks/workflow";
+import { useDetachNodes, useDeleteNodes } from "@/hooks/workflow";
 import { useAddNodeDialogStore } from "@/stores/addNodeDialog";
 import { useWorkflowStore } from "@/stores/workflow";
 import { WorkflowNode } from "@/types";
@@ -8,7 +8,6 @@ export function useNodeActions(nodeId: string) {
   const executeNode = useWorkflowStore((state) => state.executeNode);
   const updateNode = useWorkflowStore((state) => state.updateNode);
   const addNode = useWorkflowStore((state) => state.addNode);
-  const removeNode = useWorkflowStore((state) => state.removeNode);
   const toggleNodeLock = useWorkflowStore((state) => state.toggleNodeLock);
   const openNodeProperties = useWorkflowStore(
     (state) => state.openNodeProperties
@@ -20,6 +19,7 @@ export function useNodeActions(nodeId: string) {
 
   const { openDialog } = useAddNodeDialogStore();
   const detachNodes = useDetachNodes();
+  const deleteNodes = useDeleteNodes();
   const { getNodes, setNodes, getNodesBounds } = useReactFlow();
 
   const handleToggleDisabled = (nodeId: string, disabled: boolean) => {
@@ -52,7 +52,8 @@ export function useNodeActions(nodeId: string) {
   };
 
   const handleDelete = () => {
-    removeNode(nodeId);
+    // Use shared delete handler for consistency
+    deleteNodes([nodeId]);
   };
 
   const handleToggleLock = () => {

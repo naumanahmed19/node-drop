@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, useRef, useState } from "react";
 import { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
+import { useDeleteNodes } from "./useDeleteNodes";
 
 /**
  * Custom hook for ReactFlow interactions
@@ -99,10 +100,14 @@ export function useReactFlowInteractions() {
   const blockSync = useRef(false);
   const resizeSnapshotTaken = useRef(false);
   const isResizing = useRef(false);
+  
+  // Get shared delete handler
+  const deleteNodes = useDeleteNodes();
 
   // Handle node position changes
   const handleNodesChange: OnNodesChange = useCallback(
     (changes) => {
+      // Apply changes to React Flow first
       onNodesChange(changes);
 
       // Track dragging state and handle dimension changes
@@ -342,29 +347,13 @@ export function useReactFlowInteractions() {
   );
 
   // Handle nodes delete
+  // This is called when user presses Delete/Backspace key
   const handleNodesDelete = useCallback((nodes: any[]) => {
     if (nodes.length === 0) return;
-
+    
     const nodeIds = nodes.map((node) => node.id);
-
-    // Update Zustand workflow store
-    const { workflow, updateWorkflow, saveToHistory } =
-      useWorkflowStore.getState();
-    if (workflow) {
-      // Save to history before deletion
-      saveToHistory(`Delete ${nodes.length} node(s)`);
-
-      // Remove nodes and their connections from workflow
-      updateWorkflow({
-        nodes: workflow.nodes.filter((node) => !nodeIds.includes(node.id)),
-        connections: workflow.connections.filter(
-          (conn) =>
-            !nodeIds.includes(conn.sourceNodeId) &&
-            !nodeIds.includes(conn.targetNodeId)
-        ),
-      });
-    }
-  }, []);
+    deleteNodes(nodeIds);
+  }, [deleteNodes]);
 
   // Handle edges delete
   const handleEdgesDelete = useCallback((edges: any[]) => {

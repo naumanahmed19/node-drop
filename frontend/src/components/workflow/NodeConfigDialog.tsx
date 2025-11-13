@@ -13,6 +13,7 @@ import {
 import { useCredentialStore, useNodeConfigDialogStore, useWorkflowStore } from '@/stores'
 import { NodeType, WorkflowNode } from '@/types'
 import { NodeValidator } from '@/utils/nodeValidation'
+import { useDeleteNodes } from '@/hooks/workflow'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { InputsColumn } from './node-config/InputsColumn'
@@ -30,10 +31,10 @@ interface NodeConfigDialogProps {
 export function NodeConfigDialog({ node, nodeType, isOpen, onClose, readOnly = false }: NodeConfigDialogProps) {
   const { 
     updateNode, 
-    removeNode, 
     executeNode,
     executionState
   } = useWorkflowStore()
+  const deleteNodes = useDeleteNodes()
   const { fetchCredentials, fetchCredentialTypes } = useCredentialStore()
   const {
     openDialog,
@@ -107,7 +108,7 @@ export function NodeConfigDialog({ node, nodeType, isOpen, onClose, readOnly = f
     if (readOnly) return
     
     if (confirm('Are you sure you want to delete this node?')) {
-      removeNode(node.id)
+      deleteNodes([node.id])
       handleClose()
     }
   }

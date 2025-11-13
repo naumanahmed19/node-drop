@@ -178,32 +178,6 @@ describe('WorkflowStore', () => {
     })
   })
 
-  describe('removeNode', () => {
-    it('should remove node and associated connections', () => {
-      const { setWorkflow, removeNode } = useWorkflowStore.getState()
-      setWorkflow(mockWorkflow)
-      
-      removeNode('node-1')
-      
-      const state = useWorkflowStore.getState()
-      expect(state.workflow?.nodes).toHaveLength(1)
-      expect(state.workflow?.nodes[0].id).toBe('node-2')
-      expect(state.workflow?.connections).toHaveLength(0)
-      expect(state.isDirty).toBe(true)
-    })
-
-    it('should clear selected node if removed node was selected', () => {
-      const { setWorkflow, setSelectedNode, removeNode } = useWorkflowStore.getState()
-      setWorkflow(mockWorkflow)
-      setSelectedNode('node-1')
-      
-      removeNode('node-1')
-      
-      const state = useWorkflowStore.getState()
-      expect(state.selectedNodeId).toBeNull()
-    })
-  })
-
   describe('addConnection', () => {
     it('should add valid connection', () => {
       const { setWorkflow, addNode, addConnection } = useWorkflowStore.getState()
