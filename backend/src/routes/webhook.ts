@@ -183,6 +183,10 @@ function sendWebhookResponse(
     if (webhookOptions.noResponseBody) {
       res.status(result.responseData.statusCode).end();
     } else {
+      console.log(`📤 Sending response:`, {
+        statusCode: result.responseData.statusCode,
+        body: responseBody,
+      });
       res.status(result.responseData.statusCode).send(responseBody);
     }
   } else {

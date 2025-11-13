@@ -933,11 +933,20 @@ export class TriggerService {
               hasData: !!executionResult.data,
               dataKeys: executionResult.data ? Object.keys(executionResult.data) : [],
               hasFailures: executionResult.data?.hasFailures,
+              failedNodes: executionResult.data?.failedNodes,
             });
             
             // Check if execution failed or has errors
             // Note: success can be true even with errors, so we check for error presence
-            if (executionResult.error || executionResult.data?.hasFailures) {
+            const hasError = executionResult.error || executionResult.data?.hasFailures;
+            console.log(`🔍 DEBUG Error check:`, {
+              hasError,
+              hasErrorField: !!executionResult.error,
+              hasFailuresField: !!executionResult.data?.hasFailures,
+              willReturnError: hasError,
+            });
+            
+            if (hasError) {
               const errorMessage = executionResult.error?.message || "Workflow execution failed";
               const errorDetails = executionResult.error;
               

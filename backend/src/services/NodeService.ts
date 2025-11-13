@@ -529,6 +529,47 @@ export class NodeService {
       // Cleanup execution resources on error
       await this.secureExecutionService.cleanupExecution(execId);
 
+      // Check if continueOnFail is enabled
+      const continueOnFail = settings?.continueOnFail === true;
+      const alwaysOutputData = settings?.alwaysOutputData === true;
+
+      // If continueOnFail and alwaysOutputData are enabled, return error data
+      if (continueOnFail && alwaysOutputData) {
+        logger.info("Node failed but continueOnFail is enabled - returning error data", {
+          nodeType,
+          executionId: execId,
+        });
+
+        // Return error information as output data
+        const errorOutput: StandardizedNodeOutput = {
+          main: [{
+            json: {
+              error: error instanceof Error ? error.message : "Unknown execution error",
+              errorDetails: {
+                message: error instanceof Error ? error.message : String(error),
+                name: error instanceof Error ? error.name : typeof error,
+                stack: error instanceof Error ? error.stack : undefined,
+              },
+            },
+          }],
+          metadata: {
+            nodeType,
+            outputCount: 1,
+            hasMultipleBranches: false,
+          },
+        };
+
+        return {
+          success: false, // Still mark as failed
+          data: errorOutput, // But include data
+          error: {
+            message:
+              error instanceof Error ? error.message : "Unknown execution error",
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        };
+      }
+
       return {
         success: false,
         error: {

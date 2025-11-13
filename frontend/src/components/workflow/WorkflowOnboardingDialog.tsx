@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { CategorySelect } from './CategorySelect'
 import { Database } from 'lucide-react'
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface WorkflowOnboardingDialogProps {
@@ -26,16 +26,22 @@ interface WorkflowOnboardingDialogProps {
     saveExecutionHistory: boolean
   }) => void
   onClose: () => void
+  defaultName?: string
+  defaultCategory?: string
+  defaultSaveExecutionHistory?: boolean
 }
 
 export function WorkflowOnboardingDialog({
   isOpen,
   onStartBuilding,
   onClose,
+  defaultName = 'My Workflow',
+  defaultCategory = '',
+  defaultSaveExecutionHistory = true,
 }: WorkflowOnboardingDialogProps) {
-  const [name, setName] = useState('My Workflow')
-  const [category, setCategory] = useState('')
-  const [saveExecutionHistory, setSaveExecutionHistory] = useState(true)
+  const [name, setName] = useState(defaultName)
+  const [category, setCategory] = useState(defaultCategory)
+  const [saveExecutionHistory, setSaveExecutionHistory] = useState(defaultSaveExecutionHistory)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,6 +53,15 @@ export function WorkflowOnboardingDialog({
       })
     }
   }
+
+  // Update state when defaults change
+  React.useEffect(() => {
+    if (isOpen) {
+      setName(defaultName)
+      setCategory(defaultCategory)
+      setSaveExecutionHistory(defaultSaveExecutionHistory)
+    }
+  }, [isOpen, defaultName, defaultCategory, defaultSaveExecutionHistory])
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {

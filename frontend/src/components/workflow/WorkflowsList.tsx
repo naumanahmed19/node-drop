@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { WorkflowsHeader } from '@/components/workflow/WorkflowsHeader'
+import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { useSidebarContext } from '@/contexts'
 import { workflowService } from '@/services'
 import type { Workflow } from '@/types'
@@ -48,6 +49,8 @@ export function WorkflowsList({ }: WorkflowsListProps) {
   const [viewMode, setViewMode] = useState<'list' | 'categorized'>('list')
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState("")
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [workflowToDuplicate, setWorkflowToDuplicate] = useState<{ id: string; name: string; category?: string; saveExecutionHistory: boolean } | null>(null)
   const { showConfirm, ConfirmDialog } = useConfirmDialog()
 
   // Extract the currently active workflow ID from URL if in editor
@@ -208,8 +211,53 @@ export function WorkflowsList({ }: WorkflowsListProps) {
     } else if (action === 'edit') {
       handleWorkflowClick(workflowId)
     } else if (action === 'duplicate') {
-      // TODO: Implement duplicate functionality
-      console.log('Duplicate workflow:', workflowId)
+      // Open the onboarding dialog for duplication
+      setWorkflowToDuplicate({
+        id: workflowId,
+        name: workflow.name,
+        category: workflow.category,
+        saveExecutionHistory: workflow.settings?.saveExecutionToDatabase ?? true
+      })
+      setDuplicateDialogOpen(true)
+    }
+  }
+
+  const handleDuplicateWorkflow = async (data: {
+    name: string
+    category: string
+    saveExecutionHistory: boolean
+  }) => {
+    if (!workflowToDuplicate) return
+
+    try {
+      // Call the duplicate API
+      const duplicatedWorkflow = await workflowService.duplicateWorkflow(
+        workflowToDuplicate.id,
+        data.name
+      )
+      
+      // Update the duplicated workflow with the selected category if different
+      if (data.category && data.category !== duplicatedWorkflow.category) {
+        await workflowService.updateWorkflow(duplicatedWorkflow.id, {
+          category: data.category
+        })
+        duplicatedWorkflow.category = data.category
+      }
+      
+      // Add the new workflow to the list
+      setWorkflows([duplicatedWorkflow, ...workflows])
+      
+      // Close the dialog
+      setDuplicateDialogOpen(false)
+      setWorkflowToDuplicate(null)
+      
+      // Navigate to the new workflow
+      navigate(`/workflows/${duplicatedWorkflow.id}/edit`)
+    } catch (error) {
+      console.error('Failed to duplicate workflow:', error)
+      setError('Failed to duplicate workflow. Please try again.')
+      setDuplicateDialogOpen(false)
+      setWorkflowToDuplicate(null)
     }
   }
 
@@ -428,6 +476,17 @@ export function WorkflowsList({ }: WorkflowsListProps) {
         </div>
       </div>
       <ConfirmDialog />
+      <WorkflowOnboardingDialog
+        isOpen={duplicateDialogOpen}
+        onStartBuilding={handleDuplicateWorkflow}
+        onClose={() => {
+          setDuplicateDialogOpen(false)
+          setWorkflowToDuplicate(null)
+        }}
+        defaultName={workflowToDuplicate ? `${workflowToDuplicate.name} (Copy)` : 'My Workflow'}
+        defaultCategory={workflowToDuplicate?.category || ''}
+        defaultSaveExecutionHistory={workflowToDuplicate?.saveExecutionHistory ?? true}
+      />
     </>
   )
 }

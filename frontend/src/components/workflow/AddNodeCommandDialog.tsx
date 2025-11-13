@@ -400,10 +400,17 @@ export function AddNodeCommandDialog({
 
       // If there's a target node specified (inserting between nodes), wire the new node to it
       if (isInsertingBetweenNodes && insertionContext?.targetNodeId) {
+        // Determine the appropriate output handle for the new node
+        // Use the first available output from the node type, or 'main' as fallback
+        let newNodeOutput = 'main'
+        if (nodeType.outputs && nodeType.outputs.length > 0) {
+          newNodeOutput = nodeType.outputs[0] // outputs is string[], not object[]
+        }
+
         const targetConnection: WorkflowConnection = {
           id: `${newNode.id}-${insertionContext.targetNodeId}-${Date.now() + 1}`,
           sourceNodeId: newNode.id,
-          sourceOutput: 'main',
+          sourceOutput: newNodeOutput,
           targetNodeId: insertionContext.targetNodeId,
           targetInput: insertionContext.targetInput || 'main',
         }

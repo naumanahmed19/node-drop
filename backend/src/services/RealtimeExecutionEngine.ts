@@ -275,6 +275,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 success: result.success,
                 hasData: !!result.data,
                 hasError: !!result.error,
+                dataKeys: result.data ? Object.keys(result.data) : [],
+                mainDataLength: result.data?.main ? result.data.main.length : 0,
             });
 
             // Check if execution failed
@@ -282,9 +284,16 @@ export class RealtimeExecutionEngine extends EventEmitter {
             if (!result.success) {
                 if (result.data) {
                     // continueOnFail is enabled - treat as success with error data
-                    logger.info(`[RealtimeExecution] Node ${nodeId} failed but continuing (continueOnFail enabled)`);
+                    logger.info(`[RealtimeExecution] Node ${nodeId} failed but continuing (continueOnFail enabled)`, {
+                        hasData: true,
+                        dataKeys: Object.keys(result.data),
+                        mainDataLength: result.data.main ? result.data.main.length : 0,
+                    });
                 } else {
                     // No data returned - actual failure
+                    logger.error(`[RealtimeExecution] Node ${nodeId} failed without data - stopping execution`, {
+                        error: result.error?.message,
+                    });
                     throw new Error(result.error?.message || "Node execution failed");
                 }
             }
