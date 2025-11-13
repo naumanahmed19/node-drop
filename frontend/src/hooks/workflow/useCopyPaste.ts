@@ -70,67 +70,91 @@ export function useCopyPaste() {
   /**
    * Copy selected nodes and their internal connections to buffer
    * Only copies edges where both source and target are selected
+   * When copying a group, also includes all child nodes inside the group
    */
   const copy = useCallback(() => {
-    const selectedNodes = getNodes().filter((node) => node.selected);
+    const allNodes = getNodes();
+    const selectedNodes = allNodes.filter((node) => node.selected);
 
     if (selectedNodes.length === 0) {
       console.log("📋 No nodes selected to copy");
       return;
     }
 
-    // Get all edges connected to selected nodes
-    // Filter to only include edges where BOTH source and target are selected
-    const selectedEdges = getConnectedEdges(selectedNodes, getEdges()).filter(
+    // Include child nodes if a group is selected
+    const selectedGroupIds = selectedNodes
+      .filter((node) => node.type === "group")
+      .map((node) => node.id);
+    
+    const childNodes = allNodes.filter(
+      (node) => node.parentId && selectedGroupIds.includes(node.parentId)
+    );
+
+    // Combine selected nodes and their children
+    const nodesToCopy = [...selectedNodes, ...childNodes];
+    const nodeToCopyIds = nodesToCopy.map((n) => n.id);
+
+    // Get all edges connected to nodes being copied
+    // Filter to only include edges where BOTH source and target are in the copy set
+    const selectedEdges = getConnectedEdges(nodesToCopy, getEdges()).filter(
       (edge) => {
-        const isSourceSelected = selectedNodes.some(
-          (n) => n.id === edge.source
+        return (
+          nodeToCopyIds.includes(edge.source) &&
+          nodeToCopyIds.includes(edge.target)
         );
-        const isTargetSelected = selectedNodes.some(
-          (n) => n.id === edge.target
-        );
-        return isSourceSelected && isTargetSelected;
       }
     );
 
-    setBufferedNodes(selectedNodes);
+    setBufferedNodes(nodesToCopy);
     setBufferedEdges(selectedEdges);
 
     console.log(
-      `📋 Copied ${selectedNodes.length} nodes and ${selectedEdges.length} edges`
+      `📋 Copied ${nodesToCopy.length} nodes (${selectedNodes.length} selected + ${childNodes.length} children) and ${selectedEdges.length} edges`
     );
   }, [getNodes, getEdges]);
 
   /**
    * Copy selected nodes and remove them from the canvas
    * Same as copy + delete
+   * When cutting a group, also includes all child nodes inside the group
    */
   const cut = useCallback(() => {
-    const selectedNodes = getNodes().filter((node) => node.selected);
+    const allNodes = getNodes();
+    const selectedNodes = allNodes.filter((node) => node.selected);
 
     if (selectedNodes.length === 0) {
       console.log("✂️ No nodes selected to cut");
       return;
     }
 
-    // Get internal edges (where both source and target are selected)
-    const selectedEdges = getConnectedEdges(selectedNodes, getEdges()).filter(
+    // Include child nodes if a group is selected
+    const selectedGroupIds = selectedNodes
+      .filter((node) => node.type === "group")
+      .map((node) => node.id);
+    
+    const childNodes = allNodes.filter(
+      (node) => node.parentId && selectedGroupIds.includes(node.parentId)
+    );
+
+    // Combine selected nodes and their children
+    const nodesToCut = [...selectedNodes, ...childNodes];
+    const nodeToCutIds = nodesToCut.map((n) => n.id);
+
+    // Get internal edges (where both source and target are in the cut set)
+    const selectedEdges = getConnectedEdges(nodesToCut, getEdges()).filter(
       (edge) => {
-        const isSourceSelected = selectedNodes.some(
-          (n) => n.id === edge.source
+        return (
+          nodeToCutIds.includes(edge.source) &&
+          nodeToCutIds.includes(edge.target)
         );
-        const isTargetSelected = selectedNodes.some(
-          (n) => n.id === edge.target
-        );
-        return isSourceSelected && isTargetSelected;
       }
     );
 
-    setBufferedNodes(selectedNodes);
+    setBufferedNodes(nodesToCut);
     setBufferedEdges(selectedEdges);
 
-    // Get selected node IDs for removal from workflow
-    const selectedNodeIds = selectedNodes.map((node) => node.id);
+    // Get node IDs for removal from workflow
+    const selectedNodeIds = nodesToCut.map((node) => node.id);
 
     // Update Zustand workflow store - remove nodes and connections
     const { workflow, updateWorkflow } = useWorkflowStore.getState();
@@ -148,14 +172,14 @@ export function useCopyPaste() {
     }
 
     // Save to history
-    saveToHistory(`Cut ${selectedNodes.length} node(s)`);
+    saveToHistory(`Cut ${nodesToCut.length} node(s)`);
 
-    // Remove the cut nodes and their edges from React Flow
-    setNodes((nodes) => nodes.filter((node) => !node.selected));
+    // Remove the cut nodes (including children) and their edges from React Flow
+    setNodes((nodes) => nodes.filter((node) => !selectedNodeIds.includes(node.id)));
     setEdges((edges) => edges.filter((edge) => !selectedEdges.includes(edge)));
 
     console.log(
-      `✂️ Cut ${selectedNodes.length} nodes and ${selectedEdges.length} edges`
+      `✂️ Cut ${nodesToCut.length} nodes (${selectedNodes.length} selected + ${childNodes.length} children) and ${selectedEdges.length} edges`
     );
   }, [getNodes, setNodes, getEdges, setEdges, saveToHistory]);
 
@@ -179,23 +203,41 @@ export function useCopyPaste() {
           y: mousePosRef.current.y,
         });
 
-      // Find the top-left corner of the buffered nodes (for relative positioning)
-      const minX = Math.min(...bufferedNodes.map((node) => node.position.x));
-      const minY = Math.min(...bufferedNodes.map((node) => node.position.y));
+      // Find the top-left corner of ONLY top-level nodes (not children)
+      // Child nodes have relative positions and shouldn't be included in this calculation
+      const topLevelNodes = bufferedNodes.filter((node) => !node.parentId);
+      const minX = Math.min(...topLevelNodes.map((node) => node.position.x));
+      const minY = Math.min(...topLevelNodes.map((node) => node.position.y));
 
       // Use timestamp to create unique IDs
       const now = Date.now();
 
       // Create new nodes with updated IDs and positions
+      // Also update parentId references for child nodes
       const newNodes: Node[] = bufferedNodes.map((node) => {
         const id = `${node.id}-${now}`;
-        const x = pastePosition.x + (node.position.x - minX);
-        const y = pastePosition.y + (node.position.y - minY);
+        
+        // For child nodes, keep their relative position unchanged
+        // For top-level nodes, calculate new absolute position
+        let x, y;
+        if (node.parentId) {
+          // Child node - keep relative position as-is
+          x = node.position.x;
+          y = node.position.y;
+        } else {
+          // Top-level node - calculate new absolute position
+          x = pastePosition.x + (node.position.x - minX);
+          y = pastePosition.y + (node.position.y - minY);
+        }
+
+        // Update parentId if the node has one (child of a group)
+        const newParentId = node.parentId ? `${node.parentId}-${now}` : undefined;
 
         return {
           ...node,
           id,
           position: { x, y },
+          parentId: newParentId,
           selected: true, // Select the pasted nodes
         };
       });
@@ -225,7 +267,8 @@ export function useCopyPaste() {
         const originalId = node.id.replace(`-${now}`, "");
         const originalNode = workflow.nodes.find((n) => n.id === originalId);
 
-        return {
+        // Base workflow node
+        const baseNode = {
           id: node.id,
           type: originalNode?.type || node.type || "default",
           name: (typeof originalNode?.name === 'string' ? originalNode.name : '') || 
@@ -239,6 +282,25 @@ export function useCopyPaste() {
           mockData: originalNode?.mockData,
           mockDataPinned: originalNode?.mockDataPinned,
         };
+
+        // Add parentId and extent for child nodes
+        if (node.parentId) {
+          return {
+            ...baseNode,
+            parentId: node.parentId,
+            extent: node.extent as any,
+          };
+        }
+
+        // Add style for group nodes
+        if (node.type === "group") {
+          return {
+            ...baseNode,
+            style: node.style || originalNode?.style,
+          };
+        }
+
+        return baseNode;
       });
 
       // Convert React Flow edges to workflow connections

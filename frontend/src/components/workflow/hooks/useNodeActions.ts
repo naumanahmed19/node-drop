@@ -65,6 +65,7 @@ export function useNodeActions(nodeId: string) {
 
   const handleGroup = () => {
     // Get all selected nodes that are not groups and not in groups
+    // Use fresh nodes from React Flow to ensure we have current positions
     const allNodes = getNodes();
     const selectedNodes = allNodes.filter(
       (node) => node.selected && !node.parentId && node.type !== "group"
@@ -79,6 +80,8 @@ export function useNodeActions(nodeId: string) {
     saveToHistory("Group nodes");
 
     const groupId = `group_${Math.random() * 10000}`;
+    
+    // Calculate bounds using fresh positions from getNodes()
     const selectedNodesRectangle = getNodesBounds(selectedNodes);
     const GROUP_PADDING = 25;
     const groupNodePosition = {

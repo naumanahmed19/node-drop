@@ -223,8 +223,8 @@ export function WorkflowCanvas({
                     // nodeExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     attributionPosition="bottom-left"
                     selectNodesOnDrag={false}
-                    selectionOnDrag={false}
-                    selectionKeyCode={null}
+                    selectionOnDrag={true}
+                    selectionKeyCode="Shift"
                     multiSelectionKeyCode="Shift"
                     selectionMode={SelectionMode.Partial}
                     fitView

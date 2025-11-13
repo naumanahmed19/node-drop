@@ -100,7 +100,14 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
     saveToHistory('Group nodes')
     
     const groupId = `group_${Math.random() * 10000}`
-    const selectedNodesRectangle = getNodesBounds(selectedNodes)
+    
+    // Get fresh nodes from React Flow to ensure we have current positions
+    const allNodes = getNodes()
+    const selectedNodeIds = selectedNodes.map(n => n.id)
+    const freshSelectedNodes = allNodes.filter(n => selectedNodeIds.includes(n.id))
+    
+    // Calculate bounds using fresh positions
+    const selectedNodesRectangle = getNodesBounds(freshSelectedNodes)
     const GROUP_PADDING = 25
     const groupNodePosition = {
       x: selectedNodesRectangle.x,
@@ -118,9 +125,6 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
       },
       data: {},
     }
-
-    const allNodes = getNodes()
-    const selectedNodeIds = selectedNodes.map(n => n.id)
     
     const nextNodes = allNodes.map((node) => {
       if (selectedNodeIds.includes(node.id)) {

@@ -236,9 +236,14 @@ export function WorkflowEditor({
             } else {
                 console.log('ðŸ”„ Syncing Zustand â†’ React Flow (not blocked)');
             }
-            // Preserve current selection when syncing
+            // Preserve current selection and positions when syncing
             const currentNodes = reactFlowInstance?.getNodes() || [];
             const selectedNodeIds = currentNodes.filter(node => node.selected).map(node => node.id);
+            
+            // Create maps for current positions and parent relationships
+            const currentPositionsMap = new Map(
+                currentNodes.map(node => [node.id, { position: node.position, parentId: node.parentId }])
+            );
 
             // Check if the node structure actually changed (not just execution state)
             const prevNodeIds = prevReactFlowNodesRef.current.map(n => n.id).sort().join(',');
@@ -248,23 +253,35 @@ export function WorkflowEditor({
             // Only update if structure changed OR workflow changed
             // This prevents overwriting selection during execution state updates
             if (nodesStructureChanged || workflowChanged) {
-                // Update nodes with preserved selection
-                const nodesWithSelection = reactFlowNodes.map(node => ({
-                    ...node,
-                    selected: selectedNodeIds.includes(node.id)
-                }));
+                // Update nodes with preserved selection and positions
+                const nodesWithSelection = reactFlowNodes.map(node => {
+                    const currentNodeData = currentPositionsMap.get(node.id);
+                    // Only preserve position if parentId hasn't changed
+                    // If parentId changed (e.g., node was grouped), use new position from Zustand
+                    const shouldPreservePosition = currentNodeData && currentNodeData.parentId === node.parentId;
+                    
+                    return {
+                        ...node,
+                        selected: selectedNodeIds.includes(node.id),
+                        position: shouldPreservePosition ? currentNodeData.position : node.position
+                    };
+                });
 
                 setNodes(nodesWithSelection);
                 prevReactFlowNodesRef.current = reactFlowNodes;
             } else {
-                // Just update node data without touching selection
+                // Just update node data without touching selection or position
                 setNodes((currentNodes) =>
                     currentNodes.map(currentNode => {
                         const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
                         if (updatedNode) {
+                            // Only preserve position if parentId hasn't changed
+                            const shouldPreservePosition = currentNode.parentId === updatedNode.parentId;
+                            
                             return {
                                 ...updatedNode,
-                                selected: currentNode.selected // Preserve current selection
+                                selected: currentNode.selected, // Preserve current selection
+                                position: shouldPreservePosition ? currentNode.position : updatedNode.position
                             };
                         }
                         return currentNode;
