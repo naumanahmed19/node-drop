@@ -474,9 +474,42 @@ httpServer.listen(PORT, async () => {
   }
 });
 
+// Memory monitoring to detect leaks
+setInterval(() => {
+  const usage = process.memoryUsage();
+  const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
+  
+  console.log(`📊 Memory: ${heapUsedMB}MB / ${heapTotalMB}MB (RSS: ${Math.round(usage.rss / 1024 / 1024)}MB)`);
+  
+  // Alert if memory usage is high
+  if (heapUsedMB > 1024) { // 1GB threshold
+    console.warn(`⚠️  High memory usage detected: ${heapUsedMB}MB`);
+    
+    // Log active resources
+    const activeExecutions = (realtimeExecutionEngine as any).activeExecutions?.size || 0;
+    const connectedSockets = socketService.getConnectedUsersCount();
+    const eventBufferSize = (socketService as any).executionEventBuffer?.size || 0;
+    
+    console.log(`  Active executions: ${activeExecutions}`);
+    console.log(`  Connected sockets: ${connectedSockets}`);
+    console.log(`  Event buffer size: ${eventBufferSize}`);
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      console.log('  Running garbage collection...');
+      global.gc();
+    }
+  }
+}, 30000); // Every 30 seconds
+
 // Graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully...");
+  
+  // Remove all event listeners to prevent memory leaks
+  realtimeExecutionEngine.removeAllListeners();
+  
   await nodeLoader.cleanup();
   await socketService.shutdown();
   await scheduleJobManager.shutdown();
@@ -489,6 +522,10 @@ process.on("SIGTERM", async () => {
 
 process.on("SIGINT", async () => {
   console.log("SIGINT received, shutting down gracefully...");
+  
+  // Remove all event listeners to prevent memory leaks
+  realtimeExecutionEngine.removeAllListeners();
+  
   await nodeLoader.cleanup();
   await socketService.shutdown();
   await scheduleJobManager.shutdown();

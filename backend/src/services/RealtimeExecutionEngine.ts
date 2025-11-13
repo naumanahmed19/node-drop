@@ -48,6 +48,9 @@ export class RealtimeExecutionEngine extends EventEmitter {
     private prisma: PrismaClient;
     private nodeService: NodeService;
     private activeExecutions: Map<string, ExecutionContext> = new Map();
+    
+    // Memory leak prevention
+    private readonly MAX_ACTIVE_EXECUTIONS = 50;
 
     constructor(prisma: PrismaClient, nodeService: NodeService) {
         super();
@@ -187,11 +190,33 @@ export class RealtimeExecutionEngine extends EventEmitter {
         connections: WorkflowConnection[],
         options?: { saveToDatabase?: boolean }
     ): Promise<string> {
+        // Check limit before creating new execution to prevent memory leaks
+        if (this.activeExecutions.size >= this.MAX_ACTIVE_EXECUTIONS) {
+            // Clean up oldest completed/failed executions
+            const toDelete: string[] = [];
+            for (const [id, ctx] of this.activeExecutions.entries()) {
+                if (ctx.status !== 'running') {
+                    toDelete.push(id);
+                    if (toDelete.length >= 10) break; // Remove 10 at a time
+                }
+            }
+            toDelete.forEach(id => {
+                this.activeExecutions.delete(id);
+                logger.info(`[RealtimeExecution] Cleaned up completed execution: ${id}`);
+            });
+            
+            if (this.activeExecutions.size >= this.MAX_ACTIVE_EXECUTIONS) {
+                logger.error(`[RealtimeExecution] Too many concurrent executions: ${this.activeExecutions.size}`);
+                throw new Error('Too many concurrent executions. Please try again later.');
+            }
+        }
+
         const executionId = uuidv4();
 
         logger.info(`[RealtimeExecution] Starting execution ${executionId}`, {
             workflowId,
             triggerNodeId,
+            activeExecutions: this.activeExecutions.size,
         });
 
         // Create execution context
@@ -914,10 +939,17 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         logger.info(`[RealtimeExecution] Execution ${executionId} completed`);
 
-        // Cleanup after a delay
+        // Cleanup after a short delay (reduced from 60s to 5s to prevent memory leaks)
         setTimeout(() => {
             this.activeExecutions.delete(executionId);
-        }, 60000); // Keep for 1 minute
+            
+            // Cleanup socket room if socketService is available
+            if (global.socketService) {
+                global.socketService.cleanupExecutionRoom(executionId);
+            }
+            
+            logger.debug(`[RealtimeExecution] Cleaned up execution context: ${executionId}`);
+        }, 5000); // Reduced from 60000ms to 5000ms
     }
 
     /**
@@ -954,10 +986,17 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         logger.error(`[RealtimeExecution] Execution ${executionId} failed:`, error);
 
-        // Cleanup after a delay
+        // Cleanup after a short delay (reduced from 60s to 5s to prevent memory leaks)
         setTimeout(() => {
             this.activeExecutions.delete(executionId);
-        }, 60000);
+            
+            // Cleanup socket room if socketService is available
+            if (global.socketService) {
+                global.socketService.cleanupExecutionRoom(executionId);
+            }
+            
+            logger.debug(`[RealtimeExecution] Cleaned up failed execution context: ${executionId}`);
+        }, 5000); // Reduced from 60000ms to 5000ms
     }
 
     /**

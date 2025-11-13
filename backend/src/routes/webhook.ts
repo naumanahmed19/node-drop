@@ -254,6 +254,10 @@ function extractProperty(obj: any, path: string): any {
   }
 }
 
+// File size limits to prevent memory issues
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file
+const MAX_TOTAL_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB total
+
 /**
  * Helper function to build webhook request object with binary and raw body support
  */
@@ -271,9 +275,23 @@ function buildWebhookRequest(req: Request): any {
   // Add binary data if present (convert array to object with field names as keys)
   if ((req as any).binaryData) {
     const binaryFiles = (req as any).binaryData;
+    let totalSize = 0;
+    
     if (Array.isArray(binaryFiles)) {
       webhookRequest.binary = {};
-      binaryFiles.forEach((file: any) => {
+      
+      for (const file of binaryFiles) {
+        // Check individual file size
+        if (file.fileSize > MAX_FILE_SIZE) {
+          throw new Error(`File ${file.fileName} exceeds maximum size of 10MB`);
+        }
+        
+        // Check total upload size
+        totalSize += file.fileSize;
+        if (totalSize > MAX_TOTAL_UPLOAD_SIZE) {
+          throw new Error('Total upload size exceeds 50MB limit');
+        }
+        
         // Convert buffer to base64 to avoid memory issues with large files
         const base64Data = Buffer.isBuffer(file.data) 
           ? file.data.toString('base64')
@@ -285,9 +303,13 @@ function buildWebhookRequest(req: Request): any {
           fileName: file.fileName,
           fileSize: file.fileSize,
         };
-      });
+      }
     } else {
       // Legacy single file support - also convert to base64
+      if (binaryFiles.fileSize > MAX_FILE_SIZE) {
+        throw new Error(`File ${binaryFiles.fileName} exceeds maximum size of 10MB`);
+      }
+      
       const base64Data = Buffer.isBuffer(binaryFiles.data)
         ? binaryFiles.data.toString('base64')
         : binaryFiles.data;
@@ -407,6 +429,24 @@ router.get(
   })
 );
 
+// Rate limiting for webhooks to prevent memory exhaustion
+import rateLimit from 'express-rate-limit';
+
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // Limit each IP to 100 requests per minute
+  message: {
+    success: false,
+    error: 'Too Many Requests',
+    message: 'Too many webhook requests from this IP, please try again later',
+    retryAfter: 60,
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip rate limiting for test mode
+  skip: (req) => req.query.test === 'true' || req.query.visualize === 'true',
+});
+
 /**
  * Public Webhook Endpoint - handles incoming webhook requests
  * This route is accessible without authentication to allow external services to trigger workflows
@@ -418,6 +458,7 @@ router.get(
  */
 router.all(
   "/:webhookId",
+  webhookLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { webhookId } = req.params;
     
@@ -485,6 +526,7 @@ router.all(
 // Route with path suffix (must come after the test route to avoid conflicts)
 router.all(
   "/:webhookId/*",
+  webhookLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { webhookId } = req.params;
     const pathSuffix = req.params[0] || "";

@@ -37,6 +37,10 @@ export class SocketService {
   private executionEventBuffer: Map<string, ExecutionEventData[]> = new Map();
   private bufferRetentionMs = 60000; // Keep events for 60 seconds (increased for production latency)
   private bufferCleanupInterval: NodeJS.Timeout;
+  
+  // Memory leak prevention limits
+  private readonly MAX_BUFFERED_EXECUTIONS = 100; // Limit total executions buffered
+  private readonly MAX_EVENTS_PER_EXECUTION = 20; // Reduced from 50 to prevent memory issues
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -520,6 +524,34 @@ export class SocketService {
   }
 
   /**
+   * Cleanup execution room to prevent memory leaks
+   */
+  public cleanupExecutionRoom(executionId: string): void {
+    const room = `execution:${executionId}`;
+    
+    // Get all sockets in the room
+    const socketsInRoom = this.io.sockets.adapter.rooms.get(room);
+    
+    if (socketsInRoom) {
+      // Make all sockets leave the room
+      socketsInRoom.forEach(socketId => {
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(room);
+        }
+      });
+      
+      logger.debug(`Cleaned up room: ${room}, removed ${socketsInRoom.size} sockets`);
+    }
+    
+    // Also cleanup the event buffer for this execution
+    if (this.executionEventBuffer.has(executionId)) {
+      this.executionEventBuffer.delete(executionId);
+      logger.debug(`Cleaned up event buffer for execution: ${executionId}`);
+    }
+  }
+
+  /**
    * Disconnect all sockets for a user (useful for logout)
    */
   public disconnectUser(userId: string): void {
@@ -586,6 +618,16 @@ export class SocketService {
     executionId: string,
     eventData: ExecutionEventData
   ): void {
+    // Limit total number of buffered executions to prevent memory leaks
+    if (this.executionEventBuffer.size >= this.MAX_BUFFERED_EXECUTIONS) {
+      // Remove oldest execution buffer
+      const oldestKey = this.executionEventBuffer.keys().next().value;
+      if (oldestKey) {
+        this.executionEventBuffer.delete(oldestKey);
+        logger.warn(`Event buffer limit reached (${this.MAX_BUFFERED_EXECUTIONS}), removed oldest execution: ${oldestKey}`);
+      }
+    }
+
     if (!this.executionEventBuffer.has(executionId)) {
       this.executionEventBuffer.set(executionId, []);
     }
@@ -593,13 +635,13 @@ export class SocketService {
     const buffer = this.executionEventBuffer.get(executionId)!;
     buffer.push(eventData);
 
-    // Limit buffer size to prevent memory issues (keep last 50 events per execution)
-    if (buffer.length > 50) {
-      buffer.splice(0, buffer.length - 50);
+    // Limit buffer size to prevent memory issues (reduced from 50 to 20)
+    if (buffer.length > this.MAX_EVENTS_PER_EXECUTION) {
+      buffer.splice(0, buffer.length - this.MAX_EVENTS_PER_EXECUTION);
     }
 
     logger.debug(
-      `Buffered event for execution ${executionId}, buffer size: ${buffer.length}`
+      `Buffered event for execution ${executionId}, buffer size: ${buffer.length}, total buffers: ${this.executionEventBuffer.size}`
     );
   }
 
