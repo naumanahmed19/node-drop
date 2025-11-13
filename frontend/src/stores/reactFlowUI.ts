@@ -42,6 +42,11 @@ interface ReactFlowUIState {
   showExecutionPanel: boolean;
   executionPanelSize: number;
 
+  // Code mode state
+  showCodePanel: boolean;
+  toggleCodePanel: () => void;
+  setShowCodePanel: (show: boolean) => void;
+
   // Toggle functions
   toggleMinimap: () => void;
   toggleBackground: () => void;
@@ -96,6 +101,7 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       canvasBoundaryY: 500,
       showExecutionPanel: false,
       executionPanelSize: 4,
+      showCodePanel: false,
       isLoadingPreferences: false,
       isSavingPreferences: false,
 
@@ -146,6 +152,14 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
           // If panel is minimized, expand it to default size
           set({ executionPanelSize: 30, showExecutionPanel: true });
         }
+      },
+
+      toggleCodePanel: () => {
+        set((state) => ({ showCodePanel: !state.showCodePanel }));
+      },
+
+      setShowCodePanel: (show) => {
+        set({ showCodePanel: show });
       },
 
       // Setters

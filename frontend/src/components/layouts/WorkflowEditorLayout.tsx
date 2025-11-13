@@ -168,7 +168,9 @@ export function WorkflowEditorLayout() {
         </div>
       ) : (
         <>
-          <WorkflowToolbar onSave={handleSave} />
+          <WorkflowToolbar 
+            onSave={handleSave}
+          />
           <div className="flex flex-1 flex-col h-full overflow-hidden">
             <WorkflowEditorWrapper nodeTypes={nodeTypes} />
           </div>

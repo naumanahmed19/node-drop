@@ -17,12 +17,13 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { useAddNodeDialogStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
+import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
 import { useEnvironmentStore } from '@/stores/environment'
 import { getEnvironmentLabel } from '@/types/environment'
 import { validateImportFile } from '@/utils/errorHandling'
 import {
   ChevronDown,
+  Code2,
   Download,
   Loader2,
   MoreHorizontal,
@@ -53,6 +54,9 @@ export function WorkflowToolbar({
   const [showDeployDialog, setShowDeployDialog] = useState(false)
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
   const { selectedEnvironment, summaries } = useEnvironmentStore()
+  
+  // Code mode from ReactFlowUI store
+  const { showCodePanel: isCodeMode, toggleCodePanel } = useReactFlowUIStore()
   
   // Add Node Dialog store
   const { openDialog } = useAddNodeDialogStore()
@@ -393,6 +397,11 @@ export function WorkflowToolbar({
             <DropdownMenuItem onClick={() => setShowSettingsModal(true)} className="text-xs">
               <Settings className="mr-2 h-3.5 w-3.5" />
               Workflow Settings
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem onClick={toggleCodePanel} className="text-xs">
+              <Code2 className="mr-2 h-3.5 w-3.5" />
+              {isCodeMode ? 'Hide Code Panel' : 'Show Code Panel'}
             </DropdownMenuItem>
             
             <DropdownMenuSeparator />

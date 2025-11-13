@@ -251,6 +251,7 @@ export function validateWorkflowConnections(
 
 /**
  * Find orphaned nodes (nodes with no connections)
+ * Note: Group nodes are excluded as they are visual containers
  */
 export function findOrphanedNodes(
   nodes: WorkflowNode[],
@@ -261,7 +262,9 @@ export function findOrphanedNodes(
     ...connections.map((c) => c.targetNodeId),
   ]);
 
-  return nodes.filter((node) => !connectedNodeIds.has(node.id));
+  return nodes.filter(
+    (node) => node.type !== "group" && !connectedNodeIds.has(node.id)
+  );
 }
 
 /**
