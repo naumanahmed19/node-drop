@@ -65,7 +65,8 @@ export interface NodeProperty {
     | "autocomplete"
     | "credential" // New: Support for credential selector
     | "custom" // New: Support for custom components
-    | "conditionRow"; // New: Support for condition row (key-expression-value)
+    | "conditionRow" // New: Support for condition row (key-expression-value)
+    | "columnsMap"; // New: Support for columns map (dynamic column-to-value mapping)
   required?: boolean;
   default?: any;
   description?: string;
@@ -79,6 +80,8 @@ export interface NodeProperty {
   typeOptions?: {
     multipleValues?: boolean;
     multipleValueButtonText?: string;
+    loadOptionsMethod?: string; // Method name for dynamic options loading
+    loadOptionsDependsOn?: string[]; // Fields that this field depends on for loading options
   };
   // New: Custom component configuration
   component?: string; // Component identifier/name

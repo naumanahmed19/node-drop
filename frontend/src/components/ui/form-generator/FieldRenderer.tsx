@@ -650,6 +650,52 @@ export function FieldRenderer({
         />
       )
 
+    case 'columnsMap': {
+      // Check if this field has dynamic loading
+      const loadOptionsMethod = field.typeOptions?.loadOptionsMethod;
+
+      if (loadOptionsMethod && nodeType) {
+        // Get credentials from form values
+        const credentials: Record<string, any> = {};
+        allFields.forEach((f) => {
+          if (f.type === 'credential' && allValues[f.name]) {
+            credentials[f.name] = allValues[f.name];
+          }
+        });
+
+        return (
+          <DynamicAutocomplete
+            nodeType={nodeType}
+            loadOptionsMethod={loadOptionsMethod}
+            loadOptionsDependsOn={field.typeOptions?.loadOptionsDependsOn}
+            value={value || {}}
+            onChange={handleChange}
+            placeholder={field.placeholder}
+            searchPlaceholder={`Search columns...`}
+            disabled={disabled || field.disabled}
+            error={error}
+            required={field.required}
+            displayName={field.displayName}
+            parameters={allValues}
+            credentials={credentials}
+            renderAsColumnsMap={true}
+            nodeId={nodeId}
+            onColumnsMapChange={(columnsData) => {
+              // columnsData will be an object with column names as keys and values
+              handleChange(columnsData);
+            }}
+          />
+        );
+      }
+
+      // Fallback if no dynamic loading
+      return (
+        <div className="text-sm text-amber-600">
+          columnsMap requires loadOptionsMethod to be configured
+        </div>
+      );
+    }
+
     default:
       return (
         <Input

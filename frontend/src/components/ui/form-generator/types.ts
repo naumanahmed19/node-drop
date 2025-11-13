@@ -35,13 +35,14 @@ export interface FormFieldConfig {
   | "credential"
   | "custom"
   | "conditionRow"
-  | "keyValueRow";
+  | "keyValueRow"
+  | "columnsMap";
   required?: boolean;
   default?: any;
   description?: string;
   tooltip?: string;
   placeholder?: string;
-  options?: FormFieldOption[];
+  options?: FormFieldOption[] | FixedCollectionOption[]; // Can be regular options or fixedCollection options
   displayOptions?: {
     show?: Record<string, any[]>;
     hide?: Record<string, any[]>;
@@ -59,7 +60,6 @@ export interface FormFieldConfig {
     compact?: boolean; // Compact mode for repeating fields
     [key: string]: any;
   };
-  options?: FormFieldOption[] | FixedCollectionOption[]; // Can be regular options or fixedCollection options
   validation?: {
     min?: number;
     max?: number;

@@ -670,6 +670,7 @@ export class NodeService {
       "credential", // Support for credential selector fields
       "custom", // Support for custom components
       "conditionRow", // Support for condition row (key-expression-value)
+      "columnsMap", // Support for columns map (dynamic column-to-value mapping)
     ];
     if (!validTypes.includes(property.type)) {
       errors.push({

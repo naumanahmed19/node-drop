@@ -919,11 +919,54 @@ export class TriggerService {
             executionId: result.executionId,
             webhookId,
             hasResult: !!(result as any).result,
+            resultKeys: (result as any).result ? Object.keys((result as any).result) : [],
           });
 
           // Extract response data from the execution result
           if ((result as any).result) {
-            responseData = await this.extractResponseDataFromResult((result as any).result);
+            const executionResult = (result as any).result;
+            
+            console.log(`🔍 DEBUG Execution result details:`, {
+              success: executionResult.success,
+              hasError: !!executionResult.error,
+              errorMessage: executionResult.error?.message,
+              hasData: !!executionResult.data,
+              dataKeys: executionResult.data ? Object.keys(executionResult.data) : [],
+              hasFailures: executionResult.data?.hasFailures,
+            });
+            
+            // Check if execution failed or has errors
+            // Note: success can be true even with errors, so we check for error presence
+            if (executionResult.error || executionResult.data?.hasFailures) {
+              const errorMessage = executionResult.error?.message || "Workflow execution failed";
+              const errorDetails = executionResult.error;
+              
+              console.error(`❌ Execution failed`, {
+                executionId: result.executionId,
+                error: errorMessage,
+                errorDetails,
+              });
+              
+              // Return error response with proper status code
+              return {
+                success: true, // Webhook was received successfully
+                executionId: result.executionId,
+                responseData: {
+                  statusCode: 500,
+                  headers: { "Content-Type": "application/json" },
+                  body: {
+                    success: false,
+                    error: errorMessage,
+                    ...(errorDetails?.nodeId && { nodeId: errorDetails.nodeId }),
+                    executionId: result.executionId,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+                webhookOptions,
+              };
+            }
+            
+            responseData = await this.extractResponseDataFromResult(executionResult);
             
             console.log(`✅ Response data extracted from result`, {
               executionId: result.executionId,
@@ -945,7 +988,22 @@ export class TriggerService {
             executionId: result.executionId,
             error: error instanceof Error ? error.message : error,
           });
-          // Continue with standard response if waiting fails
+          // Return error response
+          return {
+            success: true, // Webhook was received successfully
+            executionId: result.executionId,
+            responseData: {
+              statusCode: 500,
+              headers: { "Content-Type": "application/json" },
+              body: {
+                success: false,
+                error: error instanceof Error ? error.message : "Error waiting for execution completion",
+                executionId: result.executionId,
+                timestamp: new Date().toISOString(),
+              },
+            },
+            webhookOptions,
+          };
         }
       } else {
         console.log(`ℹ️  Not waiting for completion:`, {
@@ -1707,27 +1765,46 @@ export class TriggerService {
         if (Array.isArray(mainOutput) && mainOutput.length > 0) {
           const firstOutput = mainOutput[0];
           
-          if (firstOutput && firstOutput.json) {
-            const output = firstOutput.json;
-            
-            console.log(`🔍 Node ${nodeId} output:`, {
-              hasHttpResponseFlag: output._httpResponse === true,
-              outputKeys: Object.keys(output),
-            });
-            
-            // Check if this is an HTTP Response node output
-            if (output._httpResponse === true) {
-              console.log(`✅ Found HTTP Response node output in result`, {
+          if (firstOutput) {
+            // Check for new format with _httpResponseData
+            if (firstOutput._httpResponseData) {
+              const responseData = firstOutput._httpResponseData;
+              console.log(`✅ Found HTTP Response node output (new format) in result`, {
                 nodeId,
-                statusCode: output.statusCode,
+                statusCode: responseData.statusCode,
               });
               
               return {
-                statusCode: output.statusCode || 200,
-                headers: output.headers || {},
-                body: output.body,
-                cookies: output.cookies || [],
+                statusCode: responseData.statusCode || 200,
+                headers: responseData.headers || {},
+                body: responseData.body,
+                cookies: responseData.cookies || [],
               };
+            }
+            
+            // Check for old format (backward compatibility)
+            if (firstOutput.json) {
+              const output = firstOutput.json;
+              
+              console.log(`🔍 Node ${nodeId} output:`, {
+                hasHttpResponseFlag: output._httpResponse === true,
+                outputKeys: Object.keys(output),
+              });
+              
+              // Check if this is an HTTP Response node output (old format)
+              if (output._httpResponse === true) {
+                console.log(`✅ Found HTTP Response node output (old format) in result`, {
+                  nodeId,
+                  statusCode: output.statusCode,
+                });
+                
+                return {
+                  statusCode: output.statusCode || 200,
+                  headers: output.headers || {},
+                  body: output.body,
+                  cookies: output.cookies || [],
+                };
+              }
             }
           }
         }
@@ -1803,31 +1880,54 @@ export class TriggerService {
         if (outputDataObj.main && Array.isArray(outputDataObj.main) && outputDataObj.main.length > 0) {
           const mainOutput = outputDataObj.main[0];
           
-          if (mainOutput && mainOutput.json) {
-            const output = mainOutput.json as any;
-            
-            console.log(`🔍 DEBUG extractResponseData - Node ${nodeExecution.nodeId} output:`, {
-              hasHttpResponseFlag: output._httpResponse === true,
-              outputKeys: Object.keys(output),
-            });
-            
-            // Check if this is an HTTP Response node output
-            if (output._httpResponse === true) {
-              console.log(`✅ Found HTTP Response node output`, {
+          if (mainOutput) {
+            // Check for new format with _httpResponseData
+            if (mainOutput._httpResponseData) {
+              const responseData = mainOutput._httpResponseData;
+              console.log(`✅ Found HTTP Response node output (new format)`, {
                 nodeId: nodeExecution.nodeId,
-                statusCode: output.statusCode,
+                statusCode: responseData.statusCode,
               });
               logger.info("Found HTTP Response node output", {
                 nodeId: nodeExecution.nodeId,
-                statusCode: output.statusCode,
+                statusCode: responseData.statusCode,
               });
               
               return {
-                statusCode: output.statusCode || 200,
-                headers: output.headers || {},
-                body: output.body,
-                cookies: output.cookies || [],
+                statusCode: responseData.statusCode || 200,
+                headers: responseData.headers || {},
+                body: responseData.body,
+                cookies: responseData.cookies || [],
               };
+            }
+            
+            // Check for old format (backward compatibility)
+            if (mainOutput.json) {
+              const output = mainOutput.json as any;
+              
+              console.log(`🔍 DEBUG extractResponseData - Node ${nodeExecution.nodeId} output:`, {
+                hasHttpResponseFlag: output._httpResponse === true,
+                outputKeys: Object.keys(output),
+              });
+              
+              // Check if this is an HTTP Response node output (old format)
+              if (output._httpResponse === true) {
+                console.log(`✅ Found HTTP Response node output (old format)`, {
+                  nodeId: nodeExecution.nodeId,
+                  statusCode: output.statusCode,
+                });
+                logger.info("Found HTTP Response node output", {
+                  nodeId: nodeExecution.nodeId,
+                  statusCode: output.statusCode,
+                });
+                
+                return {
+                  statusCode: output.statusCode || 200,
+                  headers: output.headers || {},
+                  body: output.body,
+                  cookies: output.cookies || [],
+                };
+              }
             }
           }
         }
