@@ -56,11 +56,13 @@ interface InputsColumnProps {
  * @param data - The JSON data to display (object, array, or primitive value)
  * @param level - Current nesting depth for indentation (0 = root level)
  * @param keyName - Property name from parent object for context display
+ * @param parentPath - Full path from root for tooltip display
  */
 interface SchemaViewerProps {
   data: any
   level: number
   keyName?: string
+  parentPath?: string
 }
 
 /**
@@ -252,6 +254,7 @@ function UnifiedTreeNode({
                     data={item}
                     level={level + 1}
                     keyName={`[${index}]`}
+                    parentPath="json"
                     expandedState={expandedState}
                     onExpandedChange={onExpandedChange}
                   />
@@ -264,6 +267,7 @@ function UnifiedTreeNode({
                     data={value}
                     level={level + 1}
                     keyName={key}
+                    parentPath="json"
                     expandedState={expandedState}
                     onExpandedChange={onExpandedChange}
                   />
@@ -300,12 +304,19 @@ function UnifiedTreeNode({
  * - Maintains level counter for proper indentation
  * - Uses unique keys for independent expand/collapse state
  */
-function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }: SchemaViewerProps & {
+function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState, onExpandedChange }: SchemaViewerProps & {
   expandedState?: Record<string, boolean>
   onExpandedChange?: (key: string, expanded: boolean) => void
 }) {
   const itemKey = keyName ? `${level}-${keyName}` : `${level}-root`
   const isExpanded = expandedState ? (expandedState[itemKey] ?? (level < 2)) : (level < 2)
+
+  // Build the current path for this item
+  const currentPath = keyName 
+    ? keyName.startsWith('[') 
+      ? `${parentPath}${keyName}` // Array index like [0]
+      : `${parentPath}.${keyName}` // Object property like .user
+    : parentPath
 
   // Helper functions for data type analysis and display
   const getValueType = (value: any): string => {
@@ -327,22 +338,57 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
     return value !== null && (typeof value === 'object' || Array.isArray(value))
   }
 
-  const indentStyle = { paddingLeft: `${level * 16}px` }
+  const indentStyle = { paddingLeft: `${level * 12}px` }
+  const bgColor = level % 2 === 0 ? 'bg-transparent' : 'bg-muted/10'
 
   if (!isComplexType(data)) {
     // Simple value - just display inline
     return (
-      <div style={indentStyle} className="flex items-center gap-2 py-0.5 px-2">
-        <div className="w-2 h-px bg-muted-foreground/30"></div>
+      <div style={indentStyle} className={`flex items-center gap-2 py-1 px-2 ${bgColor} border-l-2 border-transparent hover:border-primary/30 hover:bg-accent/50 transition-colors relative`}>
+        <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
         {keyName && (
           <>
-            <span className="font-mono text-blue-600 text-xs font-medium">{keyName}</span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span 
+                    className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', currentPath)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                  >
+                    {keyName}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs font-mono">{currentPath}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <span className="text-muted-foreground">:</span>
           </>
         )}
-        <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-          {getValuePreview(data)}
-        </span>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span 
+                className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+              >
+                {getValuePreview(data)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <span className="text-xs text-muted-foreground italic">
           ({getValueType(data)})
         </span>
@@ -352,28 +398,68 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
 
   // Complex object or array
   return (
-    <div style={indentStyle}>
+    <div style={indentStyle} className="relative">
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
       <Collapsible
         open={isExpanded}
         onOpenChange={(open) => onExpandedChange?.(itemKey, open)}
       >
         <CollapsibleTrigger asChild>
-          <div className="flex items-center gap-2 py-0.5 px-2 hover:bg-muted/30 rounded cursor-pointer group">
-            <div className="w-2 h-px bg-muted-foreground/30"></div>
-            {isExpanded ? (
-              <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            )}
+          <div className={`flex items-center gap-2 py-1 px-2 ${bgColor} hover:bg-accent/50 border-l-2 border-transparent hover:border-primary/30 transition-colors cursor-pointer group`}>
+            <div className="flex items-center justify-center w-4 h-4 rounded-sm hover:bg-accent transition-colors">
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              )}
+            </div>
             {keyName && (
               <>
-                <span className="font-mono text-blue-600 text-xs font-medium">{keyName}</span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span 
+                        className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', currentPath)
+                          e.dataTransfer.effectAllowed = 'copy'
+                          e.stopPropagation()
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {keyName}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs font-mono">{currentPath}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <span className="text-muted-foreground">:</span>
               </>
             )}
-            <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-              {Array.isArray(data) ? `[${data.length}]` : `{${Object.keys(data).length}}`}
-            </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span 
+                    className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                      e.dataTransfer.effectAllowed = 'copy'
+                      e.stopPropagation()
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {Array.isArray(data) ? `[${data.length}]` : `{${Object.keys(data).length}}`}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <span className="text-xs text-muted-foreground italic">
               ({getValueType(data)})
             </span>
@@ -381,7 +467,7 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div>
+          <div className="border-l border-border/20 ml-2">
             {Array.isArray(data) ? (
               // Array handling
               data.map((item, index) => (
@@ -390,6 +476,7 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
                   data={item}
                   level={level + 1}
                   keyName={`[${index}]`}
+                  parentPath={currentPath}
                   expandedState={expandedState}
                   onExpandedChange={onExpandedChange}
                 />
@@ -402,6 +489,7 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
                   data={value}
                   level={level + 1}
                   keyName={key}
+                  parentPath={currentPath}
                   expandedState={expandedState}
                   onExpandedChange={onExpandedChange}
                 />
