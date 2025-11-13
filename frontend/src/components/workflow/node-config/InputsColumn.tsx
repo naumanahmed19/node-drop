@@ -30,8 +30,6 @@ import {
   ChevronDown,
   ChevronRight,
   Code,
-  FolderOpen,
-  GitBranch,
   Info,
   Play,
   Settings,
@@ -40,6 +38,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { WebhookTriggerInput } from './WebhookTriggerInput'
+import { NodeIconRenderer } from '@/components/common/NodeIconRenderer'
+import { useNodeTypes } from '@/stores'
 
 /**
  * Main props for the InputsColumn component
@@ -83,7 +83,6 @@ interface UnifiedTreeNodeProps {
   level: number
   expandedState: Record<string, boolean>
   onExpandedChange: (key: string, expanded: boolean) => void
-  getNodeIcon: (type: string) => React.ReactNode
   getNodeStatusBadge: (status?: string) => React.ReactNode
   onExecuteNode: (nodeId: string) => void
 }
@@ -113,12 +112,24 @@ function UnifiedTreeNode({
   level,
   expandedState,
   onExpandedChange,
-  getNodeIcon,
   getNodeStatusBadge,
   onExecuteNode
 }: UnifiedTreeNodeProps) {
   const isNodeExpanded = expandedState[inputNode.id] || false
   const nodeData = nodeExecutionResult?.data ? getRelevantData(nodeExecutionResult.data) : null
+  
+  // Get node type definition for icon rendering
+  const { nodeTypes } = useNodeTypes()
+  const nodeTypeDefinition = useMemo(() => 
+    nodeTypes.find(nt => nt.type === inputNode.type),
+    [nodeTypes, inputNode.type]
+  )
+  
+  // Determine if this is a trigger node for icon shape
+  const isTrigger = useMemo(() => {
+    const capability = getNodeExecutionCapability(inputNode.type)
+    return capability === 'trigger'
+  }, [inputNode.type])
 
   // Indentation for tree hierarchy - matches SchemaViewer pattern
   const indentStyle = { paddingLeft: `${level * 12}px` }
@@ -135,13 +146,16 @@ function UnifiedTreeNode({
               ) : (
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
-              {getNodeIcon(inputNode.type)}
-              <div
-                className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                style={{ backgroundColor: '#6b7280' }}
-              >
-                {inputNode.name.charAt(0).toUpperCase()}
-              </div>
+              <NodeIconRenderer
+                icon={inputNode.icon || nodeTypeDefinition?.icon}
+                nodeType={inputNode.type}
+                nodeGroup={nodeTypeDefinition?.group}
+                displayName={inputNode.name}
+                backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                isTrigger={isTrigger}
+                size="sm"
+                className="flex-shrink-0"
+              />
               <span className="text-sm font-medium truncate">
                 {inputNode.name}
               </span>
@@ -475,6 +489,7 @@ function getRelevantData(executionData: any): any {
  */
 export function InputsColumn({ node }: InputsColumnProps) {
   const { workflow, getNodeExecutionResult, executeNode } = useWorkflowStore()
+  const { nodeTypes } = useNodeTypes()
 
   // State management for tree expansion and active tab view
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
@@ -595,22 +610,6 @@ export function InputsColumn({ node }: InputsColumnProps) {
         return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Skipped</Badge>
       default:
         return <Badge variant="outline">Idle</Badge>
-    }
-  }
-
-  const getNodeIcon = (nodeType: string) => {
-    const capability = getNodeExecutionCapability(nodeType)
-    switch (capability) {
-      case 'trigger':
-        return <Zap className="h-4 w-4 text-muted-foreground" />
-      case 'action':
-        return <Settings className="h-4 w-4 text-muted-foreground" />
-      case 'transform':
-        return <Code className="h-4 w-4 text-muted-foreground" />
-      case 'condition':
-        return <GitBranch className="h-4 w-4 text-muted-foreground" />
-      default:
-        return <FolderOpen className="h-4 w-4 text-muted-foreground" />
     }
   }
 
@@ -735,7 +734,6 @@ export function InputsColumn({ node }: InputsColumnProps) {
                         [key]: expanded
                       }))
                     }}
-                    getNodeIcon={getNodeIcon}
                     getNodeStatusBadge={getNodeStatusBadge}
                     onExecuteNode={handleExecuteNode}
                   />
@@ -750,11 +748,21 @@ export function InputsColumn({ node }: InputsColumnProps) {
               {nodeItems.map((item) => {
                 const { node: inputNode } = item
                 const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
+                const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
 
                 return (
                   <div key={inputNode.id} className="mb-6">
                     <div className="flex items-center gap-2 mb-2">
-                      {getNodeIcon(inputNode.type)}
+                      <NodeIconRenderer
+                        icon={inputNode.icon || nodeTypeDefinition?.icon}
+                        nodeType={inputNode.type}
+                        nodeGroup={nodeTypeDefinition?.group}
+                        displayName={inputNode.name}
+                        backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                        isTrigger={isTrigger}
+                        size="sm"
+                      />
                       <span className="text-sm font-medium">{inputNode.name}</span>
                       {nodeExecutionResult && getNodeStatusBadge(nodeExecutionResult.status)}
                     </div>
@@ -791,12 +799,22 @@ export function InputsColumn({ node }: InputsColumnProps) {
                     {nodeItems.map((item) => {
                       const { node: inputNode } = item
                       const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
+                      const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                      const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
 
                       return (
                         <tr key={inputNode.id} className="hover:bg-muted/50">
                           <td className="border border-gray-300 p-2">
                             <div className="flex items-center gap-2">
-                              {getNodeIcon(inputNode.type)}
+                              <NodeIconRenderer
+                                icon={inputNode.icon || nodeTypeDefinition?.icon}
+                                nodeType={inputNode.type}
+                                nodeGroup={nodeTypeDefinition?.group}
+                                displayName={inputNode.name}
+                                backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                                isTrigger={isTrigger}
+                                size="sm"
+                              />
                               <span className="font-medium">{inputNode.name}</span>
                             </div>
                           </td>

@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExpressionInput } from "@/components/ui/form-generator/ExpressionInput";
 import { Check, Copy, Globe, TestTube, Sparkles, Info } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -256,20 +255,18 @@ export function UrlGenerator({
                 </Button>
               )}
             </div>
-            <ExpressionInput
+            <Input
               value={webhookId}
-              onChange={(newId) => {
+              onChange={(e) => {
+                const newId = e.target.value;
                 setWebhookId(newId);
                 if (onChange) {
                   onChange(newId);
                 }
               }}
               disabled={disabled}
-              placeholder={urlType === "form" ? "e.g., contact-us, feedback" : "Leave empty or {{expression}}"}
-              nodeId={nodeId}
-              singleLine={true}
-              hideHelperText={true}
-              className="font-mono text-xs w-full"
+              placeholder={urlType === "form" ? "e.g., contact-us, feedback" : urlType === "chat" ? "Auto-generated UUID" : "Leave empty or enter custom ID"}
+              className="font-mono text-xs h-8"
             />
           </div>
 
