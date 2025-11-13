@@ -145,20 +145,41 @@ function UnifiedTreeNode({
               <span className="text-sm font-medium truncate">
                 {inputNode.name}
               </span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs">
-                      Output: <code className="bg-muted px-1 rounded">{connection.sourceOutput}</code>
-                      {' → '}
-                      Input: <code className="bg-muted px-1 rounded">{connection.targetInput}</code>
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              {!connection.id && (
+                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-blue-50 text-blue-600 border-blue-200">
+                  Indirect
+                </Badge>
+              )}
+              {connection.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 text-muted-foreground hover:text-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Output: <code className="bg-muted px-1 rounded">{connection.sourceOutput}</code>
+                        {' → '}
+                        Input: <code className="bg-muted px-1 rounded">{connection.targetInput}</code>
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {!connection.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 text-blue-500 hover:text-blue-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Previous node in workflow (not directly connected)
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               <span
                 className={`w-2 h-2 rounded-full ${inputNode.disabled ? 'bg-muted-foreground' : 'bg-green-500'
                   }`}
@@ -483,28 +504,70 @@ export function InputsColumn({ node }: InputsColumnProps) {
     }
   }
 
-  // Get connected input nodes - these are nodes that feed data into current node
-  // Memoize to prevent recreating arrays on every render
-  // Use workflow object directly to ensure reactivity to connection changes
+  // Get ALL previous nodes in the workflow (not just directly connected)
+  // This allows users to access variables from any node that comes before in the workflow
+  const getAllPreviousNodes = useMemo(() => {
+    if (!workflow) return []
+    
+    const visited = new Set<string>()
+    const previousNodes: WorkflowNode[] = []
+    
+    // Recursive function to traverse backwards through the workflow
+    const traverse = (nodeId: string) => {
+      if (visited.has(nodeId)) return
+      visited.add(nodeId)
+      
+      // Find all connections that target this node
+      const incomingConnections = workflow.connections.filter(
+        conn => conn.targetNodeId === nodeId
+      )
+      
+      // For each incoming connection, add the source node and traverse it
+      incomingConnections.forEach(conn => {
+        const sourceNode = workflow.nodes.find(n => n.id === conn.sourceNodeId)
+        if (sourceNode && !previousNodes.find(n => n.id === sourceNode.id)) {
+          previousNodes.push(sourceNode)
+        }
+        // Recursively traverse to find all ancestors
+        traverse(conn.sourceNodeId)
+      })
+    }
+    
+    // Start traversal from current node
+    traverse(node.id)
+    
+    return previousNodes
+  }, [workflow, node.id])
+
+  // Get direct input connections for connection metadata
   const inputConnections = useMemo(() => {
     if (!workflow) return []
     return workflow.connections.filter(conn => conn.targetNodeId === node.id)
   }, [workflow, node.id])
 
-  const inputNodes = useMemo(() => {
-    if (!workflow) return []
-    return inputConnections
-      .map(conn => workflow.nodes.find(n => n.id === conn.sourceNodeId))
-      .filter(Boolean) as WorkflowNode[]
-  }, [workflow, inputConnections])
+  // Use all previous nodes instead of just directly connected ones
+  const inputNodes = getAllPreviousNodes
 
-  // Create node items with connections
+  // Create node items with connections (if they exist)
   const nodeItems = useMemo(() => {
-    return inputNodes.map((inputNode, index) => ({
-      node: inputNode,
-      connection: inputConnections[index]
-    }))
-  }, [inputNodes, inputConnections])
+    return inputNodes.map((inputNode) => {
+      // Find direct connection to this node (if exists)
+      const directConnection = inputConnections.find(
+        conn => conn.sourceNodeId === inputNode.id
+      )
+      
+      return {
+        node: inputNode,
+        connection: directConnection || {
+          // Provide default connection info for indirect nodes
+          sourceNodeId: inputNode.id,
+          targetNodeId: node.id,
+          sourceOutput: 'output',
+          targetInput: 'input'
+        }
+      }
+    })
+  }, [inputNodes, inputConnections, node.id])
 
   // Initialize expanded state for all nodes
   useEffect(() => {

@@ -172,13 +172,9 @@ export class SecureExecutionService {
     // Create state key for this node in this execution
     const stateKey = nodeId ? `${executionId}:${nodeId}` : executionId;
 
-    // Pre-resolve all variables in parameters before creating context
-    const resolvedParameters: Record<string, any> = {};
-    for (const [key, value] of Object.entries(parameters)) {
-      if (
-        typeof value === "string" &&
-        (value.includes("$vars") || value.includes("$local"))
-      ) {
+    // Helper function to recursively resolve parameters (including nested objects/arrays)
+    const resolveParameterValue = async (value: any): Promise<any> => {
+      if (typeof value === "string" && (value.includes("$vars") || value.includes("$local"))) {
         try {
           let resolvedValue = await this.variableService.replaceVariablesInText(
             value,
@@ -203,18 +199,32 @@ export class SecureExecutionService {
             }
           }
 
-          resolvedParameters[key] = resolvedValue;
+          return resolvedValue;
         } catch (error) {
-          logger.warn("Failed to resolve variables in parameter", {
-            parameterName: key,
+          logger.warn("Failed to resolve variables in parameter value", {
             originalValue: value,
             error: error instanceof Error ? error.message : "Unknown error",
           });
-          resolvedParameters[key] = value;
+          return value;
         }
-      } else {
-        resolvedParameters[key] = value;
+      } else if (Array.isArray(value)) {
+        // Recursively resolve array elements
+        return Promise.all(value.map(item => resolveParameterValue(item)));
+      } else if (value && typeof value === "object" && value.constructor === Object) {
+        // Recursively resolve object properties
+        const resolved: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+          resolved[k] = await resolveParameterValue(v);
+        }
+        return resolved;
       }
+      return value;
+    };
+
+    // Pre-resolve all variables in parameters before creating context (including nested)
+    const resolvedParameters: Record<string, any> = {};
+    for (const [key, value] of Object.entries(parameters)) {
+      resolvedParameters[key] = await resolveParameterValue(value);
     }
 
     // Convert credentialIds to a mapping object if it's an array
@@ -265,21 +275,34 @@ export class SecureExecutionService {
           }
         }
 
-        // Auto-resolve placeholders if value is a string with {{...}} patterns
-        // This now runs AFTER variable resolution
-        if (typeof value === "string" && value.includes("{{")) {
-          // Normalize and extract input items
-          const items = normalizeInputItems(inputData.main || []);
-          const processedItems = extractJsonData(items);
-
-          if (processedItems.length > 0) {
-            // Use specified itemIndex or default to first item (0)
-            const targetIndex = itemIndex ?? 0;
-            const itemToUse = processedItems[targetIndex];
-
-            if (itemToUse) {
-              return resolveValue(value, itemToUse);
+        // Helper function to recursively resolve expressions in nested structures
+        const resolveExpressions = (val: any, itemData: any): any => {
+          if (typeof val === "string" && val.includes("{{")) {
+            return resolveValue(val, itemData);
+          } else if (Array.isArray(val)) {
+            return val.map(item => resolveExpressions(item, itemData));
+          } else if (val && typeof val === "object" && val.constructor === Object) {
+            const resolved: Record<string, any> = {};
+            for (const [k, v] of Object.entries(val)) {
+              resolved[k] = resolveExpressions(v, itemData);
             }
+            return resolved;
+          }
+          return val;
+        };
+
+        // Auto-resolve placeholders if value contains {{...}} patterns (recursively)
+        // This now runs AFTER variable resolution
+        const items = normalizeInputItems(inputData.main || []);
+        const processedItems = extractJsonData(items);
+
+        if (processedItems.length > 0) {
+          // Use specified itemIndex or default to first item (0)
+          const targetIndex = itemIndex ?? 0;
+          const itemToUse = processedItems[targetIndex];
+
+          if (itemToUse) {
+            return resolveExpressions(value, itemToUse);
           }
         }
 

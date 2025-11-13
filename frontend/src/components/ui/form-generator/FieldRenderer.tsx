@@ -220,6 +220,8 @@ export function FieldRenderer({
         minItems={field.validation?.min}
         maxItems={field.validation?.max}
         compact={field.componentProps?.compact}
+        nodeId={nodeId}
+        nodeType={nodeType}
       />
     )
   }
@@ -268,6 +270,8 @@ export function FieldRenderer({
         minItems={field.validation?.min}
         maxItems={field.validation?.max}
         compact={field.componentProps?.compact}
+        nodeId={nodeId}
+        nodeType={nodeType}
       />
     )
   }

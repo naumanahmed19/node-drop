@@ -105,6 +105,16 @@ export interface RepeatingFieldProps {
    * Compact mode - no collapse/expand, always show fields inline (default: false)
    */
   compact?: boolean
+
+  /**
+   * Optional: node ID for dynamic field suggestions in ExpressionInput
+   */
+  nodeId?: string
+
+  /**
+   * Optional: node type for loadOptions API calls
+   */
+  nodeType?: string
 }
 
 export function RepeatingField({
@@ -127,6 +137,8 @@ export function RepeatingField({
   showItemNumbers = true,
   collapsedByDefault = false,
   compact = false,
+  nodeId,
+  nodeType,
 }: RepeatingFieldProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(
     collapsedByDefault ? new Set(value.map((item) => item.id)) : new Set()
@@ -134,7 +146,7 @@ export function RepeatingField({
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
 
   // Generate unique ID
-  const generateId = () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const generateId = () => `item_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
 
   // Get item title
   const getItemTitle = (item: RepeatingFieldItem, index: number): string => {
@@ -278,6 +290,8 @@ export function RepeatingField({
                     disabled={disabled}
                     disableAutoValidation={true}
                     showRequiredIndicator={true}
+                    nodeId={nodeId}
+                    nodeType={nodeType}
                   />
                 </div>
                 <div className="flex items-start gap-1 pt-2">
@@ -412,6 +426,8 @@ export function RepeatingField({
                       disabled={disabled}
                       disableAutoValidation={true}
                       showRequiredIndicator={true}
+                      nodeId={nodeId}
+                      nodeType={nodeType}
                     />
                   </div>
                 )}

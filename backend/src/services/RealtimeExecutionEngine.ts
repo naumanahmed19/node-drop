@@ -58,25 +58,118 @@ export class RealtimeExecutionEngine extends EventEmitter {
     /**
      * Build credentials mapping from node's credential IDs
      * Maps credential type to credential ID for node execution
+     * This matches the approach used in FlowExecutionEngine
      */
-    private async buildCredentialsMapping(node: WorkflowNode): Promise<Record<string, string>> {
+    private async buildCredentialsMapping(node: WorkflowNode, userId: string): Promise<Record<string, string>> {
         const credentialsMapping: Record<string, string> = {};
 
-        if (node.credentials && Array.isArray(node.credentials)) {
+        logger.info(`[RealtimeExecution] Building credentials mapping for node ${node.id}`, {
+            nodeType: node.type,
+            nodeParameters: Object.keys(node.parameters || {}),
+            hasCredentials: !!node.credentials,
+            credentialsLength: node.credentials?.length || 0,
+        });
+
+        // PRIMARY METHOD: Get node type definition and extract credentials from parameters
+        // This is how FlowExecutionEngine does it and is the correct approach
+        try {
+            const allNodeTypes = await this.nodeService.getNodeTypes();
+            const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === node.type);
+
+            if (nodeTypeInfo && nodeTypeInfo.properties) {
+                const properties = Array.isArray(nodeTypeInfo.properties)
+                    ? nodeTypeInfo.properties
+                    : [];
+
+                // Find credential-type properties and extract their values from node parameters
+                for (const property of properties) {
+                    if (
+                        property.type === "credential" &&
+                        property.allowedTypes &&
+                        property.allowedTypes.length > 0
+                    ) {
+                        // Get the credential ID from parameters using the field name
+                        const credentialId = node.parameters?.[property.name];
+
+                        if (credentialId && typeof credentialId === "string") {
+                            // Verify credential exists and belongs to user
+                            const cred = await this.prisma.credential.findUnique({
+                                where: { id: credentialId },
+                                select: { type: true, userId: true }
+                            });
+
+                            if (cred) {
+                                if (cred.userId !== userId) {
+                                    logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${userId}`);
+                                    continue;
+                                }
+                                // Map credential type to ID
+                                // property.allowedTypes[0] is the credential type (e.g., "postgresDb")
+                                credentialsMapping[property.allowedTypes[0]] = credentialId;
+                                logger.info(`[RealtimeExecution] Mapped credential type '${property.allowedTypes[0]}' to ID '${credentialId}' from parameter '${property.name}'`);
+                            } else {
+                                logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
+                            }
+                        }
+                    }
+                }
+            } else {
+                logger.warn(`[RealtimeExecution] Node type info not found for ${node.type}`);
+            }
+        } catch (error) {
+            logger.error(`[RealtimeExecution] Failed to build credentials mapping from node type definition`, { error });
+        }
+
+        // FALLBACK 1: Check if credentials are stored in node.credentials array (legacy format)
+        if (Object.keys(credentialsMapping).length === 0 && node.credentials && Array.isArray(node.credentials) && node.credentials.length > 0) {
+            logger.info(`[RealtimeExecution] No credentials found via node type, checking node.credentials array`);
+            
             for (const credId of node.credentials) {
                 try {
                     const cred = await this.prisma.credential.findUnique({
                         where: { id: credId },
-                        select: { type: true }
+                        select: { type: true, userId: true }
                     });
                     if (cred) {
+                        if (cred.userId !== userId) {
+                            logger.warn(`[RealtimeExecution] Credential ${credId} does not belong to user ${userId}`);
+                            continue;
+                        }
                         credentialsMapping[cred.type] = credId;
+                        logger.info(`[RealtimeExecution] Mapped credential type '${cred.type}' to ID '${credId}' from credentials array`);
                     }
                 } catch (error) {
-                    logger.warn(`Failed to fetch credential ${credId}`, { error });
+                    logger.error(`[RealtimeExecution] Failed to fetch credential ${credId}`, { error });
                 }
             }
         }
+
+        // FALLBACK 2: Scan all parameters for credential IDs (last resort)
+        if (Object.keys(credentialsMapping).length === 0 && node.parameters) {
+            logger.info(`[RealtimeExecution] No credentials found, scanning all parameters for credential IDs`);
+            
+            for (const [key, value] of Object.entries(node.parameters)) {
+                if (typeof value === 'string' && value.startsWith('cred_')) {
+                    try {
+                        const cred = await this.prisma.credential.findUnique({
+                            where: { id: value },
+                            select: { type: true, userId: true }
+                        });
+                        if (cred && cred.userId === userId) {
+                            credentialsMapping[cred.type] = value;
+                            logger.info(`[RealtimeExecution] Found credential in parameter '${key}': type '${cred.type}' -> ID '${value}'`);
+                        }
+                    } catch (error) {
+                        // Silently ignore - not all parameters are credentials
+                    }
+                }
+            }
+        }
+
+        logger.info(`[RealtimeExecution] Final credentials mapping for node ${node.id}:`, {
+            mappingKeys: Object.keys(credentialsMapping),
+            mapping: credentialsMapping,
+        });
 
         return credentialsMapping;
     }
@@ -255,7 +348,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
             const startTime = Date.now();
 
             // Build credentials mapping from node's credential IDs
-            const credentialsMapping = await this.buildCredentialsMapping(node);
+            const credentialsMapping = await this.buildCredentialsMapping(node, context.userId);
 
             const result = await this.nodeService.executeNode(
                 node.type,
@@ -502,7 +595,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 const startTime = Date.now();
 
                 // Build credentials mapping from node's credential IDs
-                const credentialsMapping = await this.buildCredentialsMapping(node);
+                const credentialsMapping = await this.buildCredentialsMapping(node, context.userId);
 
                 const result = await this.nodeService.executeNode(
                     node.type,

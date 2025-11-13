@@ -555,7 +555,8 @@ export class FlowExecutionEngine extends EventEmitter {
 
       const dependenciesSatisfied = this.areNodeDependenciesSatisfied(
         nodeId,
-        context
+        context,
+        workflow
       );
       if (!dependenciesSatisfied) {
         // Check retry count to prevent infinite loops
@@ -816,7 +817,7 @@ export class FlowExecutionEngine extends EventEmitter {
         context.userId, // Pass the userId from context
         undefined, // options
         context.workflowId, // Pass workflowId for variable resolution
-        node.settings // Pass node settings (continueOnFail, alwaysOutputData, etc.)
+        undefined // settings - not stored on node object currently
       );
 
       if (!nodeResult.success) {
@@ -847,7 +848,8 @@ export class FlowExecutionEngine extends EventEmitter {
 
   private areNodeDependenciesSatisfied(
     nodeId: string,
-    context: FlowExecutionContext
+    context: FlowExecutionContext,
+    workflow?: Workflow
   ): boolean {
     const nodeState = context.nodeStates.get(nodeId);
     if (!nodeState) {
@@ -864,6 +866,91 @@ export class FlowExecutionEngine extends EventEmitter {
       executionId: context.executionId,
     });
 
+    // For nodes with multiple incoming connections (e.g., from conditional branches),
+    // we need to check if at least ONE dependency has completed AND has data for this node
+    const incomingConnections = workflow?.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    ) || [];
+
+    // If we have workflow context and multiple incoming connections, use branch-aware checking
+    if (workflow && incomingConnections.length > 1) {
+      let hasAtLeastOneCompletedWithData = false;
+      let allRelevantDependenciesCompleted = true;
+
+      for (const depNodeId of nodeState.dependencies) {
+        const depState = context.nodeStates.get(depNodeId);
+        
+        if (!depState) {
+          logger.debug("Dependency state not found", {
+            nodeId,
+            dependencyNodeId: depNodeId,
+            executionId: context.executionId,
+          });
+          allRelevantDependenciesCompleted = false;
+          continue;
+        }
+
+        // Check if this dependency has completed
+        if (depState.status === FlowNodeStatus.COMPLETED) {
+          // Check if this dependency has data for any of its outgoing connections to this node
+          const connectionsFromDep = incomingConnections.filter(
+            (conn) => conn.sourceNodeId === depNodeId
+          );
+
+          for (const connection of connectionsFromDep) {
+            const outputData = depState.outputData as any;
+            
+            if (outputData) {
+              // Check if the specific branch has data
+              let hasData = false;
+              
+              if (outputData.metadata && outputData.branches) {
+                const branchData = outputData.branches[connection.sourceOutput];
+                hasData = Array.isArray(branchData) && branchData.length > 0;
+              } else if (outputData.metadata) {
+                const sourceOutput = outputData[connection.sourceOutput];
+                hasData = Array.isArray(sourceOutput) && sourceOutput.length > 0;
+              } else {
+                const sourceOutput = outputData[connection.sourceOutput];
+                hasData = Array.isArray(sourceOutput) && sourceOutput.length > 0;
+              }
+
+              if (hasData) {
+                hasAtLeastOneCompletedWithData = true;
+                logger.debug("Dependency has data for branch", {
+                  nodeId,
+                  dependencyNodeId: depNodeId,
+                  sourceOutput: connection.sourceOutput,
+                  executionId: context.executionId,
+                });
+                break;
+              }
+            }
+          }
+        } else if (depState.status !== FlowNodeStatus.SKIPPED) {
+          // If dependency is not completed and not skipped, we need to wait
+          allRelevantDependenciesCompleted = false;
+        }
+      }
+
+      // For multi-branch scenarios, we're satisfied if:
+      // 1. At least one dependency completed with data, OR
+      // 2. All dependencies have completed/skipped (even if no data)
+      const satisfied = hasAtLeastOneCompletedWithData || 
+        (allRelevantDependenciesCompleted && nodeState.dependencies.length > 0);
+
+      logger.debug("Multi-branch dependency check", {
+        nodeId,
+        hasAtLeastOneCompletedWithData,
+        allRelevantDependenciesCompleted,
+        satisfied,
+        executionId: context.executionId,
+      });
+
+      return satisfied;
+    }
+
+    // Original logic for single-branch scenarios
     for (const depNodeId of nodeState.dependencies) {
       const depState = context.nodeStates.get(depNodeId);
       if (!depState || depState.status !== FlowNodeStatus.COMPLETED) {

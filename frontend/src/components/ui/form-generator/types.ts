@@ -157,4 +157,6 @@ export interface RepeatingFieldProps {
   className?: string;
   showItemNumbers?: boolean;
   collapsedByDefault?: boolean;
+  nodeId?: string; // Optional: node ID for dynamic field suggestions in ExpressionInput
+  nodeType?: string; // Optional: node type for loadOptions API calls
 }
