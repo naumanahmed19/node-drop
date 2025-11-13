@@ -125,7 +125,8 @@ export function useAutoLayout() {
       });
 
       // Update workflow with new positions
-      updateWorkflow({ nodes: updatedNodes });
+      // Skip history since we already saved before layout
+      updateWorkflow({ nodes: updatedNodes }, true);
 
       // Fit view after layout with a small delay to ensure nodes are updated
       if (fitView) {

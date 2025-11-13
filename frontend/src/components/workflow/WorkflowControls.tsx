@@ -96,7 +96,8 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         }
       ]
       
-      updateWorkflow({ nodes: updatedWorkflowNodes })
+      // Skip history since we already saved before adding group
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true)
     }
   }
 
@@ -188,7 +189,8 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         }
       })
       
-      updateWorkflow({ nodes: updatedWorkflowNodes })
+      // Skip history since we already saved before grouping nodes
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true)
       setDirty(true)
     }
   }
@@ -232,9 +234,10 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         disabled: false,
       }
 
+      // Skip history since we already saved before adding annotation
       updateWorkflow({
         nodes: [...workflow.nodes, newWorkflowNode],
-      })
+      }, true)
       setDirty(true)
     }
   }, [screenToFlowPosition, setNodes, workflow, updateWorkflow, setDirty, saveToHistory])

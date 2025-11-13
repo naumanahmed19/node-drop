@@ -159,6 +159,7 @@ export function useCopyPaste() {
     // Update Zustand workflow store - remove nodes and connections
     const { workflow, updateWorkflow } = useWorkflowStore.getState();
     if (workflow) {
+      // Skip history in updateWorkflow since we save it explicitly below
       updateWorkflow({
         nodes: workflow.nodes.filter(
           (node) => !selectedNodeIds.includes(node.id)
@@ -168,7 +169,7 @@ export function useCopyPaste() {
             !selectedNodeIds.includes(conn.sourceNodeId) &&
             !selectedNodeIds.includes(conn.targetNodeId)
         ),
-      });
+      }, true);
     }
 
     // Save to history
@@ -365,10 +366,11 @@ export function useCopyPaste() {
         });
 
         // Update Zustand workflow store with all nodes and connections
+        // Skip history since we already saved before pasting
         updateWorkflow({
           nodes: workflowNodes,
           connections: workflowConnections,
-        });
+        }, true);
       }, 0);
 
       console.log(

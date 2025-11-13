@@ -63,6 +63,7 @@ export function useDeleteNodes() {
           })
           .filter((node): node is NonNullable<typeof node> => node !== undefined);
 
+        // Skip history since we already saved before deletion
         updateWorkflow({ 
           nodes: updatedNodes,
           connections: workflow.connections.filter(
@@ -70,7 +71,7 @@ export function useDeleteNodes() {
               !allNodeIdsToDelete.includes(conn.sourceNodeId) &&
               !allNodeIdsToDelete.includes(conn.targetNodeId)
           ),
-        });
+        }, true);
       }
       
       setDirty(true);

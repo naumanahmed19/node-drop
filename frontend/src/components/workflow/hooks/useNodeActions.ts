@@ -159,7 +159,8 @@ export function useNodeActions(nodeId: string) {
         }
       });
 
-      updateWorkflow({ nodes: updatedWorkflowNodes });
+      // Skip history since we already saved before grouping
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true);
       setDirty(true);
     }
   };

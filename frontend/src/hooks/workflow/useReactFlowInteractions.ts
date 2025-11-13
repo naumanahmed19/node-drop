@@ -136,10 +136,8 @@ export function useReactFlowInteractions() {
         }
       });
 
-      // Take snapshot at the start of resize operation (only once)
+      // Set flag at resize start but don't save history yet
       if (isResizeStart && !resizeSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Resize group");
         resizeSnapshotTaken.current = true;
       }
 
@@ -194,14 +192,15 @@ export function useReactFlowInteractions() {
               }
             });
 
-            updateWorkflow({ nodes: updatedNodes });
-            setDirty(true);
-
-            // Reset resize flags IMMEDIATELY after updating Zustand
+            // Reset resize flags BEFORE updating Zustand
             // This allows WorkflowEditor to sync the updated dimensions back to ReactFlow
             resizeSnapshotTaken.current = false;
             isResizing.current = false;
             blockSync.current = false;
+
+            // Save history with the final size
+            updateWorkflow({ nodes: updatedNodes });
+            setDirty(true);
           }
         }, 0);
       }
@@ -226,6 +225,11 @@ export function useReactFlowInteractions() {
 
   // Helper function to sync React Flow positions to Zustand after drag
   const syncPositionsToZustand = useCallback(() => {
+    // Reset blockSync BEFORE updating workflow so the sync can happen
+    blockSync.current = false;
+    isDragging.current = false;
+    dragSnapshotTaken.current = false;
+
     const { workflow, updateWorkflow } = useWorkflowStore.getState();
     if (workflow && reactFlowInstance) {
       const currentNodes = reactFlowInstance.getNodes();
@@ -274,29 +278,17 @@ export function useReactFlowInteractions() {
         }
       });
 
+      // Don't skip history - we need to save the "after" state
       updateWorkflow({ nodes: updatedNodes });
     }
   }, [reactFlowInstance]);
 
-  // Helper function to reset drag flags
-  const resetDragFlags = useCallback(() => {
-    setTimeout(() => {
-      dragSnapshotTaken.current = false;
-      isDragging.current = false;
-      blockSync.current = false;
-    }, 100);
-  }, []);
-
-  // Handle node drag start - take snapshot BEFORE dragging
+  // Handle node drag start - just set flags, don't save history yet
   const handleNodeDragStart = useCallback(
     (_event: React.MouseEvent, _node: any) => {
-      if (!dragSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Move node");
-        dragSnapshotTaken.current = true;
-      }
       isDragging.current = true;
       blockSync.current = true;
+      dragSnapshotTaken.current = true;
     },
     []
   );
@@ -316,23 +308,18 @@ export function useReactFlowInteractions() {
       // First, call the group drag stop handler to attach to group if needed
       onNodeDragStopGroup(event, node, nodes);
 
-      // Then sync positions and reset flags
+      // Then sync positions (which also resets flags)
       syncPositionsToZustand();
-      resetDragFlags();
     },
-    [onNodeDragStopGroup, syncPositionsToZustand, resetDragFlags]
+    [onNodeDragStopGroup, syncPositionsToZustand]
   );
 
-  // Handle selection drag start - take snapshot BEFORE dragging selection
+  // Handle selection drag start - just set flags, don't save history yet
   const handleSelectionDragStart = useCallback(
     (_event: React.MouseEvent, _nodes: any[]) => {
-      if (!dragSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Move selection");
-        dragSnapshotTaken.current = true;
-      }
       isDragging.current = true;
       blockSync.current = true;
+      dragSnapshotTaken.current = true;
     },
     []
   );
@@ -340,10 +327,10 @@ export function useReactFlowInteractions() {
   // Handle selection drag stop
   const handleSelectionDragStop = useCallback(
     (_event: React.MouseEvent, _nodes: any[]) => {
+      // Sync positions (which also resets flags)
       syncPositionsToZustand();
-      resetDragFlags();
     },
-    [syncPositionsToZustand, resetDragFlags]
+    [syncPositionsToZustand]
   );
 
   // Handle nodes delete
@@ -369,11 +356,12 @@ export function useReactFlowInteractions() {
       saveToHistory(`Delete ${edges.length} connection(s)`);
 
       // Remove connections from workflow
+      // Skip history since we already saved before deletion
       updateWorkflow({
         connections: workflow.connections.filter(
           (conn) => !edgeIds.includes(conn.id)
         ),
-      });
+      }, true);
     }
   }, []);
 

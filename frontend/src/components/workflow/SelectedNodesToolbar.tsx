@@ -118,7 +118,8 @@ export default function SelectedNodesToolbar() {
         }
       })
       
-      updateWorkflow({ nodes: updatedWorkflowNodes })
+      // Skip history since we already saved before grouping
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true)
       setDirty(true) // Mark workflow as dirty
     }
 

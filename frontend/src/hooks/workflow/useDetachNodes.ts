@@ -51,7 +51,8 @@ function useDetachNodes() {
           })
           .filter((node): node is NonNullable<typeof node> => node !== undefined);
 
-        updateWorkflow({ nodes: updatedNodes });
+        // Skip history since we already saved before detaching
+        updateWorkflow({ nodes: updatedNodes }, true);
       }
 
       // Mark workflow as dirty

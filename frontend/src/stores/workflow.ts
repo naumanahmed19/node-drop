@@ -84,7 +84,7 @@ interface WorkflowStore extends WorkflowEditorState {
 
   // Actions
   setWorkflow: (workflow: Workflow | null) => void;
-  updateWorkflow: (updates: Partial<Workflow>) => void;
+  updateWorkflow: (updates: Partial<Workflow>, skipHistory?: boolean) => void;
   addNode: (node: WorkflowNode) => void;
   updateNode: (
     nodeId: string,
@@ -379,7 +379,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         }
       },
 
-      updateWorkflow: (updates) => {
+      updateWorkflow: (updates, skipHistory = false) => {
         const current = get().workflow;
         if (!current) return;
 
@@ -391,8 +391,12 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             ? { ...(current.settings || {}), ...updates.settings }
             : current.settings,
         };
-        console.log('Workflow updated:', updated);
         set({ workflow: updated, isDirty: true });
+        
+        // Save to history unless explicitly skipped
+        if (!skipHistory) {
+          get().saveToHistory('Update workflow');
+        }
       },
 
       addNode: (node) => {
@@ -3041,7 +3045,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         if (!workflow) return;
 
         const newActiveState = !workflow.active;
-        get().updateWorkflow({ active: newActiveState });
+        // Skip history in updateWorkflow since we save it explicitly below
+        get().updateWorkflow({ active: newActiveState }, true);
         get().saveToHistory(
           `${newActiveState ? "Activate" : "Deactivate"} workflow`
         );
@@ -3058,7 +3063,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         if (!workflow) return;
 
         if (workflow.active !== active) {
-          get().updateWorkflow({ active });
+          // Skip history in updateWorkflow since we save it explicitly below
+          get().updateWorkflow({ active }, true);
           get().saveToHistory(`${active ? "Activate" : "Deactivate"} workflow`);
 
           get().addExecutionLog({
