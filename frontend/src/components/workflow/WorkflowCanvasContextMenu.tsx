@@ -8,7 +8,7 @@ import {
     ContextMenuSubTrigger,
     ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { useAutoLayout, useWorkflowOperations } from '@/hooks/workflow';
+import { useAutoLayout, useCrossWindowCopyPaste, useWorkflowOperations } from '@/hooks/workflow';
 import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores';
 import { useReactFlow } from '@xyflow/react';
 import {
@@ -79,6 +79,9 @@ export const WorkflowCanvasContextMenu = memo(function WorkflowCanvasContextMenu
 
   // Copy/paste functions from store
   const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
+
+  // Cross-window copy/paste
+  const { shareNodes, importSharedNodes } = useCrossWindowCopyPaste()
 
   // ReactFlow instance for select all
   const { getNodes, setNodes } = useReactFlow()
@@ -251,14 +254,31 @@ export const WorkflowCanvasContextMenu = memo(function WorkflowCanvasContextMenu
           Select All
         </ContextMenuItem>
 
-        <ContextMenuItem
-          onClick={copy || undefined}
-          disabled={!canCopy || readOnly}
-          className="cursor-pointer"
-        >
-          <Copy className="mr-2 h-4 w-4" />
-          Copy
-        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger className="cursor-pointer">
+            <Copy className="mr-2 h-4 w-4" />
+            Copy
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            <ContextMenuItem
+              onClick={copy || undefined}
+              disabled={!canCopy || readOnly}
+              className="cursor-pointer"
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copy (Same Window)
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={shareNodes}
+              disabled={!canCopy || readOnly}
+              className="cursor-pointer"
+            >
+              <Clipboard className="mr-2 h-4 w-4" />
+              Copy to Clipboard
+              <span className="ml-auto text-xs text-muted-foreground">Cross-window</span>
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
 
         <ContextMenuItem
           onClick={cut || undefined}
@@ -269,14 +289,31 @@ export const WorkflowCanvasContextMenu = memo(function WorkflowCanvasContextMenu
           Cut
         </ContextMenuItem>
 
-        <ContextMenuItem
-          onClick={paste || undefined}
-          disabled={!canPaste || readOnly}
-          className="cursor-pointer"
-        >
-          <Clipboard className="mr-2 h-4 w-4" />
-          Paste
-        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger className="cursor-pointer">
+            <Clipboard className="mr-2 h-4 w-4" />
+            Paste
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            <ContextMenuItem
+              onClick={paste || undefined}
+              disabled={!canPaste || readOnly}
+              className="cursor-pointer"
+            >
+              <Clipboard className="mr-2 h-4 w-4" />
+          Paste (Same Window)
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => importSharedNodes()}
+              disabled={readOnly}
+              className="cursor-pointer"
+            >
+              <Clipboard className="mr-2 h-4 w-4" />
+              Paste from Clipboard
+              <span className="ml-auto text-xs text-muted-foreground">Cross-window</span>
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
 
         <ContextMenuSeparator />
 
