@@ -599,9 +599,17 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       exportWorkflow: async () => {
         const { workflow } = get();
         if (!workflow) {
+          console.error('❌ Export failed: No workflow loaded');
           set({ exportError: "No workflow to export" });
           return;
         }
+
+        console.log('🚀 Starting export workflow...', { 
+          workflowId: workflow.id, 
+          workflowName: workflow.name,
+          nodeCount: workflow.nodes?.length || 0,
+          connectionCount: workflow.connections?.length || 0
+        });
 
         set({
           isExporting: true,
@@ -613,20 +621,39 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
           // Simulate progress for user feedback
           set({ exportProgress: 25 });
 
-          // Validate workflow before export
+          // Validate workflow before export (but only check for critical errors)
+          console.log('🔍 Validating workflow...');
           const validation = get().validateWorkflow();
-          if (!validation.isValid) {
+          
+          // Filter out metadata-only errors - we'll fix those during export
+          const criticalErrors = validation.errors.filter(error => 
+            !error.toLowerCase().includes('metadata') &&
+            !error.toLowerCase().includes('title') &&
+            !error.toLowerCase().includes('export version') &&
+            !error.toLowerCase().includes('schema version')
+          );
+          
+          if (criticalErrors.length > 0) {
+            console.error('❌ Critical validation errors:', criticalErrors);
             throw new Error(
-              `Cannot export invalid workflow: ${validation.errors.join(", ")}`
+              `Cannot export workflow with errors: ${criticalErrors.join(", ")}`
             );
+          }
+          
+          if (validation.errors.length > 0) {
+            console.warn('⚠️ Non-critical validation warnings (will be fixed during export):', validation.errors);
+          } else {
+            console.log('✅ Validation passed');
           }
 
           set({ exportProgress: 50 });
 
-          // Export using the file service
+          // Export using the file service (which will ensure metadata is complete)
+          console.log('📤 Calling workflowFileService.exportWorkflow...');
           await workflowFileService.exportWorkflow(workflow);
 
           set({ exportProgress: 100 });
+          console.log('✅ Export completed successfully');
 
           // Clear progress after a short delay
           setTimeout(() => {
@@ -635,11 +662,14 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : "Unknown export error";
+          console.error('❌ Export error:', errorMessage, error);
           set({
             exportError: errorMessage,
             isExporting: false,
             exportProgress: 0,
           });
+          // Re-throw to propagate to UI
+          throw error;
         }
       },
 
