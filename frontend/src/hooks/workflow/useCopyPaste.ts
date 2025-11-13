@@ -257,71 +257,10 @@ export function useCopyPaste() {
         };
       });
 
-      // Get current workflow from Zustand store
-      const { workflow, updateWorkflow } = useWorkflowStore.getState();
-      if (!workflow) return;
-
-      // Convert React Flow nodes to workflow nodes
-      const workflowNodes = newNodes.map((node) => {
-        // Find the original workflow node to preserve all properties
-        const originalId = node.id.replace(`-${now}`, "");
-        const originalNode = workflow.nodes.find((n) => n.id === originalId);
-
-        // Base workflow node
-        const baseNode = {
-          id: node.id,
-          type: originalNode?.type || node.type || "default",
-          name: (typeof originalNode?.name === 'string' ? originalNode.name : '') || 
-                (typeof node.data?.label === 'string' ? node.data.label : '') || 
-                node.id,
-          position: node.position,
-          parameters: originalNode?.parameters || {},
-          disabled: originalNode?.disabled || false,
-          credentials: originalNode?.credentials,
-          locked: originalNode?.locked,
-          mockData: originalNode?.mockData,
-          mockDataPinned: originalNode?.mockDataPinned,
-        };
-
-        // Add parentId and extent for child nodes
-        if (node.parentId) {
-          return {
-            ...baseNode,
-            parentId: node.parentId,
-            extent: node.extent as any,
-          };
-        }
-
-        // Add style for group nodes
-        if (node.type === "group") {
-          return {
-            ...baseNode,
-            style: node.style || originalNode?.style,
-          };
-        }
-
-        return baseNode;
-      });
-
-      // Convert React Flow edges to workflow connections
-      const workflowConnections = newEdges.map((edge) => ({
-        id: edge.id,
-        sourceNodeId: edge.source,
-        sourceOutput: edge.sourceHandle || "main",
-        targetNodeId: edge.target,
-        targetInput: edge.targetHandle || "main",
-      }));
-
-      // Update Zustand workflow store with new nodes and connections
-      updateWorkflow({
-        nodes: [...workflow.nodes, ...workflowNodes],
-        connections: [...workflow.connections, ...workflowConnections],
-      });
-
-      // Save to history
+      // Save to history BEFORE making changes
       saveToHistory(`Paste ${newNodes.length} node(s)`);
 
-      // Add new nodes and edges to React Flow, deselecting existing ones
+      // Add new nodes and edges to React Flow first, deselecting existing ones
       setNodes((nodes) => [
         ...nodes.map((node) => ({ ...node, selected: false })),
         ...newNodes,
@@ -330,6 +269,107 @@ export function useCopyPaste() {
         ...edges.map((edge) => ({ ...edge, selected: false })),
         ...newEdges,
       ]);
+
+      // Then sync to Zustand workflow store from React Flow state
+      // Use setTimeout to ensure React Flow state is updated first
+      setTimeout(() => {
+        const { workflow, updateWorkflow } = useWorkflowStore.getState();
+        if (!workflow) return;
+
+        // Get all current nodes from React Flow (including the newly pasted ones)
+        const allCurrentNodes = getNodes();
+        
+        // Convert React Flow nodes to workflow nodes
+        const workflowNodes = allCurrentNodes.map((node) => {
+          // Check if this is a newly pasted node
+          const isNewNode = newNodes.some(n => n.id === node.id);
+          
+          if (isNewNode) {
+            // For new nodes, find the original to copy properties
+            const originalId = node.id.replace(`-${now}`, "");
+            const originalNode = workflow.nodes.find((n) => n.id === originalId);
+
+            // Base workflow node
+            const baseNode = {
+              id: node.id,
+              type: originalNode?.type || node.type || "default",
+              name: (typeof originalNode?.name === 'string' ? originalNode.name : '') || 
+                    (typeof node.data?.label === 'string' ? node.data.label : '') || 
+                    node.id,
+              position: node.position,
+              parameters: originalNode?.parameters || {},
+              disabled: originalNode?.disabled || false,
+              credentials: originalNode?.credentials,
+              locked: originalNode?.locked,
+              mockData: originalNode?.mockData,
+              mockDataPinned: originalNode?.mockDataPinned,
+            };
+
+            // Add parentId and extent for child nodes
+            if (node.parentId) {
+              return {
+                ...baseNode,
+                parentId: node.parentId,
+                extent: node.extent as any,
+              };
+            }
+
+            // Add style for group nodes
+            if (node.type === "group") {
+              return {
+                ...baseNode,
+                style: (node.style || originalNode?.style) as any,
+              };
+            }
+
+            return baseNode;
+          } else {
+            // For existing nodes, keep them as-is from workflow
+            const existingNode = workflow.nodes.find(n => n.id === node.id);
+            return existingNode || {
+              id: node.id,
+              type: node.type || "default",
+              name: node.id,
+              position: node.position,
+              parameters: {},
+              disabled: false,
+            };
+          }
+        });
+
+        // Convert React Flow edges to workflow connections
+        const allCurrentEdges = getEdges();
+        const workflowConnections = allCurrentEdges.map((edge) => {
+          // Check if this is a newly pasted edge
+          const isNewEdge = newEdges.some(e => e.id === edge.id);
+          
+          if (isNewEdge) {
+            return {
+              id: edge.id,
+              sourceNodeId: edge.source,
+              sourceOutput: edge.sourceHandle || "main",
+              targetNodeId: edge.target,
+              targetInput: edge.targetHandle || "main",
+            };
+          } else {
+            // Keep existing connection
+            const existingConn = workflow.connections.find(c => c.id === edge.id);
+            return existingConn || {
+              id: edge.id,
+              sourceNodeId: edge.source,
+              sourceOutput: edge.sourceHandle || "main",
+              targetNodeId: edge.target,
+              targetInput: edge.targetHandle || "main",
+            };
+          }
+        });
+
+        // Update Zustand workflow store with all nodes and connections
+        updateWorkflow({
+          nodes: workflowNodes,
+          connections: workflowConnections,
+        });
+      }, 0);
 
       console.log(
         `📌 Pasted ${newNodes.length} nodes and ${newEdges.length} edges`

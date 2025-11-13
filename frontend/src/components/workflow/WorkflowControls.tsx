@@ -22,14 +22,21 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
   const [isSaving] = useState(false)
 
   // Get selected nodes count for the group button
+  // Only count top-level, non-group nodes that are selected
   const selectedNodes = useStore((state) => {
-    return state.nodes.filter(
+    const nodes = state.nodes.filter(
       (node) =>
         node.selected && 
         !node.parentId && 
-        !state.parentLookup.get(node.id) &&
         node.type !== 'group'
-    )
+    );
+    
+    // Remove duplicates by ID (shouldn't happen, but just in case)
+    const uniqueNodes = Array.from(
+      new Map(nodes.map(node => [node.id, node])).values()
+    );
+    
+    return uniqueNodes;
   })
   const selectedNodeCount = selectedNodes.length
 
