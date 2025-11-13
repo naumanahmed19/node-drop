@@ -5,7 +5,10 @@ import { memo, useMemo } from 'react'
 import { NodeMetadata } from './components/NodeMetadata'
 import { nodeEnhancementRegistry } from './enhancements'
 import { useNodeExecution } from './hooks/useNodeExecution'
+import { useNodeValidation } from '@/hooks/workflow'
 import { BaseNodeWrapper } from './nodes/BaseNodeWrapper'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { AlertTriangle } from 'lucide-react'
 
 interface CustomNodeData extends Record<string, unknown> {
   label: string
@@ -49,6 +52,9 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
 
   // Use custom hooks for node visual state
   const { nodeVisualState, nodeExecutionState } = useNodeExecution(id, data.nodeType)
+
+  // Get validation errors for this node
+  const { hasErrors, errors } = useNodeValidation(id)
 
   // Check if this is a trigger node (memoize to prevent recalculation)
   const isTrigger = useMemo(() =>
@@ -124,8 +130,31 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
       executionResult: data.executionResult,
     })
 
+    // Add validation error badge if there are errors
+    if (hasErrors) {
+      enhancements.push(
+        <TooltipProvider key="validation-error" delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="absolute -top-2 -right-2 flex items-center justify-center w-5 h-5 bg-destructive text-destructive-foreground rounded-full shadow-md cursor-help z-10">
+                <AlertTriangle className="w-3.5 h-3.5" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-xs">
+              <div className="space-y-1">
+                <p className="font-semibold text-xs">Validation Errors:</p>
+                {errors.map((error, index) => (
+                  <p key={index} className="text-xs">• {error}</p>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )
+    }
+
     return enhancements
-  }, [id, data.nodeType, data.parameters, nodeExecutionState.isExecuting, data.executionResult])
+  }, [id, data.nodeType, data.parameters, nodeExecutionState.isExecuting, data.executionResult, hasErrors, errors])
 
   // Memoize toolbar config
   const toolbarConfig = useMemo(() => ({

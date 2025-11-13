@@ -57,6 +57,7 @@ export { useExecutionControls } from "./useExecutionControls";
 export { useExecutionPanelData } from "./useExecutionPanelData";
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 export { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
+export { useNodeValidation } from "./useNodeValidation";
 export { useReactFlowInteractions } from "./useReactFlowInteractions";
 export { useWorkflowEditorUI } from "./useWorkflowEditorUI";
 export { useWorkflowOperations } from "./useWorkflowOperations";
