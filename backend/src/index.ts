@@ -23,6 +23,7 @@ import { nodeRoutes } from "./routes/nodes";
 import oauthRoutes from "./routes/oauth";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
+import { scheduleJobsRoutes } from "./routes/schedule-jobs";
 import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
 import variableRoutes from "./routes/variables";
@@ -35,8 +36,11 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 // Import services
 import { PrismaClient } from "@prisma/client";
 import { CredentialService } from "./services/CredentialService";
+import { ExecutionService } from "./services/ExecutionService";
+import ExecutionHistoryService from "./services/ExecutionHistoryService";
 import { NodeLoader } from "./services/NodeLoader";
 import { NodeService } from "./services/NodeService";
+import { RealtimeExecutionEngine } from "./services/RealtimeExecutionEngine";
 import { SocketService } from "./services/SocketService";
 
 // Load environment variables
@@ -45,6 +49,11 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 4000;
+
+// Set server timeout to prevent gateway timeouts (5 minutes)
+httpServer.timeout = 300000; // 5 minutes
+httpServer.keepAliveTimeout = 65000; // 65 seconds (slightly higher than typical load balancer timeout)
+httpServer.headersTimeout = 66000; // Slightly higher than keepAliveTimeout
 
 // Initialize services
 const prisma = new PrismaClient();
@@ -61,18 +70,127 @@ try {
 const nodeLoader = new NodeLoader(nodeService, credentialService, prisma);
 const socketService = new SocketService(httpServer);
 
+// Initialize ExecutionService (for HTTP endpoints)
+const executionHistoryService = new ExecutionHistoryService(prisma);
+const executionService = new ExecutionService(
+  prisma,
+  nodeService,
+  executionHistoryService
+);
+
+// Initialize RealtimeExecutionEngine (for WebSocket execution)
+const realtimeExecutionEngine = new RealtimeExecutionEngine(prisma, nodeService);
+
+// Import WorkflowService, TriggerService singleton, and ScheduleJobManager
+import { WorkflowService } from "./services/WorkflowService";
+import { initializeTriggerService, getTriggerService } from "./services/triggerServiceSingleton";
+import { ScheduleJobManager } from "./scheduled-jobs/ScheduleJobManager";
+
+// Initialize WorkflowService (needed by TriggerService)
+const workflowService = new WorkflowService(prisma);
+
+// Initialize ScheduleJobManager (for persistent schedule jobs)
+const scheduleJobManager = new ScheduleJobManager(
+  prisma,
+  executionService,
+  {
+    redis: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+      password: process.env.REDIS_PASSWORD,
+    },
+  }
+);
+
+// Connect RealtimeExecutionEngine events to SocketService
+realtimeExecutionEngine.on("execution-started", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "started",
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("node-started", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "node-started",
+    nodeId: data.nodeId,
+    data: { nodeName: data.nodeName, nodeType: data.nodeType },
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("node-completed", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "node-completed",
+    nodeId: data.nodeId,
+    data: { 
+      outputData: data.outputData, 
+      duration: data.duration,
+      activeConnections: data.activeConnections, // NEW: Include active connections for edge animation
+    },
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("node-failed", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "node-failed",
+    nodeId: data.nodeId,
+    error: data.error,
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("execution-completed", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "completed",
+    data: { duration: data.duration },
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("execution-failed", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "failed",
+    error: data.error,
+    timestamp: data.timestamp,
+  });
+});
+
+realtimeExecutionEngine.on("execution-cancelled", (data) => {
+  socketService.broadcastExecutionEvent(data.executionId, {
+    executionId: data.executionId,
+    type: "cancelled",
+    timestamp: data.timestamp,
+  });
+});
+
 // Make services available globally for other services
 declare global {
   var socketService: SocketService;
   var nodeLoader: NodeLoader;
   var nodeService: NodeService;
   var credentialService: CredentialService;
+  var executionService: ExecutionService;
+  var realtimeExecutionEngine: RealtimeExecutionEngine;
+  var workflowService: WorkflowService;
+  var scheduleJobManager: ScheduleJobManager;
   var prisma: PrismaClient;
 }
 global.socketService = socketService;
 global.nodeLoader = nodeLoader;
 global.nodeService = nodeService;
 global.credentialService = credentialService;
+global.executionService = executionService;
+global.realtimeExecutionEngine = realtimeExecutionEngine;
+global.workflowService = workflowService;
+global.scheduleJobManager = scheduleJobManager;
 global.prisma = prisma;
 
 // Initialize node systems
@@ -169,7 +287,14 @@ const corsOriginFunction = (origin: string | undefined, callback: (err: Error | 
   return callback(new Error('Not allowed by CORS'), false);
 };
 
-app.use(
+// Apply CORS to all routes EXCEPT webhooks (webhooks have their own CORS logic)
+app.use((req, res, next) => {
+  // Skip global CORS for webhook routes - they handle CORS themselves
+  if (req.path.startsWith('/webhook')) {
+    return next();
+  }
+  
+  // Apply global CORS for all other routes
   cors({
     origin: corsOriginFunction,
     credentials: true,
@@ -178,11 +303,25 @@ app.use(
     exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
-  })
-);
+  })(req, res, next);
+});
 app.use(compression());
 app.use(cookieParser()); // Parse cookies
-app.use(express.json({ limit: "10mb" }));
+
+// Webhook body parsing middleware - MUST come before express.json()
+import { webhookBodyParser } from "./middleware/webhookBodyParser";
+
+// Apply webhook body parser for file uploads and special handling
+app.use("/webhook", webhookBodyParser);
+
+// Standard JSON parsing for all routes (including webhooks that aren't multipart)
+app.use(express.json({ limit: "10mb", verify: (req: any, res, buf, encoding) => {
+  // Store raw body for webhooks that might need it
+  if (req.originalUrl && req.originalUrl.startsWith('/webhook')) {
+    req.rawBody = buf;
+    req.rawBodyString = buf.toString('utf-8');
+  }
+}}));
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
@@ -265,6 +404,7 @@ app.use("/api/node-types", nodeTypeRoutes);
 app.use("/api/credentials", credentialRoutes);
 app.use("/api/variables", variableRoutes);
 app.use("/api/triggers", triggerRoutes);
+app.use("/api/schedule-jobs", scheduleJobsRoutes);
 app.use("/api/custom-nodes", customNodeRoutes);
 app.use("/api/flow-execution", flowExecutionRoutes);
 app.use("/api/execution-control", executionControlRoutes);
@@ -306,13 +446,73 @@ httpServer.listen(PORT, async () => {
 
   // Initialize node systems after server starts
   await initializeNodeSystems();
+
+  // Initialize TriggerService singleton to load active triggers
+  try {
+    console.log(`⏰ Initializing TriggerService...`);
+    await initializeTriggerService(
+      prisma,
+      workflowService,
+      executionService,
+      socketService,
+      nodeService,
+      executionHistoryService,
+      credentialService
+    );
+    console.log(`✅ TriggerService initialized - active triggers loaded`);
+  } catch (error) {
+    console.error(`❌ Failed to initialize TriggerService:`, error);
+  }
+
+  // Initialize ScheduleJobManager for persistent schedule jobs
+  try {
+    console.log(`📅 Initializing ScheduleJobManager...`);
+    await scheduleJobManager.initialize();
+    console.log(`✅ ScheduleJobManager initialized - schedule jobs loaded from Redis`);
+  } catch (error) {
+    console.error(`❌ Failed to initialize ScheduleJobManager:`, error);
+  }
 });
+
+// Memory monitoring to detect leaks
+setInterval(() => {
+  const usage = process.memoryUsage();
+  const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
+  
+  console.log(`📊 Memory: ${heapUsedMB}MB / ${heapTotalMB}MB (RSS: ${Math.round(usage.rss / 1024 / 1024)}MB)`);
+  
+  // Alert if memory usage is high
+  if (heapUsedMB > 1024) { // 1GB threshold
+    console.warn(`⚠️  High memory usage detected: ${heapUsedMB}MB`);
+    
+    // Log active resources
+    const activeExecutions = (realtimeExecutionEngine as any).activeExecutions?.size || 0;
+    const connectedSockets = socketService.getConnectedUsersCount();
+    const eventBufferSize = (socketService as any).executionEventBuffer?.size || 0;
+    
+    console.log(`  Active executions: ${activeExecutions}`);
+    console.log(`  Connected sockets: ${connectedSockets}`);
+    console.log(`  Event buffer size: ${eventBufferSize}`);
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      console.log('  Running garbage collection...');
+      global.gc();
+    }
+  }
+}, 30000); // Every 30 seconds
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully...");
+  
+  // Remove all event listeners to prevent memory leaks
+  realtimeExecutionEngine.removeAllListeners();
+  
   await nodeLoader.cleanup();
   await socketService.shutdown();
+  await scheduleJobManager.shutdown();
   await prisma.$disconnect();
   httpServer.close(() => {
     console.log("Server closed");
@@ -322,8 +522,13 @@ process.on("SIGTERM", async () => {
 
 process.on("SIGINT", async () => {
   console.log("SIGINT received, shutting down gracefully...");
+  
+  // Remove all event listeners to prevent memory leaks
+  realtimeExecutionEngine.removeAllListeners();
+  
   await nodeLoader.cleanup();
   await socketService.shutdown();
+  await scheduleJobManager.shutdown();
   await prisma.$disconnect();
   httpServer.close(() => {
     console.log("Server closed");

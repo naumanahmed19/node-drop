@@ -10,6 +10,9 @@ export { default as ChatInterfaceNodeVisualTest } from "./ChatInterfaceNodeVisua
 // Image preview node
 export { ImagePreviewNode } from "./ImagePreviewNode";
 
+// Data preview node
+export { DataPreviewNode } from "./DataPreviewNode";
+
 // Form generator node
 export { FormGeneratorNode } from "./FormGeneratorNode";
 

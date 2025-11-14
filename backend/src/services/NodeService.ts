@@ -1,3 +1,6 @@
+
+
+
 import { PrismaClient } from "@prisma/client";
 import {
   NodeDefinition,
@@ -64,8 +67,37 @@ export class NodeService {
    */
   private standardizeNodeOutput(
     nodeType: string,
-    outputs: NodeOutputData[]
+    outputs: NodeOutputData[],
+    nodeDefinition?: NodeDefinition
   ): StandardizedNodeOutput {
+    // Check if this is a multi-output node (like Loop with multiple outputs)
+    const hasMultipleOutputs = nodeDefinition && nodeDefinition.outputs.length > 1;
+
+    if (hasMultipleOutputs && nodeDefinition) {
+      // Multi-output node: map array outputs to named branches
+      const branches: Record<string, any[]> = {};
+      let mainOutput: any[] = [];
+
+      outputs.forEach((output, index) => {
+        const outputName = nodeDefinition.outputs[index] || `output${index}`;
+        const outputData = output.main || [];
+        branches[outputName] = outputData;
+        
+        // Add to main output for backward compatibility
+        mainOutput = mainOutput.concat(outputData);
+      });
+
+      return {
+        main: mainOutput,
+        branches,
+        metadata: {
+          nodeType,
+          outputCount: outputs.length,
+          hasMultipleBranches: true,
+        },
+      };
+    }
+
     // Detect if this is a branching node by checking if outputs have named branches (not just "main")
     const hasMultipleBranches = outputs.some((output) => {
       const keys = Object.keys(output);
@@ -133,58 +165,46 @@ export class NodeService {
         };
       }
 
-      // Check if node type already exists
-      const existingNode = await this.prisma.nodeType.findUnique({
-        where: { type: nodeDefinition.type },
-      });
-
       // Resolve properties before saving to database
       const resolvedProperties = this.resolveProperties(
         nodeDefinition.properties
       );
 
-      if (existingNode) {
-        // Update existing node but preserve the active status
-        await this.prisma.nodeType.update({
-          where: { type: nodeDefinition.type },
-          data: {
-            displayName: nodeDefinition.displayName,
-            name: nodeDefinition.name,
-            group: nodeDefinition.group,
-            version: nodeDefinition.version,
-            description: nodeDefinition.description,
-            defaults: nodeDefinition.defaults as any,
-            inputs: nodeDefinition.inputs,
-            outputs: nodeDefinition.outputs,
-            properties: resolvedProperties as any,
-            icon: nodeDefinition.icon,
-            color: nodeDefinition.color,
-            outputComponent: nodeDefinition.outputComponent, // Save custom output component
-            // Preserve existing active status instead of overriding to true
-            active: existingNode.active,
-          },
-        });
-      } else {
-        // Create new node
-        await this.prisma.nodeType.create({
-          data: {
-            type: nodeDefinition.type,
-            displayName: nodeDefinition.displayName,
-            name: nodeDefinition.name,
-            group: nodeDefinition.group,
-            version: nodeDefinition.version,
-            description: nodeDefinition.description,
-            defaults: nodeDefinition.defaults as any,
-            inputs: nodeDefinition.inputs,
-            outputs: nodeDefinition.outputs,
-            properties: resolvedProperties as any,
-            icon: nodeDefinition.icon,
-            color: nodeDefinition.color,
-            outputComponent: nodeDefinition.outputComponent, // Save custom output component
-            active: true,
-          },
-        });
-      }
+      // Use upsert to handle race conditions and avoid duplicate key errors
+      await this.prisma.nodeType.upsert({
+        where: { type: nodeDefinition.type },
+        update: {
+          displayName: nodeDefinition.displayName,
+          name: nodeDefinition.name,
+          group: nodeDefinition.group,
+          version: nodeDefinition.version,
+          description: nodeDefinition.description,
+          defaults: nodeDefinition.defaults as any,
+          inputs: nodeDefinition.inputs,
+          outputs: nodeDefinition.outputs,
+          properties: resolvedProperties as any,
+          icon: nodeDefinition.icon,
+          color: nodeDefinition.color,
+          outputComponent: nodeDefinition.outputComponent,
+          // Don't update active status on update - preserve user's choice
+        },
+        create: {
+          type: nodeDefinition.type,
+          displayName: nodeDefinition.displayName,
+          name: nodeDefinition.name,
+          group: nodeDefinition.group,
+          version: nodeDefinition.version,
+          description: nodeDefinition.description,
+          defaults: nodeDefinition.defaults as any,
+          inputs: nodeDefinition.inputs,
+          outputs: nodeDefinition.outputs,
+          properties: resolvedProperties as any,
+          icon: nodeDefinition.icon,
+          color: nodeDefinition.color,
+          outputComponent: nodeDefinition.outputComponent,
+          active: true,
+        },
+      });
 
       // Store in memory registry
       this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
@@ -194,6 +214,17 @@ export class NodeService {
         nodeType: nodeDefinition.type,
       };
     } catch (error) {
+      // Handle duplicate key errors gracefully (race condition)
+      if (error instanceof Error && error.message.includes('duplicate key')) {
+        logger.warn(`Node ${nodeDefinition.type} already registered (race condition), skipping`);
+        // Still store in memory registry
+        this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
+        return {
+          success: true,
+          nodeType: nodeDefinition.type,
+        };
+      }
+
       logger.error("Failed to register node", {
         error,
         nodeType: nodeDefinition.type,
@@ -450,7 +481,8 @@ export class NodeService {
         execId,
         options,
         workflowId,
-        settings
+        settings,
+        options?.nodeId // Pass nodeId for state management
       );
 
       // Execute the node in secure context
@@ -471,7 +503,8 @@ export class NodeService {
       // Standardize the output format for consistent frontend handling
       const standardizedOutput = this.standardizeNodeOutput(
         nodeType,
-        outputValidation.sanitizedData as NodeOutputData[]
+        outputValidation.sanitizedData as NodeOutputData[],
+        nodeDefinition
       );
 
       // Cleanup execution resources
@@ -495,6 +528,47 @@ export class NodeService {
 
       // Cleanup execution resources on error
       await this.secureExecutionService.cleanupExecution(execId);
+
+      // Check if continueOnFail is enabled
+      const continueOnFail = settings?.continueOnFail === true;
+      const alwaysOutputData = settings?.alwaysOutputData === true;
+
+      // If continueOnFail and alwaysOutputData are enabled, return error data
+      if (continueOnFail && alwaysOutputData) {
+        logger.info("Node failed but continueOnFail is enabled - returning error data", {
+          nodeType,
+          executionId: execId,
+        });
+
+        // Return error information as output data
+        const errorOutput: StandardizedNodeOutput = {
+          main: [{
+            json: {
+              error: error instanceof Error ? error.message : "Unknown execution error",
+              errorDetails: {
+                message: error instanceof Error ? error.message : String(error),
+                name: error instanceof Error ? error.name : typeof error,
+                stack: error instanceof Error ? error.stack : undefined,
+              },
+            },
+          }],
+          metadata: {
+            nodeType,
+            outputCount: 1,
+            hasMultipleBranches: false,
+          },
+        };
+
+        return {
+          success: false, // Still mark as failed
+          data: errorOutput, // But include data
+          error: {
+            message:
+              error instanceof Error ? error.message : "Unknown execution error",
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        };
+      }
 
       return {
         success: false,
@@ -636,6 +710,8 @@ export class NodeService {
       "autocomplete", // Support for autocomplete fields
       "credential", // Support for credential selector fields
       "custom", // Support for custom components
+      "conditionRow", // Support for condition row (key-expression-value)
+      "columnsMap", // Support for columns map (dynamic column-to-value mapping)
     ];
     if (!validTypes.includes(property.type)) {
       errors.push({

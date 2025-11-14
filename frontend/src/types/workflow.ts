@@ -59,6 +59,7 @@ export interface WorkflowSettings {
   saveDataErrorExecution?: "all" | "none";
   saveDataSuccessExecution?: "all" | "none";
   saveManualExecutions?: boolean;
+  saveExecutionToDatabase?: boolean; // Skip saving executions to database (for high-traffic APIs)
   callerPolicy?: "workflowsFromSameOwner" | "workflowsFromAList" | "any";
 }
 
@@ -204,6 +205,7 @@ export interface NodeProperty {
   required?: boolean;
   default?: any;
   description?: string;
+  tooltip?: string; // Tooltip text shown as help icon next to label
   placeholder?: string;
   options?: Array<{ name: string; value: any }>;
   displayOptions?: {

@@ -91,8 +91,8 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
         if (!testResult) return ''
 
         return testResult.success
-            ? 'border-green-200 bg-green-50'
-            : 'border-red-200 bg-red-50'
+            ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950'
+            : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950'
     }
 
     const copyToClipboard = (text: string) => {
@@ -144,19 +144,19 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
             {/* Test input */}
             <div>
                 <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className="block text-sm font-medium">
                         Test Input Data
                     </label>
                     <div className="flex space-x-2">
                         <button
                             onClick={loadSampleData}
-                            className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                            className="text-xs text-primary hover:text-primary/80 transition-colors"
                         >
                             Load Sample
                         </button>
                         <button
                             onClick={resetTest}
-                            className="text-xs text-gray-600 hover:text-gray-800 transition-colors"
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                         >
                             Reset
                         </button>
@@ -166,10 +166,10 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                     value={testData}
                     onChange={(e) => setTestData(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm resize-y"
+                    className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-ring focus:border-transparent font-mono text-sm resize-y bg-background"
                     placeholder="Enter JSON test data..."
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                     Enter JSON data to test the node with. Use "Load Sample" for example data.
                 </p>
             </div>
@@ -179,7 +179,7 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                 <button
                     onClick={handleTest}
                     disabled={isLoading}
-                    className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isLoading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -192,7 +192,7 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                 {testHistory.length > 0 && (
                     <button
                         onClick={() => setShowHistory(!showHistory)}
-                        className="px-3 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                        className="px-3 py-2 border rounded-md hover:bg-accent transition-colors"
                         title="View test history"
                     >
                         <RotateCcw className="w-4 h-4" />
@@ -223,14 +223,14 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                         <div className="flex space-x-1">
                             <button
                                 onClick={() => copyToClipboard(formatJson(testResult))}
-                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                                 title="Copy result to clipboard"
                             >
                                 <Copy className="w-4 h-4" />
                             </button>
                             <button
                                 onClick={() => downloadResult(testResult)}
-                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                                 title="Download result as JSON"
                             >
                                 <Download className="w-4 h-4" />
@@ -242,9 +242,9 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                         <div className="mb-3">
                             <div className="flex items-center space-x-2 mb-2">
                                 <AlertTriangle className="w-4 h-4 text-red-500" />
-                                <span className="text-sm font-medium text-red-700">Error</span>
+                                <span className="text-sm font-medium text-red-700 dark:text-red-400">Error</span>
                             </div>
-                            <pre className="text-sm text-red-600 bg-red-100 p-2 rounded border overflow-x-auto whitespace-pre-wrap">
+                            <pre className="text-sm text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950 p-2 rounded border overflow-x-auto whitespace-pre-wrap">
                                 {testResult.error}
                             </pre>
                         </div>
@@ -254,9 +254,9 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                         <div>
                             <div className="flex items-center space-x-2 mb-2">
                                 <CheckCircle className="w-4 h-4 text-green-500" />
-                                <span className="text-sm font-medium text-green-700">Output Data</span>
+                                <span className="text-sm font-medium text-green-700 dark:text-green-400">Output Data</span>
                             </div>
-                            <pre className="text-sm text-gray-700 bg-gray-100 p-2 rounded border overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap">
+                            <pre className="text-sm bg-muted p-2 rounded border overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap">
                                 {formatJson(testResult.data)}
                             </pre>
                         </div>
@@ -266,12 +266,12 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
 
             {/* Test history */}
             {showHistory && testHistory.length > 0 && (
-                <div className="border rounded-md p-4 bg-gray-50">
+                <div className="border rounded-md p-4 bg-muted/30">
                     <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-gray-700">Test History</h4>
+                        <h4 className="text-sm font-medium">Test History</h4>
                         <button
                             onClick={() => setTestHistory([])}
-                            className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                         >
                             Clear History
                         </button>
@@ -282,8 +282,8 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                                 key={index}
                                 className={`p-2 rounded border text-xs ${
                                     result.success 
-                                        ? 'bg-green-50 border-green-200' 
-                                        : 'bg-red-50 border-red-200'
+                                        ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-900' 
+                                        : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-900'
                                 }`}
                             >
                                 <div className="flex items-center justify-between">
@@ -293,23 +293,23 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                                         ) : (
                                             <XCircle className="w-3 h-3 text-red-500" />
                                         )}
-                                        <span className={result.success ? 'text-green-700' : 'text-red-700'}>
+                                        <span className={result.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                                             {result.success ? 'Success' : 'Failed'}
                                         </span>
                                         {result.executionTime && (
-                                            <span className="text-gray-500">
+                                            <span className="text-muted-foreground">
                                                 ({result.executionTime}ms)
                                             </span>
                                         )}
                                     </div>
                                     {result.timestamp && (
-                                        <span className="text-gray-400">
+                                        <span className="text-muted-foreground">
                                             {new Date(result.timestamp).toLocaleTimeString()}
                                         </span>
                                     )}
                                 </div>
                                 {result.error && (
-                                    <div className="mt-1 text-red-600 truncate">
+                                    <div className="mt-1 text-red-600 dark:text-red-400 truncate">
                                         {result.error}
                                     </div>
                                 )}
@@ -320,7 +320,7 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
             )}
 
             {/* Node info */}
-            <div className="text-xs text-gray-500 space-y-1">
+            <div className="text-xs text-muted-foreground space-y-1">
                 <p><strong>Node Type:</strong> {nodeType.displayName}</p>
                 <p><strong>Version:</strong> {nodeType.version}</p>
                 {node.credentials && node.credentials.length > 0 && (

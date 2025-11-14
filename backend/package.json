@@ -28,6 +28,8 @@
     "nodes:status": "tsx src/scripts/node-cli.ts status",
     "nodes:activate-all": "tsx src/scripts/node-cli.ts activate-all",
     "nodes:deactivate-all": "tsx src/scripts/node-cli.ts deactivate-all",
+    "jobs:migrate": "tsx src/scripts/migrate-scheduled-jobs.ts",
+    "jobs:test": "tsx test-scheduled-jobs-db.ts",
     "compose:up": "docker-compose up -d",
     "compose:down": "docker-compose down",
     "compose:logs": "docker-compose logs -f"
@@ -59,10 +61,9 @@
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
     "openai": "^6.2.0",
-    "prisma": "^5.6.0",
+    "pg": "^8.16.3",
     "redis": "^4.6.10",
     "socket.io": "^4.7.4",
-    "typescript": "^5.2.2",
     "uuid": "^8.3.2",
     "vm2": "^3.9.19",
     "winston": "^3.11.0",
@@ -83,9 +84,11 @@
     "@types/supertest": "^2.0.16",
     "@types/uuid": "^10.0.0",
     "jest": "^29.7.0",
+    "prisma": "^5.6.0",
     "supertest": "^6.3.4",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
-    "tsx": "^4.1.4"
+    "tsx": "^4.1.4",
+    "typescript": "^5.2.2"
   }
 }

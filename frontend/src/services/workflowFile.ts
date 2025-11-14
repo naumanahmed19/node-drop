@@ -46,22 +46,45 @@ class WorkflowFileService {
    */
   async exportWorkflow(workflow: Workflow): Promise<void> {
     try {
+      console.log('📤 Starting workflow export...', { workflowId: workflow.id, workflowName: workflow.name })
+      
       const exportData = this.prepareExportData(workflow)
+      console.log('📦 Export data prepared:', { 
+        version: exportData.version, 
+        nodeCount: exportData.workflow.nodes.length,
+        connectionCount: exportData.workflow.connections.length 
+      })
+      
       const filename = this.generateFileName(workflow)
+      console.log('📝 Generated filename:', filename)
+      
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json'
       })
+      console.log('💾 Blob created:', { size: blob.size, type: blob.type })
 
       // Create download link and trigger download
       const url = URL.createObjectURL(blob)
+      console.log('🔗 Object URL created:', url)
+      
       const link = document.createElement('a')
       link.href = url
       link.download = filename
+      
+      // Add link to DOM (required for Firefox)
       document.body.appendChild(link)
+      console.log('🖱️ Triggering download...')
+      
+      // Trigger download
       link.click()
+      
+      // Clean up
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
+      
+      console.log('✅ Export completed successfully')
     } catch (error) {
+      console.error('❌ Export failed:', error)
       throw new Error(`Failed to export workflow: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
@@ -166,18 +189,42 @@ class WorkflowFileService {
    * Prepare workflow data for export
    */
   private prepareExportData(workflow: Workflow): WorkflowExportFormat {
+    // Ensure metadata exists and has required fields
+    const now = new Date().toISOString()
+    const metadata = workflow.metadata || {
+      title: workflow.name || 'Untitled Workflow',
+      lastTitleUpdate: now,
+      exportVersion: '1.0.0',
+      schemaVersion: '1.0.0',
+      version: 1,
+      tags: [],
+      customProperties: {}
+    }
+    
+    // Ensure all required metadata fields are present
+    const completeMetadata = {
+      ...metadata,
+      title: metadata.title || workflow.name || 'Untitled Workflow',
+      lastTitleUpdate: metadata.lastTitleUpdate || now,
+      exportVersion: metadata.exportVersion || '1.0.0',
+      schemaVersion: metadata.schemaVersion || '1.0.0',
+      version: metadata.version || 1,
+      tags: metadata.tags || [],
+      customProperties: metadata.customProperties || {}
+    }
+    
     const exportData: WorkflowExportFormat = {
       version: this.EXPORT_VERSION,
-      exportedAt: new Date().toISOString(),
+      exportedAt: now,
       exportedBy: 'workflow-editor', // Could be enhanced to include user info
       workflow: {
-        title: workflow.metadata?.title || workflow.name,
-        name: workflow.name,
+        title: completeMetadata.title,
+        name: workflow.name || completeMetadata.title,
         description: workflow.description,
-        nodes: workflow.nodes,
-        connections: workflow.connections,
-        settings: workflow.settings,
-        metadata: workflow.metadata,
+        nodes: workflow.nodes || [],
+        connections: workflow.connections || [],
+        settings: workflow.settings || {},
+        metadata: completeMetadata,
         tags: workflow.tags,
         category: workflow.category
       },

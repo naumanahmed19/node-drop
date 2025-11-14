@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import * as cron from "node-cron";
 import { v4 as uuidv4 } from "uuid";
 import { AppError } from "../middleware/errorHandler";
+import { ExecutionResult } from "../types/database";
 import { logger } from "../utils/logger";
 import { CredentialService } from "./CredentialService";
 import ExecutionHistoryService from "./ExecutionHistoryService";
@@ -25,9 +26,9 @@ export interface TriggerDefinition {
 export interface TriggerSettings {
   // Webhook settings
   webhookId?: string;
-  webhookUrl?: string; // The generated webhook ID from the frontend
+  webhookUrl?: string; // The generated UUID for the webhook
+  webhookPath?: string; // Custom webhook path (e.g., "users", "orders")
   httpMethod?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  path?: string;
 
   // Authentication settings (old format - stored at settings level)
   authentication?:
@@ -76,6 +77,13 @@ export interface WebhookRequest {
   body: any;
   ip: string;
   userAgent?: string;
+  binary?: {
+    data: Buffer;
+    mimeType: string;
+    fileName: string;
+    fileSize: number;
+  };
+  rawBody?: string;
 }
 
 export class TriggerService {
@@ -87,6 +95,7 @@ export class TriggerService {
   private credentialService: CredentialService;
   private triggerManager: TriggerManager;
   private scheduledTasks: Map<string, cron.ScheduledTask> = new Map();
+  // Map webhook key (path or path/uuid) to trigger definition
   private webhookTriggers: Map<string, TriggerDefinition> = new Map();
 
   constructor(
@@ -388,8 +397,12 @@ export class TriggerService {
   async deactivateTrigger(triggerId: string): Promise<void> {
     try {
       // Remove from webhook triggers
-      if (this.webhookTriggers.has(triggerId)) {
-        this.webhookTriggers.delete(triggerId);
+      for (const [webhookKey, trigger] of this.webhookTriggers.entries()) {
+        if (trigger.id === triggerId) {
+          this.webhookTriggers.delete(webhookKey);
+          logger.info(`🗑️  Deactivated webhook: ${webhookKey} (trigger ID: ${triggerId})`);
+          break;
+        }
       }
 
       // Remove from scheduled tasks
@@ -399,6 +412,7 @@ export class TriggerService {
           task.stop();
         }
         this.scheduledTasks.delete(triggerId);
+        logger.info(`🗑️  Deactivated scheduled task: ${triggerId}`);
       }
 
 
@@ -411,23 +425,44 @@ export class TriggerService {
   private async activateWebhookTrigger(
     trigger: TriggerDefinition
   ): Promise<void> {
-    // Use webhookUrl parameter as webhookId if provided, otherwise generate
-    if (!trigger.settings.webhookId) {
-      // Check if webhookUrl parameter contains the webhookId
-      if (
-        trigger.settings.webhookUrl &&
-        typeof trigger.settings.webhookUrl === "string"
-      ) {
-        trigger.settings.webhookId = trigger.settings.webhookUrl;
-      } else {
-        trigger.settings.webhookId = uuidv4();
+    // First, remove this trigger from any existing webhook keys
+    // This ensures we remove old paths when the webhook path is changed
+    for (const [webhookKey, existingTrigger] of this.webhookTriggers.entries()) {
+      if (existingTrigger.id === trigger.id && existingTrigger.nodeId === trigger.nodeId) {
+        this.webhookTriggers.delete(webhookKey);
+        logger.info(`🔄 Removing trigger ${trigger.id} from old webhook key: ${webhookKey}`);
       }
     }
-
-    // Store webhook trigger for lookup
-    if (trigger.settings.webhookId) {
-      this.webhookTriggers.set(trigger.settings.webhookId, trigger);
+    
+    // Clean the webhook URL and custom path
+    const webhookUrlId = trigger.settings.webhookUrl?.trim() || "";
+    const customPath = trigger.settings.webhookPath?.trim().replace(/^\/+|\/+$/g, "") || "";
+    
+    // Build webhook path: [uuid/]path
+    let webhookPath = "";
+    
+    if (webhookUrlId && customPath) {
+      // Both ID and path: uuid/path
+      webhookPath = `${webhookUrlId}/${customPath}`;
+    } else if (webhookUrlId) {
+      // Only ID: uuid
+      webhookPath = webhookUrlId;
+    } else if (customPath) {
+      // Only path (no UUID): path
+      webhookPath = customPath;
+    } else {
+      // Neither - must have at least one, generate UUID as fallback
+      trigger.settings.webhookUrl = uuidv4();
+      webhookPath = trigger.settings.webhookUrl;
+      logger.warn(`⚠️  No webhook ID or path provided, generated UUID: ${webhookPath}`);
     }
+    
+    // Store the webhook path
+    trigger.settings.webhookId = webhookPath;
+    
+    // Register webhook (same URL for test and production, differentiated by ?test=true)
+    this.webhookTriggers.set(webhookPath, trigger);
+    logger.info(`✅ Activated webhook: ${webhookPath}`);
 
 
   }
@@ -480,18 +515,121 @@ export class TriggerService {
 
   }
 
+  /**
+   * Match a webhook path against registered patterns
+   * Supports parameters like /users/:userId or /orders/:orderId/:itemId
+   * Returns ALL matching triggers (allows multiple workflows to use same path)
+   */
+  private matchWebhookPath(requestPath: string): { 
+    triggers: TriggerDefinition[]; 
+    params: Record<string, string>;
+  } | null {
+    // Clean the request path (remove query string and leading/trailing slashes)
+    const cleanPath = requestPath.split('?')[0].replace(/^\/+|\/+$/g, '');
+    
+    logger.info(`🔍 Matching webhook path: "${cleanPath}"`);
+    
+    const matchedTriggers: TriggerDefinition[] = [];
+    let matchedParams: Record<string, string> = {};
+    
+    // Check all registered webhooks
+    for (const [webhookKey, trigger] of this.webhookTriggers.entries()) {
+      const webhookPath = trigger.settings.webhookId || "";
+      
+      // Try exact match first
+      if (webhookPath === cleanPath) {
+        logger.info(`✅ Exact match: "${cleanPath}" -> ${webhookKey}`);
+        matchedTriggers.push(trigger);
+        continue;
+      }
+      
+      // Try pattern matching if path contains parameters
+      if (webhookPath.includes(':')) {
+        // Convert pattern to regex
+        // e.g., "users/:userId" -> /^users\/([^\/]+)$/
+        const paramNames: string[] = [];
+        const regexPattern = webhookPath.replace(/:([^\/]+)/g, (_, paramName) => {
+          paramNames.push(paramName);
+          return '([^/]+)';
+        });
+        
+        const regex = new RegExp(`^${regexPattern}$`);
+        const match = cleanPath.match(regex);
+        
+        if (match) {
+          // Extract parameters
+          const params: Record<string, string> = {};
+          paramNames.forEach((name, index) => {
+            params[name] = match[index + 1];
+          });
+          
+          logger.info(`✅ Pattern match: "${webhookPath}" -> ${webhookKey}`, params);
+          matchedTriggers.push(trigger);
+          matchedParams = params; // Use params from last match (they should all be the same)
+        }
+      }
+    }
+    
+    if (matchedTriggers.length > 0) {
+      logger.info(`✅ Found ${matchedTriggers.length} matching trigger(s) for path: "${cleanPath}"`);
+      return { triggers: matchedTriggers, params: matchedParams };
+    }
+    
+    logger.warn(`❌ No webhook match found for path: "${cleanPath}"`);
+    return null;
+  }
+
   async handleWebhookTrigger(
     webhookId: string,
-    request: WebhookRequest
-  ): Promise<{ success: boolean; executionId?: string; error?: string }> {
+    request: WebhookRequest,
+    testMode: boolean = false
+  ): Promise<{ 
+    success: boolean; 
+    executionId?: string; 
+    error?: string;
+    responseData?: any;
+    webhookOptions?: any;
+  }> {
     try {
-      const trigger = this.webhookTriggers.get(webhookId);
-      if (!trigger) {
+      // Try to match the webhook path (supports parameters)
+      const match = this.matchWebhookPath(webhookId);
+      
+      if (!match || match.triggers.length === 0) {
         throw new AppError(
           "Webhook trigger not found",
           404,
           "WEBHOOK_NOT_FOUND"
         );
+      }
+      
+      // If multiple triggers match, execute the first one
+      // TODO: In the future, we could execute all of them in parallel
+      const trigger = match.triggers[0];
+      const pathParams = match.params;
+      
+      if (match.triggers.length > 1) {
+        logger.info(`⚠️  Multiple triggers (${match.triggers.length}) matched webhook path. Executing first one: ${trigger.workflowId}`);
+      }
+
+      // Validate HTTP method matches the configured method
+      const configuredMethod = trigger.settings.httpMethod;
+      if (configuredMethod && request.method !== configuredMethod) {
+        logger.warn(`Webhook HTTP method mismatch`, {
+          webhookId,
+          expected: configuredMethod,
+          received: request.method,
+          ip: request.ip,
+        });
+        
+        // Create error with allowed methods info for proper HTTP response
+        const error = new AppError(
+          `The ${request.method} method is not supported for this route. Supported methods: ${configuredMethod}.`,
+          405,
+          "METHOD_NOT_ALLOWED"
+        );
+        // Store allowed method for response header
+        (error as any).allowedMethods = [configuredMethod];
+        throw error;
       }
 
       // Validate authentication if configured
@@ -607,25 +745,80 @@ export class TriggerService {
         }
       }
 
-      // Create trigger execution request with webhook data
+      // Fetch workflow to get the owner's userId and nodes for responseMode check
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { 
+          userId: true,
+          nodes: true,
+          connections: true,
+          settings: true,
+        },
+      });
+
+      if (!workflow) {
+        throw new AppError(
+          "Workflow not found for webhook trigger",
+          404,
+          "WORKFLOW_NOT_FOUND"
+        );
+      }
+
+      // Parse workflow nodes to get webhook trigger node settings
+      const workflowNodes = typeof workflow.nodes === "string" 
+        ? JSON.parse(workflow.nodes) 
+        : workflow.nodes;
+      
+      const webhookTriggerNode = (workflowNodes as any[])?.find(
+        (node: any) => node.id === trigger.nodeId
+      );
+
+      const responseMode = webhookTriggerNode?.parameters?.responseMode || "onReceived";
+      const shouldWaitForCompletion = responseMode === "lastNode";
+      
+      // Get webhook options from node parameters
+      const webhookOptions = webhookTriggerNode?.parameters?.options || {};
+      
+      // Validate webhook options
+      await this.validateWebhookOptions(webhookOptions, request);
+
+      // Check workflow settings for database storage
+      const workflowSettings = typeof workflow.settings === "string"
+        ? JSON.parse(workflow.settings)
+        : workflow.settings;
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
+
+      // Construct the full webhook URL
+      const baseUrl = process.env.WEBHOOK_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 4000}`;
+      const webhookUrl = `${baseUrl}/webhook/${webhookId}`;
+
+      // Create trigger execution request with webhook data (including path parameters, binary, and raw body)
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
         triggerType: "webhook",
         workflowId: trigger.workflowId,
-        userId: "system", // System user for webhook triggers
+        userId: workflow.userId, // Use workflow owner's userId for credential access
         triggerNodeId: trigger.nodeId,
         triggerData: {
           method: request.method,
           headers: request.headers,
           query: request.query,
           body: request.body,
+          params: pathParams, // Add extracted path parameters
           ip: request.ip,
           userAgent: request.userAgent,
+          webhookUrl, // Add the full webhook URL
+          // Add binary data if present
+          ...(request.binary && { binary: request.binary }),
+          // Add raw body if present
+          ...(request.rawBody && { rawBody: request.rawBody }),
         },
         options: {
           isolatedExecution: true, // Webhooks should run in isolation
           priority: 2, // Medium priority for webhooks
           triggerTimeout: 30000, // 30 second timeout for webhooks
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -643,8 +836,12 @@ export class TriggerService {
       // Log trigger event
       await this.logTriggerEvent(triggerEvent);
 
-      // Execute using TriggerManager for concurrent execution support
-      const result = await this.triggerManager.executeTrigger(triggerRequest);
+      // Execute using TriggerManager
+      // If responseMode is "lastNode", wait for completion to get result directly
+      // Otherwise, use fire-and-forget execution
+      const result = shouldWaitForCompletion
+        ? await this.triggerManager.executeTriggerAndWait(triggerRequest, 30000)
+        : await this.triggerManager.executeTrigger(triggerRequest);
 
       if (!result.success) {
         triggerEvent.status = "failed";
@@ -660,20 +857,180 @@ export class TriggerService {
       // Update trigger event with execution ID
       triggerEvent.executionId = result.executionId;
       triggerEvent.status =
-        result.status === "started" ? "processing" : "pending";
+        (result as any).status === "started" ? "processing" : "pending";
       await this.updateTriggerEvent(triggerEvent);
 
-      // Emit real-time update
-      this.socketService.emitToUser(trigger.workflowId, "trigger-executed", {
-        triggerId: trigger.id,
-        executionId: result.executionId,
-        type: "webhook",
-        status: result.status,
-      });
+      // Emit real-time update to workflow room
+      this.socketService.getServer()
+        .to(`workflow:${trigger.workflowId}`)
+        .emit("trigger-executed", {
+          triggerId: trigger.id,
+          executionId: result.executionId,
+          type: "webhook",
+          status: (result as any).status || "started",
+          testMode,
+          timestamp: new Date().toISOString(),
+        });
+
+      // If in test mode, also emit a webhook-test event for frontend to subscribe to execution
+      if (testMode) {
+        const eventData = {
+          webhookId,
+          executionId: result.executionId,
+          workflowId: trigger.workflowId,
+          triggerNodeId: trigger.nodeId,
+          timestamp: new Date().toISOString(),
+        };
+        
+        console.log(`🧪🧪🧪 TEST MODE DETECTED - Emitting webhook-test-triggered to workflow:${trigger.workflowId}`);
+        console.log(`🧪🧪🧪 Event data:`, JSON.stringify(eventData, null, 2));
+        
+        // Debug: Log all workflow rooms
+        this.socketService.logWorkflowRooms();
+        
+        // Check how many clients are in the workflow room
+        const room = this.socketService.getServer().sockets.adapter.rooms.get(`workflow:${trigger.workflowId}`);
+        const clientCount = room ? room.size : 0;
+        console.log(`🧪🧪🧪 Clients in workflow:${trigger.workflowId} room: ${clientCount}`);
+        
+        if (clientCount === 0) {
+          console.log(`⚠️  WARNING: No clients subscribed to workflow:${trigger.workflowId}!`);
+          console.log(`⚠️  The frontend might not be subscribed to the workflow room.`);
+          console.log(`⚠️  This usually means the socket disconnected or never joined the room.`);
+        }
+        
+        logger.info(`🧪 Emitting webhook-test-triggered to workflow:${trigger.workflowId}`, eventData);
+        
+        this.socketService.getServer()
+          .to(`workflow:${trigger.workflowId}`)
+          .emit("webhook-test-triggered", eventData);
+        
+        console.log(`🧪🧪🧪 Event emitted successfully to ${clientCount} client(s)`);
+        
+        logger.info(`🧪 Webhook test mode - execution visible in editor`, {
+          webhookId,
+          executionId: result.executionId,
+          workflowId: trigger.workflowId,
+        });
+      } else {
+        console.log(`ℹ️  Test mode NOT detected (testMode = ${testMode})`);
+      }
+
+      // If responseMode is "lastNode", extract response data from execution result
+      let responseData = null;
+      if (shouldWaitForCompletion && result.executionId) {
+        try {
+          console.log(`✅ Execution completed (responseMode: lastNode)`, {
+            executionId: result.executionId,
+            webhookId,
+            hasResult: !!(result as any).result,
+            resultKeys: (result as any).result ? Object.keys((result as any).result) : [],
+          });
+
+          // Extract response data from the execution result
+          if ((result as any).result) {
+            const executionResult = (result as any).result;
+            
+            console.log(`🔍 DEBUG Execution result details:`, {
+              success: executionResult.success,
+              hasError: !!executionResult.error,
+              errorMessage: executionResult.error?.message,
+              hasData: !!executionResult.data,
+              dataKeys: executionResult.data ? Object.keys(executionResult.data) : [],
+              hasFailures: executionResult.data?.hasFailures,
+              failedNodes: executionResult.data?.failedNodes,
+            });
+            
+            // Check if execution failed or has errors
+            // Note: success can be true even with errors, so we check for error presence
+            const hasError = executionResult.error || executionResult.data?.hasFailures;
+            console.log(`🔍 DEBUG Error check:`, {
+              hasError,
+              hasErrorField: !!executionResult.error,
+              hasFailuresField: !!executionResult.data?.hasFailures,
+              willReturnError: hasError,
+            });
+            
+            if (hasError) {
+              const errorMessage = executionResult.error?.message || "Workflow execution failed";
+              const errorDetails = executionResult.error;
+              
+              console.error(`❌ Execution failed`, {
+                executionId: result.executionId,
+                error: errorMessage,
+                errorDetails,
+              });
+              
+              // Return error response with proper status code
+              return {
+                success: true, // Webhook was received successfully
+                executionId: result.executionId,
+                responseData: {
+                  statusCode: 500,
+                  headers: { "Content-Type": "application/json" },
+                  body: {
+                    success: false,
+                    error: errorMessage,
+                    ...(errorDetails?.nodeId && { nodeId: errorDetails.nodeId }),
+                    executionId: result.executionId,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+                webhookOptions,
+              };
+            }
+            
+            responseData = await this.extractResponseDataFromResult(executionResult);
+            
+            console.log(`✅ Response data extracted from result`, {
+              executionId: result.executionId,
+              hasResponseData: !!responseData,
+              responseDataKeys: responseData ? Object.keys(responseData) : [],
+            });
+          }
+          
+          logger.info(`Execution completed, response data extracted`, {
+            executionId: result.executionId,
+            hasResponseData: !!responseData,
+          });
+        } catch (error) {
+          console.error(`❌ Error waiting for execution completion`, {
+            executionId: result.executionId,
+            error: error instanceof Error ? error.message : error,
+          });
+          logger.error(`Error waiting for execution completion`, {
+            executionId: result.executionId,
+            error: error instanceof Error ? error.message : error,
+          });
+          // Return error response
+          return {
+            success: true, // Webhook was received successfully
+            executionId: result.executionId,
+            responseData: {
+              statusCode: 500,
+              headers: { "Content-Type": "application/json" },
+              body: {
+                success: false,
+                error: error instanceof Error ? error.message : "Error waiting for execution completion",
+                executionId: result.executionId,
+                timestamp: new Date().toISOString(),
+              },
+            },
+            webhookOptions,
+          };
+        }
+      } else {
+        console.log(`ℹ️  Not waiting for completion:`, {
+          shouldWaitForCompletion,
+          hasExecutionId: !!result.executionId,
+        });
+      }
 
       return {
         success: true,
         executionId: result.executionId,
+        responseData,
+        webhookOptions, // Return webhook options for response handling
       };
     } catch (error) {
       logger.error(`Error handling webhook trigger ${webhookId}:`, error);
@@ -689,6 +1046,21 @@ export class TriggerService {
     trigger: TriggerDefinition
   ): Promise<void> {
     try {
+      // Fetch workflow to get settings
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { settings: true },
+      });
+
+      // Check workflow settings for database storage
+      const workflowSettings = workflow?.settings
+        ? typeof workflow.settings === "string"
+          ? JSON.parse(workflow.settings)
+          : workflow.settings
+        : {};
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
+
       // Create trigger execution request for scheduled execution
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
@@ -705,6 +1077,7 @@ export class TriggerService {
           isolatedExecution: false, // Schedules can share resources
           priority: 3, // Lower priority for scheduled triggers
           triggerTimeout: 300000, // 5 minute timeout for scheduled triggers
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -786,6 +1159,13 @@ export class TriggerService {
         throw new AppError("Trigger is not active", 400, "TRIGGER_NOT_ACTIVE");
       }
 
+      // Check workflow settings for database storage
+      const workflowSettings = typeof workflow.settings === "string"
+        ? JSON.parse(workflow.settings)
+        : workflow.settings;
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
+
       // Create trigger execution request for manual execution
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
@@ -798,6 +1178,7 @@ export class TriggerService {
           isolatedExecution: true, // Manual triggers should run in isolation
           priority: 1, // Highest priority for manual triggers
           triggerTimeout: 600000, // 10 minute timeout for manual triggers
+          saveToDatabase, // Pass workflow setting
         },
       };
 
@@ -896,6 +1277,157 @@ export class TriggerService {
           "INVALID_TRIGGER_TYPE"
         );
     }
+  }
+
+  /**
+   * Validate webhook options (CORS, IP whitelist, bot detection)
+   */
+  private async validateWebhookOptions(
+    options: any,
+    request: WebhookRequest
+  ): Promise<void> {
+    // Check if bots should be ignored
+    if (options.ignoreBots) {
+      const userAgent = request.userAgent || "";
+      if (this.isBot(userAgent)) {
+        throw new AppError(
+          "Bot requests are not allowed",
+          403,
+          "BOT_REQUEST_BLOCKED"
+        );
+      }
+    }
+
+    // Check IP whitelist
+    if (options.ipWhitelist) {
+      const whitelist = options.ipWhitelist
+        .split(",")
+        .map((ip: string) => ip.trim())
+        .filter((ip: string) => ip);
+
+      if (whitelist.length > 0) {
+        const clientIp = request.ip;
+        if (!this.isIpWhitelisted(clientIp, whitelist)) {
+          throw new AppError(
+            "IP address not whitelisted",
+            403,
+            "IP_NOT_WHITELISTED"
+          );
+        }
+      }
+    }
+
+    // CORS validation is handled at the route level
+    // We just validate the origin here if needed
+    if (options.allowedOrigins && options.allowedOrigins !== "*") {
+      const origin = request.headers.origin;
+      if (origin && !this.isOriginAllowed(origin, options.allowedOrigins)) {
+        throw new AppError(
+          "Origin not allowed",
+          403,
+          "ORIGIN_NOT_ALLOWED"
+        );
+      }
+    }
+  }
+
+  /**
+   * Check if request is from a bot
+   */
+  private isBot(userAgent: string): boolean {
+    if (!userAgent) return false;
+
+    const botPatterns = [
+      /bot/i,
+      /crawler/i,
+      /spider/i,
+      /scraper/i,
+      /preview/i,
+      /facebookexternalhit/i,
+      /twitterbot/i,
+      /linkedinbot/i,
+      /slackbot/i,
+      /discordbot/i,
+      /whatsapp/i,
+      /telegram/i,
+    ];
+
+    return botPatterns.some((pattern) => pattern.test(userAgent));
+  }
+
+  /**
+   * Check if IP is whitelisted
+   */
+  private isIpWhitelisted(clientIp: string, whitelist: string[]): boolean {
+    if (!whitelist || whitelist.length === 0) return true;
+
+    for (const entry of whitelist) {
+      const trimmedEntry = entry.trim();
+
+      // Check for CIDR notation
+      if (trimmedEntry.includes("/")) {
+        if (this.isIpInCidr(clientIp, trimmedEntry)) {
+          return true;
+        }
+      } else {
+        // Direct IP match
+        if (clientIp === trimmedEntry) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if IP is in CIDR range
+   */
+  private isIpInCidr(ip: string, cidr: string): boolean {
+    try {
+      const [range, bits] = cidr.split("/");
+      const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+
+      const ipNum = this.ipToNumber(ip);
+      const rangeNum = this.ipToNumber(range);
+
+      return (ipNum & mask) === (rangeNum & mask);
+    } catch (error) {
+      logger.error(`Invalid CIDR notation: ${cidr}`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Convert IP to number
+   */
+  private ipToNumber(ip: string): number {
+    return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet), 0);
+  }
+
+  /**
+   * Check if origin is allowed
+   */
+  private isOriginAllowed(origin: string, allowedOrigins: string): boolean {
+    if (allowedOrigins === "*") return true;
+
+    const origins = allowedOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter((o) => o);
+
+    return origins.some((allowed) => {
+      // Exact match
+      if (allowed === origin) return true;
+
+      // Wildcard subdomain match (e.g., *.example.com)
+      if (allowed.startsWith("*.")) {
+        const domain = allowed.substring(2);
+        return origin.endsWith(domain);
+      }
+
+      return false;
+    });
   }
 
   private async validateWebhookAuthentication(
@@ -1156,6 +1688,296 @@ export class TriggerService {
     } catch (error) {
       logger.error(`Error syncing triggers for workflow ${workflowId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Wait for execution to complete and extract response data
+   * Used for webhook responseMode: "lastNode"
+   */
+  private async waitForExecutionCompletion(
+    executionId: string,
+    timeout: number = 30000
+  ): Promise<any> {
+    return new Promise(async (resolve, reject) => {
+      const startTime = Date.now();
+      const pollInterval = 500; // Poll every 500ms
+      const initialDelay = 100; // Wait 100ms before first poll to allow execution record to be created
+
+      const checkExecution = async () => {
+        try {
+          // Check if timeout exceeded
+          if (Date.now() - startTime > timeout) {
+            reject(new Error("Execution timeout"));
+            return;
+          }
+
+          // Fetch execution from database
+          const execution = await this.prisma.execution.findUnique({
+            where: { id: executionId },
+          });
+
+          if (!execution) {
+            // Don't reject immediately - execution might not be created yet
+            // Continue polling until timeout
+            console.log(`⏳ Execution record not found yet, continuing to poll...`);
+            setTimeout(checkExecution, pollInterval);
+            return;
+          }
+
+          // Check if execution is complete
+          if (execution.status === "SUCCESS" || execution.status === "ERROR" || execution.status === "CANCELLED" || execution.status === "TIMEOUT") {
+            // Extract response data from execution
+            const responseData = this.extractResponseData(execution);
+            resolve(responseData);
+            return;
+          }
+
+          // Continue polling
+          setTimeout(checkExecution, pollInterval);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      // Start polling after initial delay to allow execution record to be created
+      setTimeout(checkExecution, initialDelay);
+    });
+  }
+
+  /**
+   * Extract HTTP Response node data from ExecutionResult (without database query)
+   */
+  private async extractResponseDataFromResult(executionResult: ExecutionResult): Promise<any> {
+    try {
+      console.log(`🔍 DEBUG extractResponseDataFromResult - Execution result:`, {
+        success: executionResult.success,
+        hasData: !!executionResult.data,
+        hasExecutionData: !!(executionResult.data as any)?.executionData,
+      });
+      
+      // Get execution data from result
+      const executionData = (executionResult.data as any)?.executionData;
+      if (!executionData || !executionData.nodeResults) {
+        console.log(`⚠️  No execution data in result`);
+        return null;
+      }
+      
+      const nodeResults = executionData.nodeResults;
+      console.log(`🔍 Found ${Object.keys(nodeResults).length} node results`);
+      
+      // Iterate through node results to find HTTP Response node
+      for (const [nodeId, nodeResult] of Object.entries(nodeResults)) {
+        const result = nodeResult as any;
+        
+        if (!result.data || !result.data.main) {
+          continue;
+        }
+        
+        // Check main output
+        const mainOutput = result.data.main;
+        if (Array.isArray(mainOutput) && mainOutput.length > 0) {
+          const firstOutput = mainOutput[0];
+          
+          if (firstOutput) {
+            // Check for new format with _httpResponseData
+            if (firstOutput._httpResponseData) {
+              const responseData = firstOutput._httpResponseData;
+              console.log(`✅ Found HTTP Response node output (new format) in result`, {
+                nodeId,
+                statusCode: responseData.statusCode,
+              });
+              
+              return {
+                statusCode: responseData.statusCode || 200,
+                headers: responseData.headers || {},
+                body: responseData.body,
+                cookies: responseData.cookies || [],
+              };
+            }
+            
+            // Check for old format (backward compatibility)
+            if (firstOutput.json) {
+              const output = firstOutput.json;
+              
+              console.log(`🔍 Node ${nodeId} output:`, {
+                hasHttpResponseFlag: output._httpResponse === true,
+                outputKeys: Object.keys(output),
+              });
+              
+              // Check if this is an HTTP Response node output (old format)
+              if (output._httpResponse === true) {
+                console.log(`✅ Found HTTP Response node output (old format) in result`, {
+                  nodeId,
+                  statusCode: output.statusCode,
+                });
+                
+                return {
+                  statusCode: output.statusCode || 200,
+                  headers: output.headers || {},
+                  body: output.body,
+                  cookies: output.cookies || [],
+                };
+              }
+            }
+          }
+        }
+      }
+      
+      // If no HTTP Response node found, return the last node's output
+      const nodeIds = Object.keys(nodeResults);
+      if (nodeIds.length > 0) {
+        const lastNodeId = nodeIds[nodeIds.length - 1];
+        const lastResult = nodeResults[lastNodeId] as any;
+        
+        if (lastResult.data && lastResult.data.main && Array.isArray(lastResult.data.main) && lastResult.data.main.length > 0) {
+          const lastOutput = lastResult.data.main[0];
+          
+          if (lastOutput && lastOutput.json) {
+            console.log(`ℹ️  No HTTP Response node found, returning last node output`, { nodeId: lastNodeId });
+            return {
+              statusCode: 200,
+              headers: { "Content-Type": "application/json" },
+              body: lastOutput.json,
+              cookies: [],
+            };
+          }
+        }
+      }
+      
+      console.log(`⚠️  No suitable response data found in execution result`);
+      return null;
+    } catch (error) {
+      logger.error("Failed to extract response data from result:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract HTTP Response node data from execution result (database query)
+   */
+  private async extractResponseData(execution: any): Promise<any> {
+    try {
+      console.log(`🔍 DEBUG extractResponseData - Execution status:`, execution.status);
+      
+      // Fetch node executions for this execution
+      const nodeExecutions = await this.prisma.nodeExecution.findMany({
+        where: { executionId: execution.id },
+        select: {
+          nodeId: true,
+          outputData: true,
+          status: true,
+        },
+      });
+
+      if (!nodeExecutions || nodeExecutions.length === 0) {
+        console.log(`⚠️  DEBUG extractResponseData - No node executions found`);
+        return null;
+      }
+
+      console.log(`🔍 DEBUG extractResponseData - Found ${nodeExecutions.length} node executions`);
+      
+      // Iterate through node executions to find one with _httpResponse flag
+      for (const nodeExecution of nodeExecutions) {
+        if (!nodeExecution.outputData) {
+          continue;
+        }
+
+        // Parse outputData
+        let outputData = nodeExecution.outputData;
+        if (typeof outputData === "string") {
+          outputData = JSON.parse(outputData);
+        }
+
+        // Check if this node has main output data
+        const outputDataObj = outputData as any;
+        if (outputDataObj.main && Array.isArray(outputDataObj.main) && outputDataObj.main.length > 0) {
+          const mainOutput = outputDataObj.main[0];
+          
+          if (mainOutput) {
+            // Check for new format with _httpResponseData
+            if (mainOutput._httpResponseData) {
+              const responseData = mainOutput._httpResponseData;
+              console.log(`✅ Found HTTP Response node output (new format)`, {
+                nodeId: nodeExecution.nodeId,
+                statusCode: responseData.statusCode,
+              });
+              logger.info("Found HTTP Response node output", {
+                nodeId: nodeExecution.nodeId,
+                statusCode: responseData.statusCode,
+              });
+              
+              return {
+                statusCode: responseData.statusCode || 200,
+                headers: responseData.headers || {},
+                body: responseData.body,
+                cookies: responseData.cookies || [],
+              };
+            }
+            
+            // Check for old format (backward compatibility)
+            if (mainOutput.json) {
+              const output = mainOutput.json as any;
+              
+              console.log(`🔍 DEBUG extractResponseData - Node ${nodeExecution.nodeId} output:`, {
+                hasHttpResponseFlag: output._httpResponse === true,
+                outputKeys: Object.keys(output),
+              });
+              
+              // Check if this is an HTTP Response node output (old format)
+              if (output._httpResponse === true) {
+                console.log(`✅ Found HTTP Response node output (old format)`, {
+                  nodeId: nodeExecution.nodeId,
+                  statusCode: output.statusCode,
+                });
+                logger.info("Found HTTP Response node output", {
+                  nodeId: nodeExecution.nodeId,
+                  statusCode: output.statusCode,
+                });
+                
+                return {
+                  statusCode: output.statusCode || 200,
+                  headers: output.headers || {},
+                  body: output.body,
+                  cookies: output.cookies || [],
+                };
+              }
+            }
+          }
+        }
+      }
+
+      // If no HTTP Response node found, return the last node's output
+      if (nodeExecutions.length > 0) {
+        const lastNodeExecution = nodeExecutions[nodeExecutions.length - 1];
+        
+        if (lastNodeExecution.outputData) {
+          let lastOutputData = lastNodeExecution.outputData;
+          if (typeof lastOutputData === "string") {
+            lastOutputData = JSON.parse(lastOutputData);
+          }
+          
+          const lastOutputDataObj = lastOutputData as any;
+          if (lastOutputDataObj.main && Array.isArray(lastOutputDataObj.main) && lastOutputDataObj.main.length > 0) {
+            const lastMainOutput = lastOutputDataObj.main[0];
+            
+            if (lastMainOutput && lastMainOutput.json) {
+              return {
+                statusCode: 200,
+                headers: { "Content-Type": "application/json" },
+                body: lastMainOutput.json,
+                cookies: [],
+              };
+            }
+          }
+        }
+      }
+
+      console.log(`⚠️  DEBUG extractResponseData - No HTTP Response node found`);
+      return null;
+    } catch (error) {
+      logger.error("Error extracting response data", { error });
+      return null;
     }
   }
 }

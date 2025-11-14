@@ -57,11 +57,13 @@ export function useExecutionContext(nodeId: string): NodeExecutionContext {
         state.executionManager.isNodeExecutingInCurrent(nodeId);
 
       // Return a stable object that only changes when THIS node's state changes
+      // Include version to force re-evaluation when execution completes
       return {
         status: statusInfo.status,
         executionId: statusInfo.executionId,
         isExecuting,
         timestamp: statusInfo.lastUpdated,
+        version: state.executionStateVersion, // Subscribe to version changes
       };
     },
     // Custom equality function - only re-render if THIS node's state actually changed
@@ -71,7 +73,8 @@ export function useExecutionContext(nodeId: string): NodeExecutionContext {
       return (
         a.status === b.status &&
         a.executionId === b.executionId &&
-        a.isExecuting === b.isExecuting
+        a.isExecuting === b.isExecuting &&
+        a.version === b.version // Check version to catch execution completion
       );
     }
   );

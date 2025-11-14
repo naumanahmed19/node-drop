@@ -1,0 +1,318 @@
+{
+  "version": "1.0.0",
+  "exportedAt": "2025-11-05T23:06:35.850Z",
+  "exportedBy": "workflow-editor",
+  "workflow": {
+    "title": "test",
+    "name": "test",
+    "description": "",
+    "nodes": [
+      {
+        "id": "node-1762362374101",
+        "name": "Manual Trigger",
+        "type": "manual-trigger",
+        "disabled": false,
+        "position": {
+          "x": 236.43532473578517,
+          "y": -3.6949642592680263
+        },
+        "parameters": {
+          "defaultData": "{}",
+          "description": "",
+          "maxDataSize": 1048576,
+          "validateData": true,
+          "allowCustomData": false
+        },
+        "credentials": []
+      },
+      {
+        "id": "node-1762362387269",
+        "name": "Loop",
+        "type": "loop",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": 513.6344703620655,
+          "y": -3.050978267881142
+        },
+        "settings": {},
+        "parameters": {
+          "loopOver": "repeat",
+          "batchSize": 1,
+          "fieldName": "",
+          "repeatTimes": 10
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      },
+      {
+        "id": "node-1762374657881",
+        "name": "Delay",
+        "type": "delay",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": 752.5926355005874,
+          "y": -149.91906562556497
+        },
+        "settings": {},
+        "parameters": {
+          "name": "Delay",
+          "amount": 3,
+          "resumeOn": "afterDelay",
+          "timeUnit": "seconds"
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      },
+      {
+        "id": "node-1762375613905",
+        "name": "Data Preview",
+        "type": "data-preview",
+        "disabled": false,
+        "mockData": null,
+        "position": {
+          "x": 1112.7918888865277,
+          "y": -303.9593367936784
+        },
+        "settings": {},
+        "parameters": {
+          "maxLines": 100,
+          "appendMode": true,
+          "isExpanded": true,
+          "autoCollapse": false,
+          "previewFormat": "json",
+          "previewSource": "all",
+          "showTimestamp": true,
+          "previewHistory": [
+            {
+              "id": "preview-1762383692288",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 10,\n        \"index\": 9,\n        \"total\": 10,\n        \"$index\": 9,\n        \"$iteration\": 10,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": true,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3031,\n            \"seconds\": \"3.03\"\n          },\n          \"startTime\": \"2025-11-05T23:01:29.247Z\",\n          \"endTime\": \"2025-11-05T23:01:32.278Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:32.288Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383689223",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 9,\n        \"index\": 8,\n        \"total\": 10,\n        \"$index\": 8,\n        \"$iteration\": 9,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3025,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:26.188Z\",\n          \"endTime\": \"2025-11-05T23:01:29.213Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:29.223Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383686170",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 8,\n        \"index\": 7,\n        \"total\": 10,\n        \"$index\": 7,\n        \"$iteration\": 8,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3022,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:23.135Z\",\n          \"endTime\": \"2025-11-05T23:01:26.157Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:26.170Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383683118",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 7,\n        \"index\": 6,\n        \"total\": 10,\n        \"$index\": 6,\n        \"$iteration\": 7,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3023,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:20.085Z\",\n          \"endTime\": \"2025-11-05T23:01:23.108Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:23.118Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383680068",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 6,\n        \"index\": 5,\n        \"total\": 10,\n        \"$index\": 5,\n        \"$iteration\": 6,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3019,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:17.036Z\",\n          \"endTime\": \"2025-11-05T23:01:20.055Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:20.068Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383677017",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 5,\n        \"index\": 4,\n        \"total\": 10,\n        \"$index\": 4,\n        \"$iteration\": 5,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3020,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:13.987Z\",\n          \"endTime\": \"2025-11-05T23:01:17.007Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:17.017Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383673967",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 4,\n        \"index\": 3,\n        \"total\": 10,\n        \"$index\": 3,\n        \"$iteration\": 4,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3031,\n            \"seconds\": \"3.03\"\n          },\n          \"startTime\": \"2025-11-05T23:01:10.927Z\",\n          \"endTime\": \"2025-11-05T23:01:13.958Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:13.967Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383670910",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 3,\n        \"index\": 2,\n        \"total\": 10,\n        \"$index\": 2,\n        \"$iteration\": 3,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3039,\n            \"seconds\": \"3.04\"\n          },\n          \"startTime\": \"2025-11-05T23:01:07.862Z\",\n          \"endTime\": \"2025-11-05T23:01:10.901Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:10.910Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383667846",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 2,\n        \"index\": 1,\n        \"total\": 10,\n        \"$index\": 1,\n        \"$iteration\": 2,\n        \"$total\": 10,\n        \"$isFirst\": false,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3015,\n            \"seconds\": \"3.02\"\n          },\n          \"startTime\": \"2025-11-05T23:01:04.820Z\",\n          \"endTime\": \"2025-11-05T23:01:07.835Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:07.846Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            },
+            {
+              "id": "preview-1762383664803",
+              "preview": "[\n  [\n    {\n      \"json\": {\n        \"iteration\": 1,\n        \"index\": 0,\n        \"total\": 10,\n        \"$index\": 0,\n        \"$iteration\": 1,\n        \"$total\": 10,\n        \"$isFirst\": true,\n        \"$isLast\": false,\n        \"$batchIndex\": 0,\n        \"$batchSize\": 1,\n        \"delayInfo\": {\n          \"requestedDelay\": {\n            \"amount\": 3,\n            \"unit\": \"seconds\",\n            \"milliseconds\": 3000\n          },\n          \"actualDelay\": {\n            \"milliseconds\": 3028,\n            \"seconds\": \"3.03\"\n          },\n          \"startTime\": \"2025-11-05T23:01:01.762Z\",\n          \"endTime\": \"2025-11-05T23:01:04.790Z\"\n        }\n      }\n    }\n  ]\n]",
+              "format": "json",
+              "lineCount": 31,
+              "timestamp": "2025-11-05T23:01:04.803Z",
+              "metadata": {
+                "inputItems": 1,
+                "previewedItems": 1,
+                "previewSource": "all",
+                "dataType": "object",
+                "isArray": true,
+                "truncated": false
+              }
+            }
+          ],
+          "maxHistoryItems": 10
+        },
+        "credentials": [],
+        "mockDataPinned": false
+      },
+      {
+        "id": "node-1762383613423",
+        "type": "data-preview",
+        "name": "Data Preview",
+        "parameters": {
+          "maxLines": 100,
+          "appendMode": false,
+          "autoCollapse": false,
+          "previewFormat": "json",
+          "previewSource": "all",
+          "showTimestamp": true,
+          "maxHistoryItems": 10,
+          "isExpanded": true
+        },
+        "position": {
+          "x": 1118.5634346208537,
+          "y": 71.13021842976798
+        },
+        "credentials": [],
+        "disabled": false,
+        "icon": "fa:terminal",
+        "color": "#4CAF50"
+      }
+    ],
+    "connections": [
+      {
+        "id": "node-1762362374101-node-1762362387269-1762362387270",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762362374101",
+        "sourceOutput": "main",
+        "targetNodeId": "node-1762362387269"
+      },
+      {
+        "id": "node-1762362387269-node-1762374657881-1762374657883",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762362387269",
+        "sourceOutput": "loop",
+        "targetNodeId": "node-1762374657881"
+      },
+      {
+        "id": "node-1762374657881-node-1762375613905-1762375618273",
+        "targetInput": "main",
+        "sourceNodeId": "node-1762374657881",
+        "sourceOutput": "main",
+        "targetNodeId": "node-1762375613905"
+      },
+      {
+        "id": "node-1762362387269-node-1762383613423-1762383618591",
+        "sourceNodeId": "node-1762362387269",
+        "sourceOutput": "done",
+        "targetNodeId": "node-1762383613423",
+        "targetInput": "main"
+      }
+    ],
+    "settings": {
+      "timezone": "UTC",
+      "callerPolicy": "workflowsFromSameOwner",
+      "saveExecutionProgress": true,
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "metadata": {
+      "title": "test",
+      "lastTitleUpdate": "2025-11-05T22:49:01.690Z",
+      "exportVersion": "1.0.0",
+      "schemaVersion": "1.0.0",
+      "version": 1,
+      "tags": [],
+      "customProperties": {}
+    },
+    "tags": [],
+    "category": null
+  },
+  "checksum": "757b3cca"
+}

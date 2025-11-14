@@ -120,6 +120,92 @@ router.post(
   })
 );
 
+// GET /api/executions/scheduled - Get upcoming scheduled executions
+router.get(
+  "/scheduled",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const workflowId = req.query.workflowId as string;
+
+    // Import WorkflowService
+    const { WorkflowService } = await import("../services/WorkflowService");
+    const workflowService = new WorkflowService(prisma);
+
+    let workflows: any[] = [];
+
+    if (workflowId) {
+      // Get specific workflow
+      const workflow = await workflowService.getWorkflow(
+        workflowId,
+        req.user!.id
+      );
+      workflows = [workflow];
+    } else {
+      // Get all workflows (not just active ones) with schedule triggers
+      const allWorkflows = await prisma.workflow.findMany({
+        where: {
+          userId: req.user!.id,
+        },
+        select: {
+          id: true,
+          name: true,
+          active: true,
+          triggers: true,
+        },
+      });
+
+      logger.info(`Found ${allWorkflows.length} workflows for user ${req.user!.id}`);
+
+      // Filter workflows that have active schedule triggers
+      workflows = allWorkflows.filter((w) => {
+        const triggers = (w.triggers as any[]) || [];
+        const hasScheduleTrigger = triggers.some((t) => {
+          // If active is undefined, treat as true (for backwards compatibility)
+          const isActive = t.active !== undefined ? t.active : true;
+          return t.type === "schedule" && isActive;
+        });
+        if (hasScheduleTrigger) {
+          logger.info(`Workflow ${w.id} (${w.name}) has active schedule triggers`);
+        }
+        return hasScheduleTrigger;
+      });
+
+      logger.info(`Filtered to ${workflows.length} workflows with active schedule triggers`);
+    }
+
+    // Get upcoming executions for each workflow
+    const scheduledExecutions = await Promise.all(
+      workflows.map(async (workflow) => {
+        try {
+          return await workflowService.getUpcomingExecutions(workflow, limit);
+        } catch (error) {
+          logger.error(
+            `Error getting upcoming executions for workflow ${workflow.id}:`,
+            error
+          );
+          return null;
+        }
+      })
+    );
+
+    // Filter out null results and flatten
+    const validExecutions = scheduledExecutions.filter((e) => e !== null);
+
+    logger.info(`Returning ${validExecutions.length} workflows with scheduled executions`);
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        totalWorkflows: validExecutions.length,
+        scheduledExecutions: validExecutions,
+      },
+    };
+
+    res.json(response);
+  })
+);
+
 // GET /api/executions - List executions
 router.get(
   "/",

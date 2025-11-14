@@ -18,18 +18,21 @@ interface NodeMarketplaceProps {
   sortOrder?: 'asc' | 'desc'
   selectedCategory?: string
   onCategoriesChange?: (categories: string[]) => void
+  onRefreshNodes?: () => Promise<void>
 }
 
-export function NodeMarketplace({ 
-  searchTerm = "", 
-  sortBy = 'downloads', 
-  sortOrder = 'desc', 
+export function NodeMarketplace({
+  searchTerm = "",
+  sortBy = 'downloads',
+  sortOrder = 'desc',
   selectedCategory = 'all',
-  onCategoriesChange 
+  onCategoriesChange,
+  onRefreshNodes
 }: NodeMarketplaceProps) {
   const {
     searchMarketplace,
     installPackage,
+    loadPackages,
     searchResults,
     searchLoading,
     error
@@ -50,11 +53,10 @@ export function NodeMarketplace({
           category: selectedCategory !== 'all' ? selectedCategory : undefined,
           sortBy,
           sortOrder,
-          limit: 50
+          limit: 20 // Default to 20 nodes
         })
         setHasSearched(true)
       } catch (error) {
-        console.error('Failed to load marketplace:', error)
         setHasSearched(true)
       }
     }
@@ -88,11 +90,72 @@ export function NodeMarketplace({
     setInstallingNodes(prev => new Set(prev).add(pkg.id))
 
     try {
-      await installPackage(pkg.id)
-      // Success message will be handled by the store/service
+      const result = await installPackage(pkg.id)
+
+      if (result && !result.success) {
+        alert(`Installation failed: ${result.errors?.join(', ') || 'Unknown error'}`)
+      } else {
+
+        // Refresh the installed packages in the store
+        await loadPackages()
+
+        // Refresh the installed nodes list
+        if (onRefreshNodes) {
+          await onRefreshNodes()
+        }
+
+        // Then refresh marketplace to update installation status
+        // This needs to happen after the nodes are refreshed so the backend
+        // can properly check which nodes are installed
+        await searchMarketplace({
+          query: searchTerm || undefined,
+          category: selectedCategory !== 'all' ? selectedCategory : undefined,
+          sortBy,
+          sortOrder,
+          limit: 20
+        })
+      }
     } catch (error) {
-      console.error('Installation failed:', error)
-      // Error message will be handled by the store/service
+      alert(`Installation failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setInstallingNodes(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(pkg.id)
+        return newSet
+      })
+    }
+  }
+
+  // Handle node update
+  const handleUpdate = async (pkg: NodePackageMetadata) => {
+    setInstallingNodes(prev => new Set(prev).add(pkg.id))
+
+    try {
+      const result = await installPackage(pkg.id, { force: true })
+
+      if (result && !result.success) {
+        alert(`Update failed: ${result.errors?.join(', ') || 'Unknown error'}`)
+      } else {
+
+        // Refresh the installed packages in the store
+        await loadPackages()
+
+        // Refresh the installed nodes list
+        if (onRefreshNodes) {
+          await onRefreshNodes()
+        }
+
+        // Then refresh marketplace to update installation status
+        await searchMarketplace({
+          query: searchTerm || undefined,
+          category: selectedCategory !== 'all' ? selectedCategory : undefined,
+          sortBy,
+          sortOrder,
+          limit: 20
+        })
+      }
+    } catch (error) {
+      alert(`Update failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setInstallingNodes(prev => {
         const newSet = new Set(prev)
@@ -165,7 +228,8 @@ export function NodeMarketplace({
 
 
       {/* Search Results Summary */}
-      {hasSearched && searchResults?.packages && searchResults.packages.length > 0 && (
+
+      {searchTerm && hasSearched && searchResults?.packages && searchResults.packages.length > 0 && (
         <div className="px-4 py-2 border-b bg-muted/20">
           <div className="text-xs text-muted-foreground">
             {searchTerm && (
@@ -189,16 +253,31 @@ export function NodeMarketplace({
               className="bg-card hover:bg-sidebar-accent hover:text-sidebar-accent-foreground p-3 text-sm leading-tight border border-border rounded-md mb-2 cursor-pointer group min-h-16 transition-colors"
             >
               <div className="flex items-start gap-3 mb-2">
-                <NodeIconRenderer
-                  icon={pkg.keywords?.[0]}
-                  nodeType={pkg.name}
-                  nodeGroup={pkg.keywords || []}
-                  displayName={pkg.name}
-                  backgroundColor="hsl(var(--primary))"
-                  size="md"
-                  className="shrink-0 mt-0.5"
-                />
-                
+                {pkg.iconUrl ? (
+                  <div className="w-8 h-8 shrink-0 mt-0.5 flex items-center justify-center">
+                    <img
+                      src={pkg.iconUrl}
+                      alt={pkg.name}
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        // Fallback to NodeIconRenderer if image fails to load
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.parentElement!.innerHTML = '';
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <NodeIconRenderer
+                    icon={pkg.icon || pkg.keywords?.[0]}
+                    nodeType={pkg.name}
+                    nodeGroup={pkg.keywords || []}
+                    displayName={pkg.name}
+                    backgroundColor="hsl(var(--primary))"
+                    size="md"
+                    className="shrink-0 mt-0.5"
+                  />
+                )}
+
                 <div className="flex-1 min-w-0">
                   <div className="font-medium break-words">
                     <div className="flex items-start gap-2 flex-wrap">
@@ -213,7 +292,7 @@ export function NodeMarketplace({
                       </Badge>
                     </div>
                   </div>
-                  
+
                   {pkg.description && (
                     <div
                       className="text-xs text-muted-foreground leading-relaxed mt-1"
@@ -231,7 +310,7 @@ export function NodeMarketplace({
                   )}
                 </div>
               </div>
-              
+
               {/* Buttons at bottom */}
               <div className="flex gap-2 items-center">
                 <button
@@ -245,27 +324,58 @@ export function NodeMarketplace({
                 >
                   <ExternalLink className="h-3 w-3" />
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleInstall(pkg)
-                  }}
-                  disabled={isInstalling}
-                  className="flex h-6 items-center justify-center gap-1 rounded-md bg-primary px-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                  title={isInstalling ? 'Installing...' : 'Install Package'}
-                >
-                  {isInstalling ? (
-                    <>
-                      <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs">Installing</span>
-                    </>
+
+                {pkg.installed ? (
+                  pkg.hasUpdate ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleUpdate(pkg)
+                      }}
+                      disabled={isInstalling}
+                      className="flex h-6 items-center justify-center gap-1 rounded-md bg-orange-600 px-2 text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+                      title={isInstalling ? 'Updating...' : `Update to v${pkg.version}`}
+                    >
+                      {isInstalling ? (
+                        <>
+                          <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs">Updating</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3 w-3" />
+                          <span className="text-xs">Update</span>
+                        </>
+                      )}
+                    </button>
                   ) : (
-                    <>
-                      <Download className="h-3 w-3" />
-                      <span className="text-xs">Install</span>
-                    </>
-                  )}
-                </button>
+                    <div className="flex h-6 items-center justify-center gap-1 rounded-md bg-green-600 px-2 text-white">
+                      <span className="text-xs">✓ Installed</span>
+                    </div>
+                  )
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleInstall(pkg)
+                    }}
+                    disabled={isInstalling}
+                    className="flex h-6 items-center justify-center gap-1 rounded-md bg-primary px-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    title={isInstalling ? 'Installing...' : 'Install Package'}
+                  >
+                    {isInstalling ? (
+                      <>
+                        <div className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs">Installing</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-3 w-3" />
+                        <span className="text-xs">Install</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           )

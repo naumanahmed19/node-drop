@@ -78,7 +78,7 @@ vi.mock('../../../hooks/workflow', () => ({
   useKeyboardShortcuts: () => ({}),
 }))
 
-vi.mock('../../../hooks/useEdgeAnimation', () => ({
+vi.mock('../../../hooks/workflow/useEdgeAnimation', () => ({
   useExecutionAwareEdges: (edges: any) => edges,
 }))
 

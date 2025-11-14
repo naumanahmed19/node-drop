@@ -6,19 +6,26 @@
  */
 
 /**
- * Resolves placeholder expressions in a value string using data from an item.
+ * Resolves placeholder expressions in a value string using data from an item or input array.
  *
  * Supports template syntax like {{json.fieldName}} or {{json.nested.path}}
  * and will replace them with actual values from the item data.
+ * 
+ * Also supports array-based input access for multiple inputs: {{json[0].fieldName}}
  *
  * @param value - The value string that may contain placeholders like {{json.fieldName}}
- * @param item - The data item to extract values from
+ * @param item - The data item to extract values from (can be a single item or array of items for multiple inputs)
  * @returns The resolved value with placeholders replaced by actual data
  *
  * @example
  * const item = { name: "John", address: { city: "NYC" } };
  * resolveValue("Hello {{json.name}}", item); // Returns: "Hello John"
  * resolveValue("City: {{json.address.city}}", item); // Returns: "City: NYC"
+ * 
+ * // Multiple inputs (item is an array)
+ * const items = [{ name: "John" }, { name: "Jane" }];
+ * resolveValue("{{json[0].name}} and {{json[1].name}}", items); // Returns: "John and Jane"
+ * 
  * resolveValue("Static text", item); // Returns: "Static text"
  */
 export function resolveValue(value: string | any, item: any): any {
@@ -27,8 +34,45 @@ export function resolveValue(value: string | any, item: any): any {
     return value;
   }
 
-  // Replace placeholders like {{json.fieldName}}
-  return value.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
+  // Decode URL-encoded values first (handles cases where {{ and }} are encoded as %7B%7B and %7D%7D)
+  let decodedValue = value;
+  try {
+    // Only decode if the value contains URL-encoded characters
+    if (value.includes('%')) {
+      decodedValue = decodeURIComponent(value);
+    }
+  } catch (error) {
+    // If decoding fails, use the original value
+    decodedValue = value;
+  }
+
+  // Replace placeholders like {{json.fieldName}} or {{json[0].fieldName}}
+  return decodedValue.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
+    // Check if this is array-based access: json[0].field
+    const arrayAccessMatch = path.match(/^json\[(\d+)\]\.(.+)$/);
+    
+    if (arrayAccessMatch) {
+      // Array-based access for multiple inputs
+      const inputIndex = parseInt(arrayAccessMatch[1], 10);
+      const fieldPath = arrayAccessMatch[2];
+      
+      // If item is an array (multiple inputs), access the specific input
+      if (Array.isArray(item)) {
+        if (inputIndex >= item.length) {
+          // Input index out of bounds
+          return match;
+        }
+        
+        const targetItem = item[inputIndex];
+        const result = resolvePath(targetItem, fieldPath);
+        return result !== undefined ? String(result) : match;
+      } else {
+        // Item is not an array, can't use array access
+        return match;
+      }
+    }
+    
+    // Standard object-based access: json.field
     const parts = path.split(".");
     let result = item;
 

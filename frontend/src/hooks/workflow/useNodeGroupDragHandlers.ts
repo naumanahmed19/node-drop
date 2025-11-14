@@ -74,7 +74,7 @@ export function useNodeGroupDragHandlers() {
    * Handle while a node is being dragged - highlight intersecting groups
    */
   const onNodeDrag: OnNodeDrag = useCallback(
-    (_, node) => {
+    (_, node, nodes) => {
       // Only handle regular nodes (not groups) or nodes that already have a parent
       if (node.type === "group" && !node.parentId) {
         return;
@@ -91,7 +91,11 @@ export function useNodeGroupDragHandlers() {
           ? "active"
           : "";
 
-      // Update all nodes to show/hide group highlighting
+      // Check if multiple nodes are selected
+      const selectedNodes = nodes.filter((n) => n.selected);
+      const isMultiNodeDrag = selectedNodes.length > 1;
+
+      // Update group highlighting and positions
       setNodes((nds) => {
         return nds.map((n) => {
           if (n.type === "group") {
@@ -99,14 +103,17 @@ export function useNodeGroupDragHandlers() {
               ...n,
               className: groupClassName,
             };
-          } else if (n.id === node.id) {
+          } 
+          // Only update single node position when not multi-dragging
+          // For multi-node drag, let React Flow handle all positions automatically
+          else if (n.id === node.id && !isMultiNodeDrag) {
             return {
               ...n,
               position: node.position,
             };
           }
 
-          return { ...n };
+          return n;
         });
       });
     },

@@ -60,6 +60,8 @@ export interface NodePackageMetadata {
   author: string;
   keywords: string[];
   downloadUrl: string;
+  icon?: string;
+  iconUrl?: string;
   homepage?: string;
   repository?: string;
   license?: string;
@@ -77,6 +79,9 @@ export interface NodePackageMetadata {
   engines?: Record<string, string>;
   nodeTypes: string[];
   credentialTypes: string[];
+  installed?: boolean;
+  installedVersion?: string;
+  hasUpdate?: boolean;
 }
 
 export interface NodeSearchFilters {

@@ -35,8 +35,12 @@ export class SocketService {
 
   // Event buffering for late subscribers
   private executionEventBuffer: Map<string, ExecutionEventData[]> = new Map();
-  private bufferRetentionMs = 10000; // Keep events for 10 seconds
+  private bufferRetentionMs = 60000; // Keep events for 60 seconds (increased for production latency)
   private bufferCleanupInterval: NodeJS.Timeout;
+  
+  // Memory leak prevention limits
+  private readonly MAX_BUFFERED_EXECUTIONS = 100; // Limit total executions buffered
+  private readonly MAX_EVENTS_PER_EXECUTION = 20; // Reduced from 50 to prevent memory issues
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -45,6 +49,12 @@ export class SocketService {
         credentials: true,
       },
       transports: ["websocket", "polling"],
+      // Production-ready timeout configuration
+      pingTimeout: 60000,        // 60 seconds - how long to wait for pong before considering connection dead
+      pingInterval: 25000,       // 25 seconds - how often to send ping packets
+      connectTimeout: 45000,     // 45 seconds - connection timeout
+      upgradeTimeout: 30000,     // 30 seconds - upgrade timeout
+      maxHttpBufferSize: 1e6,    // 1MB - max buffer size
     });
 
     this.setupAuthentication();
@@ -131,8 +141,19 @@ export class SocketService {
         this.handleWorkflowUnsubscription(authSocket, workflowId);
       });
 
+      // Handle workflow execution start (NEW)
+      socket.on(
+        "start-workflow-execution",
+        async (data: any, callback?: Function) => {
+          await this.handleStartWorkflowExecution(authSocket, data, callback);
+        }
+      );
+
       // Handle disconnect
       socket.on("disconnect", () => {
+        console.log(`🔌 User ${authSocket.userId} DISCONNECTED from Socket.io - Socket ID: ${socket.id}`);
+        const rooms = Array.from(socket.rooms);
+        console.log(`🔌 Socket was in rooms:`, rooms);
         logger.info(`User ${authSocket.userId} disconnected from Socket.io`);
         this.authenticatedSockets.delete(authSocket.userId);
       });
@@ -248,16 +269,23 @@ export class SocketService {
     socket: AuthenticatedSocket,
     workflowId: string
   ): void {
+    console.log(`📡 User ${socket.userId} subscribing to workflow:${workflowId}`);
     logger.debug(`User ${socket.userId} subscribing to workflow ${workflowId}`);
 
     // Join workflow-specific room
     socket.join(`workflow:${workflowId}`);
+    
+    // Log the rooms this socket is in
+    const rooms = Array.from(socket.rooms);
+    console.log(`📡 Socket ${socket.id} is now in rooms:`, rooms);
 
     // Confirm subscription
     socket.emit("workflow-subscribed", {
       workflowId,
       timestamp: new Date().toISOString(),
     });
+    
+    console.log(`✅ Workflow subscription confirmed for workflow:${workflowId}`);
   }
 
   /**
@@ -267,6 +295,7 @@ export class SocketService {
     socket: AuthenticatedSocket,
     workflowId: string
   ): void {
+    console.log(`📡 User ${socket.userId} UNSUBSCRIBING from workflow:${workflowId}`);
     logger.debug(
       `User ${socket.userId} unsubscribing from workflow ${workflowId}`
     );
@@ -495,6 +524,34 @@ export class SocketService {
   }
 
   /**
+   * Cleanup execution room to prevent memory leaks
+   */
+  public cleanupExecutionRoom(executionId: string): void {
+    const room = `execution:${executionId}`;
+    
+    // Get all sockets in the room
+    const socketsInRoom = this.io.sockets.adapter.rooms.get(room);
+    
+    if (socketsInRoom) {
+      // Make all sockets leave the room
+      socketsInRoom.forEach(socketId => {
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(room);
+        }
+      });
+      
+      logger.debug(`Cleaned up room: ${room}, removed ${socketsInRoom.size} sockets`);
+    }
+    
+    // Also cleanup the event buffer for this execution
+    if (this.executionEventBuffer.has(executionId)) {
+      this.executionEventBuffer.delete(executionId);
+      logger.debug(`Cleaned up event buffer for execution: ${executionId}`);
+    }
+  }
+
+  /**
    * Disconnect all sockets for a user (useful for logout)
    */
   public disconnectUser(userId: string): void {
@@ -506,6 +563,32 @@ export class SocketService {
    */
   public getServer(): SocketIOServer {
     return this.io;
+  }
+
+  /**
+   * Debug: Get all rooms and their clients
+   */
+  public getAllRooms(): Map<string, Set<string>> {
+    return this.io.sockets.adapter.rooms;
+  }
+
+  /**
+   * Debug: Log all workflow rooms
+   */
+  public logWorkflowRooms(): void {
+    const rooms = this.getAllRooms();
+    console.log('\n📊 === SOCKET ROOMS DEBUG ===');
+    console.log(`Total rooms: ${rooms.size}`);
+    
+    rooms.forEach((clients, roomName) => {
+      if (roomName.startsWith('workflow:')) {
+        console.log(`  ${roomName}: ${clients.size} client(s)`);
+        clients.forEach(clientId => {
+          console.log(`    - ${clientId}`);
+        });
+      }
+    });
+    console.log('📊 === END DEBUG ===\n');
   }
 
   /**
@@ -535,6 +618,16 @@ export class SocketService {
     executionId: string,
     eventData: ExecutionEventData
   ): void {
+    // Limit total number of buffered executions to prevent memory leaks
+    if (this.executionEventBuffer.size >= this.MAX_BUFFERED_EXECUTIONS) {
+      // Remove oldest execution buffer
+      const oldestKey = this.executionEventBuffer.keys().next().value;
+      if (oldestKey) {
+        this.executionEventBuffer.delete(oldestKey);
+        logger.warn(`Event buffer limit reached (${this.MAX_BUFFERED_EXECUTIONS}), removed oldest execution: ${oldestKey}`);
+      }
+    }
+
     if (!this.executionEventBuffer.has(executionId)) {
       this.executionEventBuffer.set(executionId, []);
     }
@@ -542,13 +635,13 @@ export class SocketService {
     const buffer = this.executionEventBuffer.get(executionId)!;
     buffer.push(eventData);
 
-    // Limit buffer size to prevent memory issues (keep last 50 events per execution)
-    if (buffer.length > 50) {
-      buffer.splice(0, buffer.length - 50);
+    // Limit buffer size to prevent memory issues (reduced from 50 to 20)
+    if (buffer.length > this.MAX_EVENTS_PER_EXECUTION) {
+      buffer.splice(0, buffer.length - this.MAX_EVENTS_PER_EXECUTION);
     }
 
     logger.debug(
-      `Buffered event for execution ${executionId}, buffer size: ${buffer.length}`
+      `Buffered event for execution ${executionId}, buffer size: ${buffer.length}, total buffers: ${this.executionEventBuffer.size}`
     );
   }
 
@@ -575,6 +668,75 @@ export class SocketService {
       } else {
         // Update buffer with filtered events
         this.executionEventBuffer.set(executionId, filteredEvents);
+      }
+    }
+  }
+
+  /**
+   * Handle workflow execution start via WebSocket
+   */
+  private async handleStartWorkflowExecution(
+    socket: AuthenticatedSocket,
+    data: {
+      workflowId: string;
+      triggerData?: any;
+      options?: any;
+      triggerNodeId?: string;
+      workflowData?: { nodes?: any[]; connections?: any[]; settings?: any };
+    },
+    callback?: Function
+  ): Promise<void> {
+    try {
+      logger.info(`User ${socket.userId} starting workflow execution via WebSocket`, {
+        workflowId: data.workflowId,
+        triggerNodeId: data.triggerNodeId,
+      });
+
+      // Get RealtimeExecutionEngine from global
+      const globalAny = global as any;
+      if (!globalAny.realtimeExecutionEngine) {
+        throw new Error("RealtimeExecutionEngine not available");
+      }
+
+      // Validate required data
+      if (!data.workflowData?.nodes || !data.workflowData?.connections) {
+        throw new Error("Workflow data (nodes and connections) is required");
+      }
+
+      if (!data.triggerNodeId) {
+        throw new Error("Trigger node ID is required");
+      }
+
+      // Start execution (returns immediately with execution ID)
+      const executionId = await globalAny.realtimeExecutionEngine.startExecution(
+        data.workflowId,
+        socket.userId,
+        data.triggerNodeId,
+        data.triggerData,
+        data.workflowData.nodes,
+        data.workflowData.connections,
+        data.options // Pass options including saveToDatabase
+      );
+
+      // Return execution ID immediately
+      if (callback) {
+        callback({
+          success: true,
+          executionId,
+          message: "Workflow execution started",
+        });
+      }
+
+      logger.info(`Workflow execution started: ${executionId}`);
+
+    } catch (error: any) {
+      logger.error(`Failed to start workflow execution:`, error);
+
+      if (callback) {
+        callback({
+          success: false,
+          error: error.message || "Failed to start execution",
+        });
       }
     }
   }

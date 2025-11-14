@@ -17,13 +17,13 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { useAddNodeDialogStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
+import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
 import { useEnvironmentStore } from '@/stores/environment'
 import { getEnvironmentLabel } from '@/types/environment'
 import { validateImportFile } from '@/utils/errorHandling'
 import {
-  AlertCircle,
   ChevronDown,
+  Code2,
   Download,
   Loader2,
   MoreHorizontal,
@@ -34,6 +34,7 @@ import {
   Upload
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { ManualDeploymentDialog } from '../environment/ManualDeploymentDialog'
 import { UpdateEnvironmentDialog } from '../environment/UpdateEnvironmentDialog'
 import { WorkflowBreadcrumb } from './WorkflowBreadcrumb'
@@ -53,6 +54,9 @@ export function WorkflowToolbar({
   const [showDeployDialog, setShowDeployDialog] = useState(false)
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
   const { selectedEnvironment, summaries } = useEnvironmentStore()
+  
+  // Code mode from ReactFlowUI store
+  const { showCodePanel: isCodeMode, toggleCodePanel } = useReactFlowUIStore()
   
   // Add Node Dialog store
   const { openDialog } = useAddNodeDialogStore()
@@ -92,8 +96,6 @@ export function WorkflowToolbar({
     isImporting,
     exportProgress,
     importProgress,
-    exportError,
-    importError,
     exportWorkflow,
     importWorkflow,
     clearImportExportErrors,
@@ -101,9 +103,6 @@ export function WorkflowToolbar({
     // UI state
     isSaving,
     setSaving,
-    
-    // Error handling
-    handleError
   } = useWorkflowToolbarStore()
   
   // Get workflow activation state directly from workflow
@@ -124,7 +123,12 @@ export function WorkflowToolbar({
         // Validate file before proceeding
         const validationErrors = validateImportFile(file)
         if (validationErrors.length > 0) {
-          handleError(new Error(`Invalid file: ${validationErrors[0].message}`), 'import')
+          const errorMessage = `Invalid file: ${validationErrors[0].message}`
+          toast.error(errorMessage)
+          // Clear error state after showing toast
+          setTimeout(() => {
+            clearImportExportErrors()
+          }, 2000)
           return
         }
 
@@ -146,8 +150,20 @@ export function WorkflowToolbar({
         }
 
         await importWorkflow(file, mainImportWorkflow)
+        // Show success toast
+        toast.success('Workflow imported successfully')
+        // Clear any error state after success
+        setTimeout(() => {
+          clearImportExportErrors()
+        }, 100)
       } catch (error) {
-        handleError(error, 'import')
+        // Show error toast
+        const errorMessage = error instanceof Error ? error.message : 'Import failed'
+        toast.error(errorMessage)
+        // Clear error state after showing toast
+        setTimeout(() => {
+          clearImportExportErrors()
+        }, 2000)
       }
     }
     input.click()
@@ -161,8 +177,20 @@ export function WorkflowToolbar({
     
     try {
       await exportWorkflow(mainExportWorkflow)
+      // Show success toast
+      toast.success('Workflow exported successfully')
+      // Clear any error state after a short delay (in case of success)
+      setTimeout(() => {
+        clearImportExportErrors()
+      }, 100)
     } catch (error) {
-      handleError(error, 'export')
+      // Show error toast
+      const errorMessage = error instanceof Error ? error.message : 'Export failed'
+      toast.error(errorMessage)
+      // Clear the error state after a short delay so menu doesn't stay in error state
+      setTimeout(() => {
+        clearImportExportErrors()
+      }, 2000)
     }
   }
 
@@ -371,6 +399,11 @@ export function WorkflowToolbar({
               Workflow Settings
             </DropdownMenuItem>
             
+            <DropdownMenuItem onClick={toggleCodePanel} className="text-xs">
+              <Code2 className="mr-2 h-3.5 w-3.5" />
+              {isCodeMode ? 'Hide Code Panel' : 'Show Code Panel'}
+            </DropdownMenuItem>
+            
             <DropdownMenuSeparator />
             
             <DropdownMenuItem 
@@ -380,15 +413,11 @@ export function WorkflowToolbar({
             >
               {isImporting ? (
                 <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : importError ? (
-                <AlertCircle className="mr-2 h-3.5 w-3.5 text-red-500" />
               ) : (
                 <Upload className="mr-2 h-3.5 w-3.5" />
               )}
               {isImporting 
                 ? `Importing... ${importProgress > 0 ? `(${Math.round(importProgress)}%)` : ''}`
-                : importError 
-                ? 'Import Failed'
                 : 'Import Workflow'
               }
             </DropdownMenuItem>
@@ -400,15 +429,11 @@ export function WorkflowToolbar({
             >
               {isExporting ? (
                 <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : exportError ? (
-                <AlertCircle className="mr-2 h-3.5 w-3.5 text-red-500" />
               ) : (
                 <Download className="mr-2 h-3.5 w-3.5" />
               )}
               {isExporting 
                 ? `Exporting... ${exportProgress > 0 ? `(${Math.round(exportProgress)}%)` : ''}`
-                : exportError 
-                ? 'Export Failed'
                 : 'Export Workflow'
               }
             </DropdownMenuItem>
@@ -459,6 +484,10 @@ export function WorkflowToolbar({
           onClose={() => setShowSettingsModal(false)}
           onSave={(updates) => {
             updateWorkflow(updates)
+            // If name was updated, also update the title state
+            if (updates.name && updates.name !== mainWorkflowTitle) {
+              updateWorkflowTitle(updates.name)
+            }
             setDirty(true)
             setShowSettingsModal(false)
           }}

@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, useRef, useState } from "react";
 import { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
+import { useDeleteNodes } from "./useDeleteNodes";
 
 /**
  * Custom hook for ReactFlow interactions
@@ -47,6 +48,9 @@ export function useReactFlowInteractions() {
 
   // Add ref to track connection state as fallback when state gets reset
   const connectionRef = useRef<Connection | null>(null);
+
+  // Track if a connection was successfully made
+  const connectionMadeRef = useRef<boolean>(false);
 
   // Use the useReactFlow hook to get the ReactFlow instance directly
   const reactFlowInstance = useReactFlow();
@@ -96,10 +100,14 @@ export function useReactFlowInteractions() {
   const blockSync = useRef(false);
   const resizeSnapshotTaken = useRef(false);
   const isResizing = useRef(false);
+  
+  // Get shared delete handler
+  const deleteNodes = useDeleteNodes();
 
   // Handle node position changes
   const handleNodesChange: OnNodesChange = useCallback(
     (changes) => {
+      // Apply changes to React Flow first
       onNodesChange(changes);
 
       // Track dragging state and handle dimension changes
@@ -128,10 +136,8 @@ export function useReactFlowInteractions() {
         }
       });
 
-      // Take snapshot at the start of resize operation (only once)
+      // Set flag at resize start but don't save history yet
       if (isResizeStart && !resizeSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Resize group");
         resizeSnapshotTaken.current = true;
       }
 
@@ -186,14 +192,15 @@ export function useReactFlowInteractions() {
               }
             });
 
-            updateWorkflow({ nodes: updatedNodes });
-            setDirty(true);
-
-            // Reset resize flags IMMEDIATELY after updating Zustand
+            // Reset resize flags BEFORE updating Zustand
             // This allows WorkflowEditor to sync the updated dimensions back to ReactFlow
             resizeSnapshotTaken.current = false;
             isResizing.current = false;
             blockSync.current = false;
+
+            // Save history with the final size
+            updateWorkflow({ nodes: updatedNodes });
+            setDirty(true);
           }
         }, 0);
       }
@@ -218,6 +225,11 @@ export function useReactFlowInteractions() {
 
   // Helper function to sync React Flow positions to Zustand after drag
   const syncPositionsToZustand = useCallback(() => {
+    // Reset blockSync BEFORE updating workflow so the sync can happen
+    blockSync.current = false;
+    isDragging.current = false;
+    dragSnapshotTaken.current = false;
+
     const { workflow, updateWorkflow } = useWorkflowStore.getState();
     if (workflow && reactFlowInstance) {
       const currentNodes = reactFlowInstance.getNodes();
@@ -266,29 +278,17 @@ export function useReactFlowInteractions() {
         }
       });
 
+      // Don't skip history - we need to save the "after" state
       updateWorkflow({ nodes: updatedNodes });
     }
   }, [reactFlowInstance]);
 
-  // Helper function to reset drag flags
-  const resetDragFlags = useCallback(() => {
-    setTimeout(() => {
-      dragSnapshotTaken.current = false;
-      isDragging.current = false;
-      blockSync.current = false;
-    }, 100);
-  }, []);
-
-  // Handle node drag start - take snapshot BEFORE dragging
+  // Handle node drag start - just set flags, don't save history yet
   const handleNodeDragStart = useCallback(
     (_event: React.MouseEvent, _node: any) => {
-      if (!dragSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Move node");
-        dragSnapshotTaken.current = true;
-      }
       isDragging.current = true;
       blockSync.current = true;
+      dragSnapshotTaken.current = true;
     },
     []
   );
@@ -308,23 +308,18 @@ export function useReactFlowInteractions() {
       // First, call the group drag stop handler to attach to group if needed
       onNodeDragStopGroup(event, node, nodes);
 
-      // Then sync positions and reset flags
+      // Then sync positions (which also resets flags)
       syncPositionsToZustand();
-      resetDragFlags();
     },
-    [onNodeDragStopGroup, syncPositionsToZustand, resetDragFlags]
+    [onNodeDragStopGroup, syncPositionsToZustand]
   );
 
-  // Handle selection drag start - take snapshot BEFORE dragging selection
+  // Handle selection drag start - just set flags, don't save history yet
   const handleSelectionDragStart = useCallback(
     (_event: React.MouseEvent, _nodes: any[]) => {
-      if (!dragSnapshotTaken.current) {
-        const { saveToHistory } = useWorkflowStore.getState();
-        saveToHistory("Move selection");
-        dragSnapshotTaken.current = true;
-      }
       isDragging.current = true;
       blockSync.current = true;
+      dragSnapshotTaken.current = true;
     },
     []
   );
@@ -332,36 +327,20 @@ export function useReactFlowInteractions() {
   // Handle selection drag stop
   const handleSelectionDragStop = useCallback(
     (_event: React.MouseEvent, _nodes: any[]) => {
+      // Sync positions (which also resets flags)
       syncPositionsToZustand();
-      resetDragFlags();
     },
-    [syncPositionsToZustand, resetDragFlags]
+    [syncPositionsToZustand]
   );
 
   // Handle nodes delete
+  // This is called when user presses Delete/Backspace key
   const handleNodesDelete = useCallback((nodes: any[]) => {
     if (nodes.length === 0) return;
-
+    
     const nodeIds = nodes.map((node) => node.id);
-
-    // Update Zustand workflow store
-    const { workflow, updateWorkflow, saveToHistory } =
-      useWorkflowStore.getState();
-    if (workflow) {
-      // Save to history before deletion
-      saveToHistory(`Delete ${nodes.length} node(s)`);
-
-      // Remove nodes and their connections from workflow
-      updateWorkflow({
-        nodes: workflow.nodes.filter((node) => !nodeIds.includes(node.id)),
-        connections: workflow.connections.filter(
-          (conn) =>
-            !nodeIds.includes(conn.sourceNodeId) &&
-            !nodeIds.includes(conn.targetNodeId)
-        ),
-      });
-    }
-  }, []);
+    deleteNodes(nodeIds);
+  }, [deleteNodes]);
 
   // Handle edges delete
   const handleEdgesDelete = useCallback((edges: any[]) => {
@@ -377,11 +356,12 @@ export function useReactFlowInteractions() {
       saveToHistory(`Delete ${edges.length} connection(s)`);
 
       // Remove connections from workflow
+      // Skip history since we already saved before deletion
       updateWorkflow({
         connections: workflow.connections.filter(
           (conn) => !edgeIds.includes(conn.id)
         ),
-      });
+      }, true);
     }
   }, []);
 
@@ -389,6 +369,9 @@ export function useReactFlowInteractions() {
   const handleConnect: OnConnect = useCallback(
     (connection) => {
       if (!connection.source || !connection.target) return;
+
+      // Mark that a connection was successfully made
+      connectionMadeRef.current = true;
 
       const newConnection: WorkflowConnection = {
         id: `${connection.source}-${connection.target}-${Date.now()}`,
@@ -496,6 +479,9 @@ export function useReactFlowInteractions() {
       }
     ) => {
       if (params.nodeId && params.handleType === "source") {
+        // Reset the connection made flag
+        connectionMadeRef.current = false;
+
         const connection = {
           source: params.nodeId,
           sourceHandle: params.handleId ?? null,
@@ -518,55 +504,63 @@ export function useReactFlowInteractions() {
       if (!activeConnection || !reactFlowInstance) {
         setConnectionInProgress(null);
         connectionRef.current = null;
+        connectionMadeRef.current = false;
         return;
       }
 
-      // Check if the target is the canvas pane or any child of the pane
-      const target = event.target as HTMLElement;
-      const targetIsPane = target.classList.contains("react-flow__pane") ||
-        target.closest(".react-flow__pane") !== null;
-
-      if (targetIsPane && activeConnection.source) {
-        // Connection was dropped on the canvas (not on a node)
-        // We'll create a default node at the drop position and connect it automatically
-        // Get the mouse position
-        const clientX =
-          "clientX" in event
-            ? event.clientX
-            : (event as TouchEvent).touches[0].clientX;
-        const clientY =
-          "clientY" in event
-            ? event.clientY
-            : (event as TouchEvent).touches[0].clientY;
-
-        // Get the ReactFlow wrapper element from the DOM
-        const reactFlowWrapper = document.querySelector(
-          ".react-flow"
-        ) as HTMLElement;
-        const reactFlowBounds = reactFlowWrapper?.getBoundingClientRect();
-        if (!reactFlowBounds) {
+      // Use a small delay to allow handleConnect to fire first if a connection was made
+      setTimeout(() => {
+        // If a connection was successfully made to an existing node, don't open the dialog
+        if (connectionMadeRef.current) {
           setConnectionInProgress(null);
           connectionRef.current = null;
+          connectionMadeRef.current = false;
           return;
         }
 
-        // Convert screen coordinates to flow coordinates
-        const position = reactFlowInstance.screenToFlowPosition({
-          x: clientX - reactFlowBounds.left,
-          y: clientY - reactFlowBounds.top,
-        });
+        // Connection was not made to an existing node, so it was dropped on canvas
+        if (activeConnection.source) {
+          // Get the mouse position
+          const clientX =
+            "clientX" in event
+              ? event.clientX
+              : (event as TouchEvent).touches[0].clientX;
+          const clientY =
+            "clientY" in event
+              ? event.clientY
+              : (event as TouchEvent).touches[0].clientY;
 
-        // Open the add node dialog at the drop position with source connection context
-        openDialog(position, {
-          sourceNodeId: activeConnection.source,
-          targetNodeId: "", // Empty target since we're adding a new node
-          sourceOutput: activeConnection.sourceHandle || undefined,
-          targetInput: undefined,
-        });
-      }
+          // Get the ReactFlow wrapper element from the DOM
+          const reactFlowWrapper = document.querySelector(
+            ".react-flow"
+          ) as HTMLElement;
+          const reactFlowBounds = reactFlowWrapper?.getBoundingClientRect();
+          if (!reactFlowBounds) {
+            setConnectionInProgress(null);
+            connectionRef.current = null;
+            connectionMadeRef.current = false;
+            return;
+          }
 
-      setConnectionInProgress(null);
-      connectionRef.current = null;
+          // Convert screen coordinates to flow coordinates
+          const position = reactFlowInstance.screenToFlowPosition({
+            x: clientX - reactFlowBounds.left,
+            y: clientY - reactFlowBounds.top,
+          });
+
+          // Open the add node dialog at the drop position with source connection context
+          openDialog(position, {
+            sourceNodeId: activeConnection.source,
+            targetNodeId: "", // Empty target since we're adding a new node
+            sourceOutput: activeConnection.sourceHandle || undefined,
+            targetInput: undefined,
+          });
+        }
+
+        setConnectionInProgress(null);
+        connectionRef.current = null;
+        connectionMadeRef.current = false;
+      }, 0);
     },
     [connectionInProgress, reactFlowInstance, openDialog]
   );

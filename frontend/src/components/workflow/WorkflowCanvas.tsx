@@ -74,10 +74,10 @@ export function WorkflowCanvas({
     onEdgesDelete: handleEdgesDelete,
 }: WorkflowCanvasProps) {
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
-    
+
     // Get panOnDrag and zoomOnScroll settings from store
     const { panOnDrag, zoomOnScroll, reactFlowInstance } = useReactFlowUIStore()
-    
+
     // Use custom hooks for better code organization
     const { edgeStyle, connectionLineStyle, isDarkMode } = useReactFlowStyles()
     const combinedRef = useReactFlowAutoLayout({
@@ -87,17 +87,17 @@ export function WorkflowCanvas({
         delay: 50,
         additionalRef: reactFlowWrapper
     })
-    
+
     // Determine if interactions should be disabled
     const isDisabled = readOnly || executionMode
-    
+
     // Memoize background variant to prevent unnecessary recalculations
-    const displayBackgroundVariant = useMemo(() => 
+    const displayBackgroundVariant = useMemo(() =>
         isDisabled ? BackgroundVariant.Cross : (backgroundVariant as any),
         [isDisabled, backgroundVariant]
     )
-    
-    const backgroundColor = useMemo(() => 
+
+    const backgroundColor = useMemo(() =>
         isDisabled ? 'hsl(var(--muted))' : undefined,
         [isDisabled]
     )
@@ -116,73 +116,73 @@ export function WorkflowCanvas({
     }), [isDarkMode])
 
     // Memoize disabled handlers (undefined) vs enabled handlers
-    const nodesChangeHandler = useMemo(() => 
+    const nodesChangeHandler = useMemo(() =>
         isDisabled ? undefined : handleNodesChange,
         [isDisabled, handleNodesChange]
     )
-    
-    const edgesChangeHandler = useMemo(() => 
+
+    const edgesChangeHandler = useMemo(() =>
         isDisabled ? undefined : handleEdgesChange,
         [isDisabled, handleEdgesChange]
     )
-    
-    const connectHandler = useMemo(() => 
+
+    const connectHandler = useMemo(() =>
         isDisabled ? undefined : handleConnect,
         [isDisabled, handleConnect]
     )
-    
-    const connectStartHandler = useMemo(() => 
+
+    const connectStartHandler = useMemo(() =>
         isDisabled ? undefined : handleConnectStart,
         [isDisabled, handleConnectStart]
     )
-    
-    const connectEndHandler = useMemo(() => 
+
+    const connectEndHandler = useMemo(() =>
         isDisabled ? undefined : handleConnectEnd,
         [isDisabled, handleConnectEnd]
     )
-    
-    const dropHandler = useMemo(() => 
+
+    const dropHandler = useMemo(() =>
         isDisabled ? undefined : handleDrop,
         [isDisabled, handleDrop]
     )
-    
-    const dragOverHandler = useMemo(() => 
+
+    const dragOverHandler = useMemo(() =>
         isDisabled ? undefined : handleDragOver,
         [isDisabled, handleDragOver]
     )
-    
+
     // Memoize undo/redo snapshot handlers
-    const nodeDragStartHandler = useMemo(() => 
+    const nodeDragStartHandler = useMemo(() =>
         isDisabled ? undefined : handleNodeDragStart,
         [isDisabled, handleNodeDragStart]
     )
-    
-    const nodeDragHandler = useMemo(() => 
+
+    const nodeDragHandler = useMemo(() =>
         isDisabled ? undefined : handleNodeDrag,
         [isDisabled, handleNodeDrag]
     )
-    
-    const nodeDragStopHandler = useMemo(() => 
+
+    const nodeDragStopHandler = useMemo(() =>
         isDisabled ? undefined : handleNodeDragStop,
         [isDisabled, handleNodeDragStop]
     )
-    
-    const selectionDragStartHandler = useMemo(() => 
+
+    const selectionDragStartHandler = useMemo(() =>
         isDisabled ? undefined : handleSelectionDragStart,
         [isDisabled, handleSelectionDragStart]
     )
-    
-    const selectionDragStopHandler = useMemo(() => 
+
+    const selectionDragStopHandler = useMemo(() =>
         isDisabled ? undefined : handleSelectionDragStop,
         [isDisabled, handleSelectionDragStop]
     )
-    
-    const nodesDeleteHandler = useMemo(() => 
+
+    const nodesDeleteHandler = useMemo(() =>
         isDisabled ? undefined : handleNodesDelete,
         [isDisabled, handleNodesDelete]
     )
-    
-    const edgesDeleteHandler = useMemo(() => 
+
+    const edgesDeleteHandler = useMemo(() =>
         isDisabled ? undefined : handleEdgesDelete,
         [isDisabled, handleEdgesDelete]
     )
@@ -218,11 +218,14 @@ export function WorkflowCanvas({
                     deleteKeyCode={isDisabled ? null : ["Backspace", "Delete"]}
                     panOnDrag={panOnDrag}
                     zoomOnScroll={zoomOnScroll}
+                    zoomOnDoubleClick={false}
                     connectionLineStyle={connectionLineStyle}
                     // translateExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     // nodeExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     attributionPosition="bottom-left"
                     selectNodesOnDrag={false}
+                    selectionOnDrag={true}
+                    selectionKeyCode="Shift"
                     multiSelectionKeyCode="Shift"
                     selectionMode={SelectionMode.Partial}
                     fitView
@@ -243,9 +246,9 @@ export function WorkflowCanvas({
                         />
                     )}
                     {showBackground && (
-                        <Background 
-                            variant={displayBackgroundVariant} 
-                            gap={isDisabled ? 20 : 12} 
+                        <Background
+                            variant={displayBackgroundVariant}
+                            gap={isDisabled ? 20 : 12}
                             size={isDisabled ? 2 : 1}
                             color={isDisabled ? '#cbd5e1' : undefined}
                         />

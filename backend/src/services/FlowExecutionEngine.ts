@@ -28,6 +28,7 @@ export interface FlowExecutionOptions {
   retryDelay?: number;
   saveProgress?: boolean;
   saveData?: boolean;
+  saveToDatabase?: boolean; // Skip saving execution to database (for high-traffic APIs)
   manual?: boolean;
   isolatedExecution?: boolean;
 }
@@ -122,13 +123,14 @@ export class FlowExecutionEngine extends EventEmitter {
     userId: string,
     inputData?: NodeInputData,
     options: FlowExecutionOptions = {},
-    workflowData?: Workflow // Optional workflow data to avoid database load
+    workflowData?: Workflow, // Optional workflow data to avoid database load
+    executionId?: string // Optional execution ID (for trigger-initiated executions)
   ): Promise<FlowExecutionResult> {
-    const executionId = uuidv4();
+    const finalExecutionId = executionId || uuidv4();
 
     try {
       const context = await this.createExecutionContext(
-        executionId,
+        finalExecutionId,
         workflowId,
         userId,
         nodeId,
@@ -147,11 +149,11 @@ export class FlowExecutionEngine extends EventEmitter {
 
       return result;
     } catch (error) {
-      logger.error("Flow execution failed", { executionId, nodeId, error });
+      logger.error("Flow execution failed", { executionId: finalExecutionId, nodeId, error });
       throw error;
     } finally {
-      this.activeExecutions.delete(executionId);
-      this.nodeQueue.delete(executionId);
+      this.activeExecutions.delete(finalExecutionId);
+      this.nodeQueue.delete(finalExecutionId);
     }
   }
 
@@ -164,13 +166,14 @@ export class FlowExecutionEngine extends EventEmitter {
     userId: string,
     triggerData?: any,
     options: FlowExecutionOptions = {},
-    workflowData?: Workflow // Optional workflow data to avoid database load
+    workflowData?: Workflow, // Optional workflow data to avoid database load
+    executionId?: string // Optional execution ID (for trigger-initiated executions)
   ): Promise<FlowExecutionResult> {
-    const executionId = uuidv4();
+    const finalExecutionId = executionId || uuidv4();
 
     try {
       const context = await this.createExecutionContext(
-        executionId,
+        finalExecutionId,
         workflowId,
         userId,
         triggerId,
@@ -195,14 +198,14 @@ export class FlowExecutionEngine extends EventEmitter {
       return result;
     } catch (error) {
       logger.error("Trigger execution failed", {
-        executionId,
+        executionId: finalExecutionId,
         triggerId,
         error,
       });
       throw error;
     } finally {
-      this.activeExecutions.delete(executionId);
-      this.nodeQueue.delete(executionId);
+      this.activeExecutions.delete(finalExecutionId);
+      this.nodeQueue.delete(finalExecutionId);
     }
   }
 
@@ -552,7 +555,8 @@ export class FlowExecutionEngine extends EventEmitter {
 
       const dependenciesSatisfied = this.areNodeDependenciesSatisfied(
         nodeId,
-        context
+        context,
+        workflow
       );
       if (!dependenciesSatisfied) {
         // Check retry count to prevent infinite loops
@@ -812,7 +816,8 @@ export class FlowExecutionEngine extends EventEmitter {
         context.executionId,
         context.userId, // Pass the userId from context
         undefined, // options
-        context.workflowId // Pass workflowId for variable resolution
+        context.workflowId, // Pass workflowId for variable resolution
+        undefined // settings - not stored on node object currently
       );
 
       if (!nodeResult.success) {
@@ -843,7 +848,8 @@ export class FlowExecutionEngine extends EventEmitter {
 
   private areNodeDependenciesSatisfied(
     nodeId: string,
-    context: FlowExecutionContext
+    context: FlowExecutionContext,
+    workflow?: Workflow
   ): boolean {
     const nodeState = context.nodeStates.get(nodeId);
     if (!nodeState) {
@@ -860,6 +866,91 @@ export class FlowExecutionEngine extends EventEmitter {
       executionId: context.executionId,
     });
 
+    // For nodes with multiple incoming connections (e.g., from conditional branches),
+    // we need to check if at least ONE dependency has completed AND has data for this node
+    const incomingConnections = workflow?.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    ) || [];
+
+    // If we have workflow context and multiple incoming connections, use branch-aware checking
+    if (workflow && incomingConnections.length > 1) {
+      let hasAtLeastOneCompletedWithData = false;
+      let allRelevantDependenciesCompleted = true;
+
+      for (const depNodeId of nodeState.dependencies) {
+        const depState = context.nodeStates.get(depNodeId);
+        
+        if (!depState) {
+          logger.debug("Dependency state not found", {
+            nodeId,
+            dependencyNodeId: depNodeId,
+            executionId: context.executionId,
+          });
+          allRelevantDependenciesCompleted = false;
+          continue;
+        }
+
+        // Check if this dependency has completed
+        if (depState.status === FlowNodeStatus.COMPLETED) {
+          // Check if this dependency has data for any of its outgoing connections to this node
+          const connectionsFromDep = incomingConnections.filter(
+            (conn) => conn.sourceNodeId === depNodeId
+          );
+
+          for (const connection of connectionsFromDep) {
+            const outputData = depState.outputData as any;
+            
+            if (outputData) {
+              // Check if the specific branch has data
+              let hasData = false;
+              
+              if (outputData.metadata && outputData.branches) {
+                const branchData = outputData.branches[connection.sourceOutput];
+                hasData = Array.isArray(branchData) && branchData.length > 0;
+              } else if (outputData.metadata) {
+                const sourceOutput = outputData[connection.sourceOutput];
+                hasData = Array.isArray(sourceOutput) && sourceOutput.length > 0;
+              } else {
+                const sourceOutput = outputData[connection.sourceOutput];
+                hasData = Array.isArray(sourceOutput) && sourceOutput.length > 0;
+              }
+
+              if (hasData) {
+                hasAtLeastOneCompletedWithData = true;
+                logger.debug("Dependency has data for branch", {
+                  nodeId,
+                  dependencyNodeId: depNodeId,
+                  sourceOutput: connection.sourceOutput,
+                  executionId: context.executionId,
+                });
+                break;
+              }
+            }
+          }
+        } else if (depState.status !== FlowNodeStatus.SKIPPED) {
+          // If dependency is not completed and not skipped, we need to wait
+          allRelevantDependenciesCompleted = false;
+        }
+      }
+
+      // For multi-branch scenarios, we're satisfied if:
+      // 1. At least one dependency completed with data, OR
+      // 2. All dependencies have completed/skipped (even if no data)
+      const satisfied = hasAtLeastOneCompletedWithData || 
+        (allRelevantDependenciesCompleted && nodeState.dependencies.length > 0);
+
+      logger.debug("Multi-branch dependency check", {
+        nodeId,
+        hasAtLeastOneCompletedWithData,
+        allRelevantDependenciesCompleted,
+        satisfied,
+        executionId: context.executionId,
+      });
+
+      return satisfied;
+    }
+
+    // Original logic for single-branch scenarios
     for (const depNodeId of nodeState.dependencies) {
       const depState = context.nodeStates.get(depNodeId);
       if (!depState || depState.status !== FlowNodeStatus.COMPLETED) {
@@ -911,6 +1002,27 @@ export class FlowExecutionEngine extends EventEmitter {
         dependentState.status === FlowNodeStatus.IDLE &&
         !queue.includes(dependentNodeId)
       ) {
+        // Check if this dependent node will have data from its incoming connections
+        const willHaveData = this.willNodeHaveInputData(
+          dependentNodeId,
+          context,
+          workflow
+        );
+
+        if (!willHaveData) {
+          logger.info("Skipping dependent node - no data from incoming branches", {
+            sourceNodeId: nodeId,
+            dependentNodeId,
+            dependentNodeType: workflow.nodes.find(
+              (n) => n.id === dependentNodeId
+            )?.type,
+            executionId: context.executionId,
+          });
+          // Mark as skipped instead of leaving it idle
+          dependentState.status = FlowNodeStatus.SKIPPED;
+          continue;
+        }
+
         queue.push(dependentNodeId);
         dependentState.status = FlowNodeStatus.QUEUED;
         queuedCount++;
@@ -929,10 +1041,10 @@ export class FlowExecutionEngine extends EventEmitter {
           reason: !dependentState
             ? "no state"
             : dependentState.status !== FlowNodeStatus.IDLE
-            ? `status: ${dependentState.status}`
-            : queue.includes(dependentNodeId)
-            ? "already queued"
-            : "unknown",
+              ? `status: ${dependentState.status}`
+              : queue.includes(dependentNodeId)
+                ? "already queued"
+                : "unknown",
           currentStatus: dependentState?.status,
           executionId: context.executionId,
         });
@@ -948,6 +1060,59 @@ export class FlowExecutionEngine extends EventEmitter {
       totalDependents: nodeState.dependents.length,
       executionId: context.executionId,
     });
+  }
+
+  /**
+   * Check if a node will have input data from its incoming connections
+   * Used to skip nodes connected to empty branches (e.g., IfElse false branch when condition is true)
+   */
+  private willNodeHaveInputData(
+    nodeId: string,
+    context: FlowExecutionContext,
+    workflow: Workflow
+  ): boolean {
+    const incomingConnections = workflow.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    );
+
+    // Trigger nodes always have data
+    if (incomingConnections.length === 0) {
+      return true;
+    }
+
+    // Check if any incoming connection has data
+    for (const connection of incomingConnections) {
+      const sourceNodeState = context.nodeStates.get(connection.sourceNodeId);
+
+      if (!sourceNodeState || !sourceNodeState.outputData) {
+        continue;
+      }
+
+      const outputData = sourceNodeState.outputData as any;
+
+      // Check standardized format with branches
+      if (outputData.metadata && outputData.branches) {
+        const branchData = outputData.branches[connection.sourceOutput];
+        if (Array.isArray(branchData) && branchData.length > 0) {
+          return true;
+        }
+      } else if (outputData.metadata) {
+        // Standardized format without branches
+        const sourceOutput = outputData[connection.sourceOutput];
+        if (Array.isArray(sourceOutput) && sourceOutput.length > 0) {
+          return true;
+        }
+      } else {
+        // Legacy format or direct access
+        const sourceOutput = outputData[connection.sourceOutput];
+        if (Array.isArray(sourceOutput) && sourceOutput.length > 0) {
+          return true;
+        }
+      }
+    }
+
+    // No incoming connections have data
+    return false;
   }
 
   private async collectNodeInputData(
@@ -970,22 +1135,47 @@ export class FlowExecutionEngine extends EventEmitter {
       return inputData;
     }
 
-    const collectedData: any[] = [];
+    // Collect data from each connection separately for proper multi-input support
+    const collectedDataPerConnection: any[][] = [];
+
     for (const connection of incomingConnections) {
       const sourceNodeState = context.nodeStates.get(connection.sourceNodeId);
+      const connectionData: any[] = [];
 
       if (sourceNodeState && sourceNodeState.outputData) {
         // outputData is now standardized format: { main: [...], metadata: {...}, branches?: {...} }
         const outputData = sourceNodeState.outputData as any;
 
+        logger.info(`[FlowExecutionEngine] Collecting input for node ${nodeId} from ${connection.sourceNodeId}`, {
+          sourceOutput: connection.sourceOutput,
+          hasMetadata: !!outputData.metadata,
+          hasBranches: !!outputData.branches,
+          branchKeys: outputData.branches ? Object.keys(outputData.branches) : [],
+        });
+
         // Check if this is the standardized format (has metadata)
         if (outputData.metadata) {
-          // Standardized format
-          const sourceOutput = outputData[connection.sourceOutput];
+          // Standardized format with branches support
+          let sourceOutput;
+
+          // For branching nodes, check branches first
+          if (outputData.branches && outputData.branches[connection.sourceOutput]) {
+            sourceOutput = outputData.branches[connection.sourceOutput];
+            logger.info(`[FlowExecutionEngine] Using branch '${connection.sourceOutput}' data`, {
+              itemCount: Array.isArray(sourceOutput) ? sourceOutput.length : 0,
+            });
+          } else {
+            // Fallback to direct property access for non-branching nodes
+            sourceOutput = outputData[connection.sourceOutput];
+            logger.info(`[FlowExecutionEngine] Using direct output '${connection.sourceOutput}'`, {
+              itemCount: Array.isArray(sourceOutput) ? sourceOutput.length : 0,
+            });
+          }
+
           if (Array.isArray(sourceOutput)) {
-            collectedData.push(...sourceOutput);
+            connectionData.push(...sourceOutput);
           } else if (sourceOutput) {
-            collectedData.push(sourceOutput);
+            connectionData.push(sourceOutput);
           }
         } else if (Array.isArray(outputData)) {
           // Legacy format: array of output objects [{main: [...]}, {secondary: [...]}]
@@ -995,25 +1185,34 @@ export class FlowExecutionEngine extends EventEmitter {
           if (output && output[connection.sourceOutput]) {
             const sourceOutput = output[connection.sourceOutput];
             if (Array.isArray(sourceOutput)) {
-              collectedData.push(...sourceOutput);
+              connectionData.push(...sourceOutput);
             } else {
-              collectedData.push(sourceOutput);
+              connectionData.push(sourceOutput);
             }
           }
         } else {
           // Fallback: direct object access
           const sourceOutput = outputData[connection.sourceOutput];
           if (Array.isArray(sourceOutput)) {
-            collectedData.push(...sourceOutput);
+            connectionData.push(...sourceOutput);
           } else if (sourceOutput) {
-            collectedData.push(sourceOutput);
+            connectionData.push(sourceOutput);
           }
         }
       }
+
+      // Add this connection's data as a separate array
+      collectedDataPerConnection.push(connectionData);
     }
 
-    if (collectedData.length > 0) {
-      inputData.main = [collectedData];
+    // For nodes with multiple inputs (like Merge), keep data from each connection separate
+    // For nodes with single input, flatten for backward compatibility
+    if (collectedDataPerConnection.length > 1) {
+      // Multiple connections: keep them separate (2D array)
+      inputData.main = collectedDataPerConnection;
+    } else if (collectedDataPerConnection.length === 1) {
+      // Single connection: use existing format for backward compatibility
+      inputData.main = [collectedDataPerConnection[0]];
     }
 
     return inputData;

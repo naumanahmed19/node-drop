@@ -234,11 +234,11 @@ export class ExecutionEngine extends EventEmitter {
         finishedAt: execution.finishedAt || undefined,
         error: execution.error
           ? {
-              message: (execution.error as any).message,
-              stack: (execution.error as any).stack,
-              nodeId: (execution.error as any).nodeId,
-              timestamp: new Date((execution.error as any).timestamp),
-            }
+            message: (execution.error as any).message,
+            stack: (execution.error as any).stack,
+            nodeId: (execution.error as any).nodeId,
+            timestamp: new Date((execution.error as any).timestamp),
+          }
           : undefined,
       };
     } catch (error) {
@@ -485,7 +485,7 @@ export class ExecutionEngine extends EventEmitter {
         undefined, // credentials - TODO: implement credential retrieval
         executionId,
         context.userId, // userId
-        executionOptions, // options
+        { ...executionOptions, nodeId }, // options with nodeId for state management
         context.workflowId // workflowId
       );
 
@@ -515,8 +515,10 @@ export class ExecutionEngine extends EventEmitter {
       });
 
       // Store output data in context
-      const outputData = result.data ? [{ main: result.data.main }] : [];
-      context.nodeOutputs.set(nodeId, outputData);
+      // Store the full result.data which includes branches for branching nodes
+      if (result.data) {
+        context.nodeOutputs.set(nodeId, result.data as any);
+      }
 
       this.emitExecutionEvent({
         executionId,
@@ -537,6 +539,8 @@ export class ExecutionEngine extends EventEmitter {
       // Emit progress update
       await this.emitExecutionProgress(executionId);
 
+      // Return output data in the expected format for the queue
+      const outputData = result.data ? [{ main: result.data.main }] : [];
       return outputData;
     } catch (error) {
       // Enhanced error handling for manual triggers
@@ -547,7 +551,7 @@ export class ExecutionEngine extends EventEmitter {
         });
         const workflowNodes = workflow?.nodes as unknown as Node[];
         const currentNode = workflowNodes?.find((n) => n.id === nodeId);
-        
+
         if (currentNode && currentNode.type === "manual-trigger") {
           logger.error(`Manual trigger node ${nodeId} execution failed`, {
             executionId,
@@ -708,15 +712,82 @@ export class ExecutionEngine extends EventEmitter {
         continue;
       }
 
+      // Check if this node should be executed based on incoming connections
+      const shouldExecute = this.shouldExecuteNode(nodeId, graph, context);
+
+      if (!shouldExecute) {
+        logger.info(
+          `Skipping node ${nodeId} (${node.type}): No data from incoming branches`,
+          {
+            nodeType: node.type,
+            nodeName: node.name,
+          }
+        );
+        continue;
+      }
+
       logger.info(`Executing node ${nodeId} (${node.type})`, {
         nodeType: node.type,
         nodeName: node.name,
       });
 
-      // Prepare input data for the node
+      // Check if this is a loop node
+      if (node.type === "loop") {
+        await this.executeLoopNode(nodeId, node, graph, context);
+      } else {
+        // Regular node execution
+        const inputData = this.prepareNodeInputData(nodeId, graph, context);
+
+        await this.nodeQueue.add({
+          nodeId,
+          executionId: context.executionId,
+          inputData,
+          retryCount: 0,
+        });
+
+        await this.waitForNodeCompletion(context.executionId, nodeId);
+        logger.info(`Node ${nodeId} completed execution`);
+      }
+    }
+  }
+
+  /**
+   * Execute a loop node with iteration control
+   */
+  private async executeLoopNode(
+    nodeId: string,
+    node: Node,
+    graph: ExecutionGraph,
+    context: ExecutionContext
+  ): Promise<void> {
+    logger.info(`Starting loop node ${nodeId}`);
+
+    // Find nodes connected to the "loop" output (index 0)
+    const loopConnections = graph.connections.filter(
+      (conn) => conn.sourceNodeId === nodeId && conn.sourceOutput === "loop"
+    );
+
+    // Find nodes connected to the "done" output (index 1)
+    const doneConnections = graph.connections.filter(
+      (conn) => conn.sourceNodeId === nodeId && conn.sourceOutput === "done"
+    );
+
+    let loopComplete = false;
+    let iterationCount = 0;
+    const maxIterations = 100000; // Safety limit
+
+    while (!loopComplete && iterationCount < maxIterations) {
+      if (context.cancelled) {
+        throw new Error("Execution was cancelled");
+      }
+
+      iterationCount++;
+      logger.info(`Loop ${nodeId} - Iteration ${iterationCount}`);
+
+      // Prepare input data for the loop node
       const inputData = this.prepareNodeInputData(nodeId, graph, context);
 
-      // Add node execution job to queue
+      // Execute the loop node
       await this.nodeQueue.add({
         nodeId,
         executionId: context.executionId,
@@ -724,11 +795,264 @@ export class ExecutionEngine extends EventEmitter {
         retryCount: 0,
       });
 
-      // Wait for node execution to complete
       await this.waitForNodeCompletion(context.executionId, nodeId);
 
-      logger.info(`Node ${nodeId} completed execution`);
+      // Get the output from the loop node
+      const loopOutput = context.nodeOutputs.get(nodeId);
+
+      if (!loopOutput) {
+        throw new Error(`Loop node ${nodeId} produced no output`);
+      }
+
+      // Check if loop output has data (continue looping)
+      const loopData = (loopOutput as any).branches?.["loop"] || [];
+      const doneData = (loopOutput as any).branches?.["done"] || [];
+
+      logger.info(`Loop ${nodeId} output:`, {
+        loopDataLength: loopData.length,
+        doneDataLength: doneData.length,
+      });
+
+      if (loopData.length > 0) {
+        // Loop has more iterations - execute downstream nodes
+        logger.info(`Loop ${nodeId} has data, executing downstream nodes`);
+
+        // Execute all nodes connected to the loop output
+        await this.executeLoopIteration(
+          nodeId,
+          loopConnections,
+          graph,
+          context
+        );
+      }
+
+      if (doneData.length > 0) {
+        // Loop is complete
+        logger.info(`Loop ${nodeId} completed after ${iterationCount} iterations`);
+        loopComplete = true;
+
+        // Execute nodes connected to the "done" output
+        for (const conn of doneConnections) {
+          const targetNode = graph.nodes.get(conn.targetNodeId);
+          if (targetNode && !targetNode.disabled) {
+            logger.info(`Executing done-connected node ${conn.targetNodeId}`);
+            const targetInputData = this.prepareNodeInputData(
+              conn.targetNodeId,
+              graph,
+              context
+            );
+
+            await this.nodeQueue.add({
+              nodeId: conn.targetNodeId,
+              executionId: context.executionId,
+              inputData: targetInputData,
+              retryCount: 0,
+            });
+
+            await this.waitForNodeCompletion(
+              context.executionId,
+              conn.targetNodeId
+            );
+          }
+        }
+      }
+
+      // If both outputs are empty, loop is stuck
+      if (loopData.length === 0 && doneData.length === 0) {
+        throw new Error(
+          `Loop node ${nodeId} produced no output on either branch - loop is stuck`
+        );
+      }
     }
+
+    if (iterationCount >= maxIterations) {
+      throw new Error(
+        `Loop node ${nodeId} exceeded maximum iterations (${maxIterations})`
+      );
+    }
+
+    logger.info(`Loop node ${nodeId} finished`);
+  }
+
+  /**
+   * Execute one iteration of a loop (all downstream nodes)
+   */
+  private async executeLoopIteration(
+    loopNodeId: string,
+    loopConnections: Connection[],
+    graph: ExecutionGraph,
+    context: ExecutionContext
+  ): Promise<void> {
+    // Build a subgraph of nodes reachable from loop output
+    const nodesToExecute = this.getLoopIterationNodes(
+      loopNodeId,
+      loopConnections,
+      graph
+    );
+
+    logger.info(`Executing ${nodesToExecute.length} nodes in loop iteration`, {
+      nodes: nodesToExecute,
+    });
+
+    // Execute nodes in order
+    for (const nodeId of nodesToExecute) {
+      if (context.cancelled) {
+        throw new Error("Execution was cancelled");
+      }
+
+      const node = graph.nodes.get(nodeId);
+      if (!node || node.disabled) {
+        continue;
+      }
+
+      // Skip if this node connects back to the loop (would create infinite recursion)
+      const connectsToLoop = graph.connections.some(
+        (conn) => conn.sourceNodeId === nodeId && conn.targetNodeId === loopNodeId
+      );
+
+      if (connectsToLoop) {
+        logger.info(`Node ${nodeId} connects back to loop, skipping`);
+        continue;
+      }
+
+      logger.info(`Executing loop iteration node ${nodeId} (${node.type})`);
+
+      const inputData = this.prepareNodeInputData(nodeId, graph, context);
+
+      await this.nodeQueue.add({
+        nodeId,
+        executionId: context.executionId,
+        inputData,
+        retryCount: 0,
+      });
+
+      await this.waitForNodeCompletion(context.executionId, nodeId);
+    }
+  }
+
+  /**
+   * Get all nodes that should execute in a loop iteration
+   */
+  private getLoopIterationNodes(
+    loopNodeId: string,
+    loopConnections: Connection[],
+    graph: ExecutionGraph
+  ): string[] {
+    const visited = new Set<string>();
+    const result: string[] = [];
+
+    // Start with nodes directly connected to loop output
+    const queue = loopConnections.map((conn) => conn.targetNodeId);
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+
+      if (visited.has(nodeId) || nodeId === loopNodeId) {
+        continue;
+      }
+
+      visited.add(nodeId);
+      result.push(nodeId);
+
+      // Add downstream nodes
+      const outgoing = graph.connections.filter(
+        (conn) => conn.sourceNodeId === nodeId
+      );
+
+      for (const conn of outgoing) {
+        if (!visited.has(conn.targetNodeId) && conn.targetNodeId !== loopNodeId) {
+          queue.push(conn.targetNodeId);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if a node should be executed based on incoming branch data
+   */
+  private shouldExecuteNode(
+    nodeId: string,
+    graph: ExecutionGraph,
+    context: ExecutionContext
+  ): boolean {
+    const node = graph.nodes.get(nodeId);
+    logger.info(`[shouldExecuteNode] Checking if node ${nodeId} (${node?.type}) should execute`);
+    
+    // Find all connections that target this node
+    const incomingConnections = graph.connections.filter(
+      (conn) => conn.targetNodeId === nodeId
+    );
+
+    logger.info(`[shouldExecuteNode] Node ${nodeId} has ${incomingConnections.length} incoming connections`);
+
+    // If no incoming connections, this is a trigger node - always execute
+    if (incomingConnections.length === 0) {
+      logger.info(`[shouldExecuteNode] Node ${nodeId} is a trigger node - EXECUTE`);
+      return true;
+    }
+
+    // Check if any incoming connection has data
+    for (const connection of incomingConnections) {
+      const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+
+      logger.info(`[shouldExecuteNode] Checking connection from ${connection.sourceNodeId} output '${connection.sourceOutput}' to ${nodeId}`);
+
+      if (!sourceOutput) {
+        // Source node hasn't executed yet - this shouldn't happen in topological order
+        logger.warn(`[shouldExecuteNode] Source node ${connection.sourceNodeId} has no output yet`);
+        continue;
+      }
+      
+      logger.info(`[shouldExecuteNode] Source output structure:`, {
+        hasMain: !!(sourceOutput as any).main,
+        hasBranches: !!(sourceOutput as any).branches,
+        mainLength: ((sourceOutput as any).main || []).length,
+        branchKeys: Object.keys((sourceOutput as any).branches || {}),
+      });
+
+      // Check if this is a branching node
+      const hasBranches = (sourceOutput as any).branches;
+
+      if (hasBranches) {
+        // For branching nodes, check if the specific branch has data
+        const branchName = connection.sourceOutput || "main";
+        const branchData = (sourceOutput as any).branches?.[branchName] || [];
+
+        logger.info(
+          `[shouldExecuteNode] Checking branch '${branchName}' for node ${nodeId}`,
+          {
+            sourceNodeId: connection.sourceNodeId,
+            branchName,
+            branchDataLength: branchData.length,
+            allBranches: Object.keys((sourceOutput as any).branches || {}),
+          }
+        );
+
+        if (branchData.length > 0) {
+          // This branch has data, node should execute
+          logger.info(`[shouldExecuteNode] Branch '${branchName}' has ${branchData.length} items - EXECUTE node ${nodeId}`);
+          return true;
+        } else {
+          logger.info(`[shouldExecuteNode] Branch '${branchName}' is empty - checking other connections...`);
+        }
+      } else {
+        // For standard nodes, check if main output has data
+        const outputItems = (sourceOutput as any).main || [];
+
+        logger.info(`[shouldExecuteNode] Standard node output has ${outputItems.length} items`);
+
+        if (outputItems.length > 0) {
+          logger.info(`[shouldExecuteNode] Main output has data - EXECUTE node ${nodeId}`);
+          return true;
+        }
+      }
+    }
+
+    // No incoming connections have data - skip this node
+    logger.info(`[shouldExecuteNode] No incoming connections have data - SKIP node ${nodeId}`);
+    return false;
   }
 
   /**
@@ -783,24 +1107,57 @@ export class ExecutionEngine extends EventEmitter {
       }
     } else {
       // Collect data from source nodes
-      const sourceData: any[] = [];
+      // Keep data from each connection separate for multi-input support (like Merge node)
+      const sourceDataPerConnection: any[][] = [];
 
       for (const connection of incomingConnections) {
         const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+        const connectionData: any[] = [];
 
         if (sourceOutput) {
-          // sourceOutput is a StandardizedNodeOutput object, not an array
-          const outputItems = (sourceOutput as any).main || [];
-          sourceData.push(...outputItems);
+          // Check if this is a branching node (has branches property)
+          const hasBranches = (sourceOutput as any).branches;
+
+          if (hasBranches) {
+            // For branching nodes (like IfElse), only use data from the specific output branch
+            const branchName = connection.sourceOutput || "main";
+            const branchData = (sourceOutput as any).branches?.[branchName] || [];
+
+            logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
+              branchName,
+              itemCount: branchData.length,
+              availableBranches: Object.keys((sourceOutput as any).branches || {}),
+            });
+
+            connectionData.push(...branchData);
+          } else {
+            // For standard nodes, use main output
+            const outputItems = (sourceOutput as any).main || [];
+            connectionData.push(...outputItems);
+          }
         }
+        
+        // Add this connection's data as a separate array
+        sourceDataPerConnection.push(connectionData);
       }
 
-      // If no source data, provide empty object
-      if (sourceData.length === 0) {
-        sourceData.push({ json: {} });
+      // For nodes with multiple inputs (like Merge), keep data from each connection separate
+      // For nodes with single input, flatten for backward compatibility
+      if (sourceDataPerConnection.length > 1) {
+        // Multiple connections: keep them separate (2D array)
+        inputData.main = sourceDataPerConnection;
+      } else if (sourceDataPerConnection.length === 1) {
+        // Single connection: use existing format for backward compatibility
+        const singleConnectionData = sourceDataPerConnection[0];
+        // If no source data, provide empty object
+        if (singleConnectionData.length === 0) {
+          singleConnectionData.push({ json: {} });
+        }
+        inputData.main = [singleConnectionData];
+      } else {
+        // No connections
+        inputData.main = [[{ json: {} }]];
       }
-
-      inputData.main = [sourceData];
     }
 
     return inputData;
@@ -915,13 +1272,12 @@ export class ExecutionEngine extends EventEmitter {
     if (shouldRetry) {
       const delay = Math.min(
         this.retryConfig.retryDelay *
-          Math.pow(this.retryConfig.backoffMultiplier, retryCount),
+        Math.pow(this.retryConfig.backoffMultiplier, retryCount),
         this.retryConfig.maxRetryDelay
       );
 
       logger.warn(
-        `Retrying node ${nodeId} execution (attempt ${
-          retryCount + 1
+        `Retrying node ${nodeId} execution (attempt ${retryCount + 1
         }) after ${delay}ms`
       );
 

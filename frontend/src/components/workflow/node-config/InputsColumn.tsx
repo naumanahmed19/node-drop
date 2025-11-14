@@ -30,8 +30,6 @@ import {
   ChevronDown,
   ChevronRight,
   Code,
-  FolderOpen,
-  GitBranch,
   Info,
   Play,
   Settings,
@@ -39,6 +37,9 @@ import {
   Zap
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { WebhookTriggerInput } from './WebhookTriggerInput'
+import { NodeIconRenderer } from '@/components/common/NodeIconRenderer'
+import { useNodeTypes } from '@/stores'
 
 /**
  * Main props for the InputsColumn component
@@ -55,11 +56,13 @@ interface InputsColumnProps {
  * @param data - The JSON data to display (object, array, or primitive value)
  * @param level - Current nesting depth for indentation (0 = root level)
  * @param keyName - Property name from parent object for context display
+ * @param parentPath - Full path from root for tooltip display
  */
 interface SchemaViewerProps {
   data: any
   level: number
   keyName?: string
+  parentPath?: string
 }
 
 /**
@@ -82,7 +85,6 @@ interface UnifiedTreeNodeProps {
   level: number
   expandedState: Record<string, boolean>
   onExpandedChange: (key: string, expanded: boolean) => void
-  getNodeIcon: (type: string) => React.ReactNode
   getNodeStatusBadge: (status?: string) => React.ReactNode
   onExecuteNode: (nodeId: string) => void
 }
@@ -105,23 +107,35 @@ interface UnifiedTreeNodeProps {
  * - Handles different data structures (arrays, objects, primitives)
  * - Filters out empty/null values for cleaner display
  */
-function UnifiedTreeNode({ 
-  node: inputNode, 
-  connection, 
-  nodeExecutionResult, 
-  level, 
-  expandedState, 
+function UnifiedTreeNode({
+  node: inputNode,
+  connection,
+  nodeExecutionResult,
+  level,
+  expandedState,
   onExpandedChange,
-  getNodeIcon,
   getNodeStatusBadge,
   onExecuteNode
 }: UnifiedTreeNodeProps) {
   const isNodeExpanded = expandedState[inputNode.id] || false
   const nodeData = nodeExecutionResult?.data ? getRelevantData(nodeExecutionResult.data) : null
   
+  // Get node type definition for icon rendering
+  const { nodeTypes } = useNodeTypes()
+  const nodeTypeDefinition = useMemo(() => 
+    nodeTypes.find(nt => nt.type === inputNode.type),
+    [nodeTypes, inputNode.type]
+  )
+  
+  // Determine if this is a trigger node for icon shape
+  const isTrigger = useMemo(() => {
+    const capability = getNodeExecutionCapability(inputNode.type)
+    return capability === 'trigger'
+  }, [inputNode.type])
+
   // Indentation for tree hierarchy - matches SchemaViewer pattern
   const indentStyle = { paddingLeft: `${level * 12}px` }
-  
+
   return (
     <div style={indentStyle}>
       <Collapsible open={isNodeExpanded} onOpenChange={(open) => onExpandedChange(inputNode.id, open)}>
@@ -134,46 +148,69 @@ function UnifiedTreeNode({
               ) : (
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
-              {getNodeIcon(inputNode.type)}
-              <div 
-                className="w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                style={{ backgroundColor: '#6b7280' }}
-              >
-                {inputNode.name.charAt(0).toUpperCase()}
-              </div>
+              <NodeIconRenderer
+                icon={inputNode.icon || nodeTypeDefinition?.icon}
+                nodeType={inputNode.type}
+                nodeGroup={nodeTypeDefinition?.group}
+                displayName={inputNode.name}
+                backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                isTrigger={isTrigger}
+                size="sm"
+                className="flex-shrink-0"
+              />
               <span className="text-sm font-medium truncate">
                 {inputNode.name}
               </span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs">
-                      Output: <code className="bg-muted px-1 rounded">{connection.sourceOutput}</code>
-                      {' → '}
-                      Input: <code className="bg-muted px-1 rounded">{connection.targetInput}</code>
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <span 
-                className={`w-2 h-2 rounded-full ${
-                  inputNode.disabled ? 'bg-muted-foreground' : 'bg-green-500'
-                }`}
+              {!connection.id && (
+                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-blue-50 text-blue-600 border-blue-200">
+                  Indirect
+                </Badge>
+              )}
+              {connection.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 text-muted-foreground hover:text-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Output: <code className="bg-muted px-1 rounded">{connection.sourceOutput}</code>
+                        {' → '}
+                        Input: <code className="bg-muted px-1 rounded">{connection.targetInput}</code>
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {!connection.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 text-blue-500 hover:text-blue-600 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Previous node in workflow (not directly connected)
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              <span
+                className={`w-2 h-2 rounded-full ${inputNode.disabled ? 'bg-muted-foreground' : 'bg-green-500'
+                  }`}
                 title={inputNode.disabled ? "Disabled" : "Enabled"}
               />
               {/* Show data preview in header */}
               {nodeData && (
                 <span className="text-xs text-muted-foreground italic">
-                  {Array.isArray(nodeData) ? `[${nodeData.length} items]` : 
-                   typeof nodeData === 'object' ? `{${Object.keys(nodeData).length} keys}` : 
-                   typeof nodeData}
+                  {Array.isArray(nodeData) ? `[${nodeData.length} items]` :
+                    typeof nodeData === 'object' ? `{${Object.keys(nodeData).length} keys}` :
+                      typeof nodeData}
                 </span>
               )}
             </div>
-            
+
             <div className="flex items-center gap-2 flex-shrink-0">
               <TooltipProvider>
                 <Tooltip>
@@ -195,7 +232,7 @@ function UnifiedTreeNode({
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
+
               {nodeExecutionResult && (
                 <div>
                   {getNodeStatusBadge(nodeExecutionResult.status)}
@@ -217,6 +254,7 @@ function UnifiedTreeNode({
                     data={item}
                     level={level + 1}
                     keyName={`[${index}]`}
+                    parentPath="json"
                     expandedState={expandedState}
                     onExpandedChange={onExpandedChange}
                   />
@@ -229,6 +267,7 @@ function UnifiedTreeNode({
                     data={value}
                     level={level + 1}
                     keyName={key}
+                    parentPath="json"
                     expandedState={expandedState}
                     onExpandedChange={onExpandedChange}
                   />
@@ -265,20 +304,27 @@ function UnifiedTreeNode({
  * - Maintains level counter for proper indentation
  * - Uses unique keys for independent expand/collapse state
  */
-function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }: SchemaViewerProps & {
+function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState, onExpandedChange }: SchemaViewerProps & {
   expandedState?: Record<string, boolean>
   onExpandedChange?: (key: string, expanded: boolean) => void
 }) {
   const itemKey = keyName ? `${level}-${keyName}` : `${level}-root`
   const isExpanded = expandedState ? (expandedState[itemKey] ?? (level < 2)) : (level < 2)
-  
+
+  // Build the current path for this item
+  const currentPath = keyName 
+    ? keyName.startsWith('[') 
+      ? `${parentPath}${keyName}` // Array index like [0]
+      : `${parentPath}.${keyName}` // Object property like .user
+    : parentPath
+
   // Helper functions for data type analysis and display
   const getValueType = (value: any): string => {
     if (value === null) return 'null'
     if (Array.isArray(value)) return `array[${value.length}]`
     return typeof value
   }
-  
+
   const getValuePreview = (value: any): string => {
     if (value === null || value === undefined) return 'null'
     if (typeof value === 'string') return `"${value.length > 20 ? value.slice(0, 20) + '...' : value}"`
@@ -287,66 +333,141 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
     if (typeof value === 'object') return `{${Object.keys(value).length} keys}`
     return String(value)
   }
-  
+
   const isComplexType = (value: any): boolean => {
     return value !== null && (typeof value === 'object' || Array.isArray(value))
   }
-  
-  const indentStyle = { paddingLeft: `${level * 16}px` }
-  
+
+  const indentStyle = { paddingLeft: `${level * 12}px` }
+  const bgColor = level % 2 === 0 ? 'bg-transparent' : 'bg-muted/10'
+
   if (!isComplexType(data)) {
     // Simple value - just display inline
     return (
-      <div style={indentStyle} className="flex items-center gap-2 py-0.5 px-2">
-        <div className="w-2 h-px bg-muted-foreground/30"></div>
+      <div style={indentStyle} className={`flex items-center gap-2 py-1 px-2 ${bgColor} border-l-2 border-transparent hover:border-primary/30 hover:bg-accent/50 transition-colors relative`}>
+        <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
         {keyName && (
           <>
-            <span className="font-mono text-blue-600 text-xs font-medium">{keyName}</span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span 
+                    className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', currentPath)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                  >
+                    {keyName}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs font-mono">{currentPath}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <span className="text-muted-foreground">:</span>
           </>
         )}
-        <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-          {getValuePreview(data)}
-        </span>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span 
+                className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+              >
+                {getValuePreview(data)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <span className="text-xs text-muted-foreground italic">
           ({getValueType(data)})
         </span>
       </div>
     )
   }
-  
+
   // Complex object or array
   return (
-    <div style={indentStyle}>
-      <Collapsible 
-        open={isExpanded} 
+    <div style={indentStyle} className="relative">
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
+      <Collapsible
+        open={isExpanded}
         onOpenChange={(open) => onExpandedChange?.(itemKey, open)}
       >
         <CollapsibleTrigger asChild>
-          <div className="flex items-center gap-2 py-0.5 px-2 hover:bg-muted/30 rounded cursor-pointer group">
-            <div className="w-2 h-px bg-muted-foreground/30"></div>
-            {isExpanded ? (
-              <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            )}
+          <div className={`flex items-center gap-2 py-1 px-2 ${bgColor} hover:bg-accent/50 border-l-2 border-transparent hover:border-primary/30 transition-colors cursor-pointer group`}>
+            <div className="flex items-center justify-center w-4 h-4 rounded-sm hover:bg-accent transition-colors">
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              )}
+            </div>
             {keyName && (
               <>
-                <span className="font-mono text-blue-600 text-xs font-medium">{keyName}</span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span 
+                        className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', currentPath)
+                          e.dataTransfer.effectAllowed = 'copy'
+                          e.stopPropagation()
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {keyName}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs font-mono">{currentPath}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <span className="text-muted-foreground">:</span>
               </>
             )}
-            <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-              {Array.isArray(data) ? `[${data.length}]` : `{${Object.keys(data).length}}`}
-            </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span 
+                    className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                      e.dataTransfer.effectAllowed = 'copy'
+                      e.stopPropagation()
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {Array.isArray(data) ? `[${data.length}]` : `{${Object.keys(data).length}}`}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <span className="text-xs text-muted-foreground italic">
               ({getValueType(data)})
             </span>
           </div>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent>
-          <div>
+          <div className="border-l border-border/20 ml-2">
             {Array.isArray(data) ? (
               // Array handling
               data.map((item, index) => (
@@ -355,6 +476,7 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
                   data={item}
                   level={level + 1}
                   keyName={`[${index}]`}
+                  parentPath={currentPath}
                   expandedState={expandedState}
                   onExpandedChange={onExpandedChange}
                 />
@@ -367,6 +489,7 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
                   data={value}
                   level={level + 1}
                   keyName={key}
+                  parentPath={currentPath}
                   expandedState={expandedState}
                   onExpandedChange={onExpandedChange}
                 />
@@ -401,34 +524,34 @@ function SchemaViewer({ data, level, keyName, expandedState, onExpandedChange }:
 function getRelevantData(executionData: any): any {
   // Extract the most relevant data from execution result
   // Usually the actual data is nested within execution metadata
-  
+
   // If it's an array, get the first item (common in nodeDrop)
   if (Array.isArray(executionData) && executionData.length > 0) {
     const firstItem = executionData[0]
-    
+
     // If the first item has a 'json' property, use that (common nodeDrop pattern)
     if (firstItem && typeof firstItem === 'object' && firstItem.json) {
       return firstItem.json
     }
-    
+
     // If the first item has a 'main' property with data
     if (firstItem && typeof firstItem === 'object' && firstItem.main) {
       return getRelevantData(firstItem.main)
     }
-    
+
     return firstItem
   }
-  
+
   // If it's an object with 'json' property
   if (executionData && typeof executionData === 'object' && executionData.json) {
     return executionData.json
   }
-  
+
   // If it's an object with 'main' property
   if (executionData && typeof executionData === 'object' && executionData.main) {
     return getRelevantData(executionData.main)
   }
-  
+
   // Return as-is if we can't find a better structure
   return executionData
 }
@@ -454,10 +577,17 @@ function getRelevantData(executionData: any): any {
  */
 export function InputsColumn({ node }: InputsColumnProps) {
   const { workflow, getNodeExecutionResult, executeNode } = useWorkflowStore()
+  const { nodeTypes } = useNodeTypes()
 
   // State management for tree expansion and active tab view
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
   const [activeTab, setActiveTab] = useState<'schema' | 'json' | 'table'>('schema')
+
+  // Check if current node is a trigger - triggers should not have inputs
+  const isTriggerNode = useMemo(() => {
+    const capability = getNodeExecutionCapability(node.type)
+    return capability === 'trigger'
+  }, [node.type])
 
   // Handle node execution
   const handleExecuteNode = (nodeId: string) => {
@@ -471,33 +601,76 @@ export function InputsColumn({ node }: InputsColumnProps) {
         "workflow-called",
       ];
       const mode = triggerNodeTypes.includes(nodeToExecute.type) ? "workflow" : "single";
-      
+
       // Execute with undefined inputData (will use data from connected nodes)
       executeNode(nodeId, undefined, mode)
     }
   }
 
-  // Get connected input nodes - these are nodes that feed data into current node
-  // Memoize to prevent recreating arrays on every render
-  const inputConnections = useMemo(() => 
-    workflow?.connections.filter(conn => conn.targetNodeId === node.id) || [],
-    [workflow?.connections, node.id]
-  )
-  
-  const inputNodes = useMemo(() => 
-    inputConnections.map(conn => 
-      workflow?.nodes.find(n => n.id === conn.sourceNodeId)
-    ).filter(Boolean) as WorkflowNode[],
-    [inputConnections, workflow?.nodes]
-  )
+  // Get ALL previous nodes in the workflow (not just directly connected)
+  // This allows users to access variables from any node that comes before in the workflow
+  const getAllPreviousNodes = useMemo(() => {
+    if (!workflow) return []
+    
+    const visited = new Set<string>()
+    const previousNodes: WorkflowNode[] = []
+    
+    // Recursive function to traverse backwards through the workflow
+    const traverse = (nodeId: string) => {
+      if (visited.has(nodeId)) return
+      visited.add(nodeId)
+      
+      // Find all connections that target this node
+      const incomingConnections = workflow.connections.filter(
+        conn => conn.targetNodeId === nodeId
+      )
+      
+      // For each incoming connection, add the source node and traverse it
+      incomingConnections.forEach(conn => {
+        const sourceNode = workflow.nodes.find(n => n.id === conn.sourceNodeId)
+        if (sourceNode && !previousNodes.find(n => n.id === sourceNode.id)) {
+          previousNodes.push(sourceNode)
+        }
+        // Recursively traverse to find all ancestors
+        traverse(conn.sourceNodeId)
+      })
+    }
+    
+    // Start traversal from current node
+    traverse(node.id)
+    
+    return previousNodes
+  }, [workflow, node.id])
 
-  // Create node items with connections
+  // Get direct input connections for connection metadata
+  const inputConnections = useMemo(() => {
+    if (!workflow) return []
+    return workflow.connections.filter(conn => conn.targetNodeId === node.id)
+  }, [workflow, node.id])
+
+  // Use all previous nodes instead of just directly connected ones
+  const inputNodes = getAllPreviousNodes
+
+  // Create node items with connections (if they exist)
   const nodeItems = useMemo(() => {
-    return inputNodes.map((inputNode, index) => ({
-      node: inputNode,
-      connection: inputConnections[index]
-    }))
-  }, [inputNodes, inputConnections])
+    return inputNodes.map((inputNode) => {
+      // Find direct connection to this node (if exists)
+      const directConnection = inputConnections.find(
+        conn => conn.sourceNodeId === inputNode.id
+      )
+      
+      return {
+        node: inputNode,
+        connection: directConnection || {
+          // Provide default connection info for indirect nodes
+          sourceNodeId: inputNode.id,
+          targetNodeId: node.id,
+          sourceOutput: 'output',
+          targetInput: 'input'
+        }
+      }
+    })
+  }, [inputNodes, inputConnections, node.id])
 
   // Initialize expanded state for all nodes
   useEffect(() => {
@@ -528,25 +701,33 @@ export function InputsColumn({ node }: InputsColumnProps) {
     }
   }
 
-  const getNodeIcon = (nodeType: string) => {
-    const capability = getNodeExecutionCapability(nodeType)
-    switch (capability) {
-      case 'trigger':
-        return <Zap className="h-4 w-4 text-muted-foreground" />
-      case 'action':
-        return <Settings className="h-4 w-4 text-muted-foreground" />
-      case 'transform':
-        return <Code className="h-4 w-4 text-muted-foreground" />
-      case 'condition':
-        return <GitBranch className="h-4 w-4 text-muted-foreground" />
-      default:
-        return <FolderOpen className="h-4 w-4 text-muted-foreground" />
-    }
+  // If this is a trigger node, show a message that triggers don't have inputs
+  if (isTriggerNode) {
+    return (
+      <div className="flex w-full h-full border-r flex-col">
+        {/* No header for trigger nodes - they don't have inputs */}
+        <div className="h-full overflow-y-auto flex items-center justify-center">
+          {/* Show webhook-specific UI for webhook triggers */}
+          {node.type === 'webhook-trigger' ? (
+            <WebhookTriggerInput node={node} />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center space-y-4">
+              <div>
+                <Zap className="w-8 h-8 text-yellow-400 mb-2 mx-auto" />
+                <p className="text-sm font-medium text-gray-700">Trigger Node</p>
+                <p className="text-xs text-gray-500 mt-1">Triggers don't accept inputs</p>
+                <p className="text-xs text-gray-400 mt-2">They are the starting point of your workflow</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
   }
 
   if (inputNodes.length === 0) {
     return (
-      <div className="flex w-full h-full border-r border-gray-200 flex-col">
+      <div className="flex w-full h-full border-r flex-col">
         <div className="p-4 border-b h-[72px] flex items-center">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center space-x-2">
@@ -567,9 +748,9 @@ export function InputsColumn({ node }: InputsColumnProps) {
                     This panel shows categorized input connections to this node, organized by node types.
                   </p>
                   <div className="text-xs text-gray-500">
-                    • Nodes grouped by category (Triggers, Actions, etc.)<br/>
-                    • Click categories to expand/collapse<br/>
-                    • Execute workflow to view live data<br/>
+                    • Nodes grouped by category (Triggers, Actions, etc.)<br />
+                    • Click categories to expand/collapse<br />
+                    • Execute workflow to view live data<br />
                     • Click "View Data" to inspect details
                   </div>
                 </div>
@@ -577,7 +758,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
             </HoverCard>
           </div>
         </div>
-        
+
         <div className="h-[calc(100dvh-222px)] overflow-y-auto p-4">
           <div className="flex flex-col items-center justify-center h-32 text-center">
             <ArrowLeft className="w-8 h-8 text-gray-300 mb-2" />
@@ -590,7 +771,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
   }
 
   return (
-    <div className="flex w-full h-full border-r border-gray-200 flex-col">
+    <div className="flex w-full h-full border-r flex-col">
       <div className="border-b">
         <div className="p-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -616,17 +797,17 @@ export function InputsColumn({ node }: InputsColumnProps) {
           </Tabs>
         </div>
       </div>
-      
+
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
         <div className="h-[calc(100dvh-262px)] overflow-y-auto">
-          
+
           {/* Schema Tab - Unified Tree */}
           <TabsContent value="schema" className="m-0 p-0">
             <div className="space-y-0">
               {nodeItems.map((item) => {
                 const { node: inputNode, connection } = item
                 const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
-                
+
                 return (
                   <UnifiedTreeNode
                     key={inputNode.id}
@@ -641,7 +822,6 @@ export function InputsColumn({ node }: InputsColumnProps) {
                         [key]: expanded
                       }))
                     }}
-                    getNodeIcon={getNodeIcon}
                     getNodeStatusBadge={getNodeStatusBadge}
                     onExecuteNode={handleExecuteNode}
                   />
@@ -656,15 +836,25 @@ export function InputsColumn({ node }: InputsColumnProps) {
               {nodeItems.map((item) => {
                 const { node: inputNode } = item
                 const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
-                
+                const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
+
                 return (
                   <div key={inputNode.id} className="mb-6">
                     <div className="flex items-center gap-2 mb-2">
-                      {getNodeIcon(inputNode.type)}
+                      <NodeIconRenderer
+                        icon={inputNode.icon || nodeTypeDefinition?.icon}
+                        nodeType={inputNode.type}
+                        nodeGroup={nodeTypeDefinition?.group}
+                        displayName={inputNode.name}
+                        backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                        isTrigger={isTrigger}
+                        size="sm"
+                      />
                       <span className="text-sm font-medium">{inputNode.name}</span>
                       {nodeExecutionResult && getNodeStatusBadge(nodeExecutionResult.status)}
                     </div>
-                    
+
                     {nodeExecutionResult?.data ? (
                       <pre className="text-xs bg-muted p-3 rounded border overflow-auto max-h-64 whitespace-pre-wrap">
                         {JSON.stringify(nodeExecutionResult.data, null, 2)}
@@ -697,12 +887,22 @@ export function InputsColumn({ node }: InputsColumnProps) {
                     {nodeItems.map((item) => {
                       const { node: inputNode } = item
                       const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
-                      
+                      const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                      const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
+
                       return (
                         <tr key={inputNode.id} className="hover:bg-muted/50">
                           <td className="border border-gray-300 p-2">
                             <div className="flex items-center gap-2">
-                              {getNodeIcon(inputNode.type)}
+                              <NodeIconRenderer
+                                icon={inputNode.icon || nodeTypeDefinition?.icon}
+                                nodeType={inputNode.type}
+                                nodeGroup={nodeTypeDefinition?.group}
+                                displayName={inputNode.name}
+                                backgroundColor={inputNode.color || nodeTypeDefinition?.color || '#6b7280'}
+                                isTrigger={isTrigger}
+                                size="sm"
+                              />
                               <span className="font-medium">{inputNode.name}</span>
                             </div>
                           </td>
@@ -712,7 +912,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
                             </Badge>
                           </td>
                           <td className="border border-gray-300 p-2">
-                            {nodeExecutionResult ? 
+                            {nodeExecutionResult ?
                               getNodeStatusBadge(nodeExecutionResult.status) :
                               <Badge variant="outline">Not Run</Badge>
                             }
@@ -732,7 +932,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
               </div>
             </div>
           </TabsContent>
-          
+
         </div>
       </Tabs>
     </div>

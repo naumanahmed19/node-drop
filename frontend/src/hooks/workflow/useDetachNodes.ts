@@ -4,7 +4,7 @@ import { useCallback } from "react";
 
 function useDetachNodes() {
   const { setNodes, getNodes, getInternalNode } = useReactFlow();
-  const { saveToHistory, setDirty } = useWorkflowStore();
+  const { saveToHistory, setDirty, workflow, updateWorkflow } = useWorkflowStore();
 
   const detachNodes = useCallback(
     (ids: string[], removeParentId?: string) => {
@@ -29,14 +29,36 @@ function useDetachNodes() {
         return n;
       });
 
-      setNodes(
-        nextNodes.filter((n) => !removeParentId || n.id !== removeParentId)
-      );
+      const filteredNodes = nextNodes.filter((n) => !removeParentId || n.id !== removeParentId);
+      
+      setNodes(filteredNodes);
+
+      // Sync changes to Zustand workflow store
+      if (workflow) {
+        const existingNodesMap = new Map(workflow.nodes.map((n) => [n.id, n]));
+        const updatedNodes = filteredNodes
+          .map((rfNode) => {
+            const existingNode = existingNodesMap.get(rfNode.id);
+            if (existingNode) {
+              return {
+                ...existingNode,
+                position: rfNode.position,
+                parentId: rfNode.parentId || undefined,
+                extent: (rfNode.extent || undefined) as any,
+              };
+            }
+            return undefined;
+          })
+          .filter((node): node is NonNullable<typeof node> => node !== undefined);
+
+        // Skip history since we already saved before detaching
+        updateWorkflow({ nodes: updatedNodes }, true);
+      }
 
       // Mark workflow as dirty
       setDirty(true);
     },
-    [setNodes, getNodes, getInternalNode, saveToHistory, setDirty]
+    [setNodes, getNodes, getInternalNode, saveToHistory, setDirty, workflow, updateWorkflow]
   );
 
   return detachNodes;

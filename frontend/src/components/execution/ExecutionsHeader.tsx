@@ -1,5 +1,11 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -9,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, CheckCircle2, Circle, Pause, RefreshCw, RotateCcw, Search, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Circle, MoreVertical, Pause, RefreshCw, RotateCcw, Search, Trash2, XCircle } from 'lucide-react'
 
 interface ExecutionsHeaderProps {
   executionCount: number
@@ -24,6 +30,7 @@ interface ExecutionsHeaderProps {
   allExecutionCount: number
   onRefresh?: () => void
   isRefreshing?: boolean
+  onDeleteAll?: () => void
 }
 
 export function ExecutionsHeader({
@@ -38,7 +45,8 @@ export function ExecutionsHeader({
   workflowExecutionCount,
   allExecutionCount,
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onDeleteAll
 }: ExecutionsHeaderProps) {
   const handleClearFilters = () => {
     setSearchTerm('')
@@ -175,13 +183,35 @@ export function ExecutionsHeader({
           </Badge>
         </div>
         
-        {hasActiveFilters && (
-          <span className="text-xs text-muted-foreground">
-            {searchTerm && `"${searchTerm}"`}
-            {searchTerm && statusFilter && ' • '}
-            {statusFilter && `${statusFilter} status`}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <span className="text-xs text-muted-foreground">
+              {searchTerm && `"${searchTerm}"`}
+              {searchTerm && statusFilter && ' • '}
+              {statusFilter && `${statusFilter} status`}
+            </span>
+          )}
+          
+          {/* Actions dropdown */}
+          {executionCount > 0 && onDeleteAll && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={onDeleteAll}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete All Executions
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
     </div>
   )

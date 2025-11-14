@@ -59,6 +59,7 @@ model Workflow {
   executions       Execution[]
   variables        Variable[]
   environments     WorkflowEnvironment[]
+  scheduledJobs    ScheduledJob[]
   user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("workflows")
@@ -325,4 +326,27 @@ enum NodeExecutionStatus {
   IDLE
   COMPLETED
   FAILED
+}
+
+model ScheduledJob {
+  id             String    @id @default(cuid())
+  workflowId     String
+  triggerId      String    // References trigger.id in workflow.triggers JSON
+  jobKey         String    @unique // Bull queue job key
+  cronExpression String
+  timezone       String    @default("UTC")
+  description    String?
+  active         Boolean   @default(true)
+  lastRun        DateTime?
+  nextRun        DateTime?
+  failCount      Int       @default(0)
+  lastError      Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workflow       Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, triggerId])
+  @@index([workflowId])
+  @@index([active])
+  @@map("scheduled_jobs")
 }

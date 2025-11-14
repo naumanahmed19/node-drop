@@ -256,10 +256,26 @@ router.get(
       ];
 
       let iconPath: string | null = null;
+      
+      // First try the direct paths
       for (const possiblePath of possiblePaths) {
         if (fs.existsSync(possiblePath)) {
           iconPath = possiblePath;
           break;
+        }
+      }
+
+      // If not found, search all custom-nodes packages
+      if (!iconPath && fs.existsSync(customNodesDir)) {
+        const packages = fs.readdirSync(customNodesDir, { withFileTypes: true });
+        for (const pkg of packages) {
+          if (pkg.isDirectory()) {
+            const pkgIconPath = path.join(customNodesDir, pkg.name, "nodes", iconFileName);
+            if (fs.existsSync(pkgIconPath)) {
+              iconPath = pkgIconPath;
+              break;
+            }
+          }
         }
       }
 

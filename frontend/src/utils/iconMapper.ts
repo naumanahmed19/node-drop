@@ -13,6 +13,7 @@ import {
   Activity,
   AlertCircle,
   Archive,
+  ArrowLeftRight,
   Calendar,
   CheckCircle,
   Clock,
@@ -24,6 +25,7 @@ import {
   Filter,
   GitBranch,
   Globe,
+  Image,
   Layers,
   LayoutGrid,
   Link,
@@ -35,10 +37,14 @@ import {
   Phone,
   Play,
   RefreshCw,
+  Repeat,
   Send,
   Settings,
   Shuffle,
+  Terminal,
   Timer,
+  Upload,
+  Wand2,
   Webhook,
   Zap,
 } from "lucide-react";
@@ -55,7 +61,9 @@ export type IconType = LucideIcon | string;
  * Note: file: prefix icons are automatically handled via backend API
  */
 const SVG_ICON_REGISTRY: Record<string, string> = {
-  openai: "/src/assets/icons/openai.svg",
+  openai: "/icons/openai.svg",
+  split: "/icons/split.svg",
+  merge: "/icons/merge.svg",
 };
 
 /**
@@ -75,6 +83,8 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   timer: Timer,
   "message-circle": MessageCircle,
   "message-square": MessageSquare,
+  "message-square-reply": ArrowLeftRight,
+  "arrow-left-right": ArrowLeftRight,
   "external-link": ExternalLink,
   link: Link,
   phone: Phone,
@@ -94,6 +104,7 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   filter: Filter,
   layers: Layers,
   "layout-grid": LayoutGrid,
+  terminal: Terminal,
 
   // Logic icons
   "git-branch": GitBranch,
@@ -106,6 +117,11 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   activity: Activity,
   archive: Archive,
   command: Command,
+  repeat: Repeat,
+  image: Image,
+  upload: Upload,
+  wand2: Wand2,
+  magic: Wand2,
 };
 
 /**
@@ -132,6 +148,7 @@ const FA_TO_LUCIDE_MAP: Record<string, string> = {
   "file-alt": "file-text",
   cog: "settings",
   sliders: "settings",
+  terminal: "terminal",
 
   // Logic icons
   "code-branch": "git-branch",
@@ -149,6 +166,10 @@ const FA_TO_LUCIDE_MAP: Record<string, string> = {
   "exclamation-circle": "alert-circle",
   "check-circle": "check-circle",
   archive: "archive",
+  repeat: "repeat",
+  image: "image",
+  upload: "upload",
+  magic: "magic",
 };
 
 /**

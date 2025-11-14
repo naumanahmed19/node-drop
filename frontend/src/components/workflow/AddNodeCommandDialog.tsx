@@ -31,10 +31,10 @@ export function AddNodeCommandDialog({
   const reactFlowInstance = useReactFlow()
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
-  
+
   // Get only active node types from the store
   const { activeNodeTypes, fetchNodeTypes, refetchNodeTypes, isLoading, hasFetched } = useNodeTypes()
-  
+
   // Initialize store if needed
   useEffect(() => {
     if (activeNodeTypes.length === 0 && !isLoading && !hasFetched) {
@@ -80,7 +80,7 @@ export function AddNodeCommandDialog({
     if (!debouncedSearchQuery.trim()) {
       return activeNodeTypes
     }
-    
+
     // Use fuzzy search to filter and sort nodes
     return fuzzyFilter(
       activeNodeTypes,
@@ -93,7 +93,7 @@ export function AddNodeCommandDialog({
   const groupedNodes = useMemo(() => {
     const hasSearch = debouncedSearchQuery.trim().length > 0
     const groups = new Map<string, NodeType[]>()
-    
+
     filteredNodeTypes.forEach(node => {
       node.group.forEach(group => {
         if (!groups.has(group)) {
@@ -106,7 +106,7 @@ export function AddNodeCommandDialog({
     // Sort groups alphabetically
     const sortedGroups = Array.from(groups.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-    
+
     // When searching, fuzzy filter already sorted by relevance - don't re-sort
     // When not searching, sort nodes alphabetically within groups
     return sortedGroups.map(([groupName, nodes]) => ({
@@ -115,86 +115,149 @@ export function AddNodeCommandDialog({
     }))
   }, [filteredNodeTypes, debouncedSearchQuery])
 
+  // Helper function to check if a position overlaps with existing nodes
+  const findNonOverlappingPosition = useCallback((
+    initialPosition: { x: number; y: number },
+    nodeWidth = 200,
+    nodeHeight = 100,
+    parentId?: string
+  ) => {
+    const allNodes = reactFlowInstance?.getNodes() || []
+    const padding = 20
+
+    // Filter nodes to check - only nodes in the same parent (or no parent)
+    const nodesToCheck = allNodes.filter(n =>
+      n.type !== 'group' && n.parentId === parentId
+    )
+
+    const isOverlapping = (pos: { x: number; y: number }) => {
+      return nodesToCheck.some(node => {
+        const nodeW = (node.width || 200) + padding
+        const nodeH = (node.height || 100) + padding
+
+        return !(
+          pos.x + nodeWidth < node.position.x ||
+          pos.x > node.position.x + nodeW ||
+          pos.y + nodeHeight < node.position.y ||
+          pos.y > node.position.y + nodeH
+        )
+      })
+    }
+
+    // If initial position doesn't overlap, use it
+    if (!isOverlapping(initialPosition)) {
+      return initialPosition
+    }
+
+    // Try positions in a spiral pattern around the initial position
+    const step = 50
+    for (let radius = 1; radius <= 10; radius++) {
+      // Try right
+      const rightPos = { x: initialPosition.x + (radius * step), y: initialPosition.y }
+      if (!isOverlapping(rightPos)) return rightPos
+
+      // Try down
+      const downPos = { x: initialPosition.x, y: initialPosition.y + (radius * step) }
+      if (!isOverlapping(downPos)) return downPos
+
+      // Try down-right diagonal
+      const diagPos = { x: initialPosition.x + (radius * step), y: initialPosition.y + (radius * step) }
+      if (!isOverlapping(diagPos)) return diagPos
+
+      // Try up
+      const upPos = { x: initialPosition.x, y: initialPosition.y - (radius * step) }
+      if (!isOverlapping(upPos)) return upPos
+    }
+
+    // Fallback to initial position if no free space found
+    return initialPosition
+  }, [reactFlowInstance])
+
   const handleSelectNode = useCallback((nodeType: NodeType) => {
     if (!reactFlowInstance) return
-    
+
     // Calculate position where to add the node
     let nodePosition = { x: 300, y: 300 }
     let parentGroupId: string | undefined = undefined
     let sourceNodeIdForConnection: string | undefined = undefined
-    
+
     if (insertionContext) {
       // Check if this is a connection drop (source but no target)
       const isConnectionDrop = insertionContext.sourceNodeId && !insertionContext.targetNodeId
-      
+
       if (isConnectionDrop) {
-        // Connection was dropped on canvas - use the exact drop position
+        // Connection was dropped on canvas - position to the right of source node
         const sourceNode = reactFlowInstance.getNode(insertionContext.sourceNodeId)
         sourceNodeIdForConnection = insertionContext.sourceNodeId
-        
+
         if (sourceNode && sourceNode.parentId) {
           // Check if source node is in a group
           parentGroupId = sourceNode.parentId
         }
-        
-        if (position) {
-          // Use the exact drop position (already in flow coordinates)
-          nodePosition = position
-        } else if (sourceNode) {
-          // Fallback: position to the right of the source node
-          nodePosition = {
-            x: sourceNode.position.x + 200,
+
+        if (sourceNode) {
+          const sourceWidth = sourceNode.width || 200
+          const gap = 100
+
+          // Initial position: to the right of source node
+          const initialPosition = {
+            x: sourceNode.position.x + sourceWidth + gap,
             y: sourceNode.position.y
           }
+
+          // Find non-overlapping position
+          nodePosition = findNonOverlappingPosition(initialPosition, 200, 100, parentGroupId)
         }
       } else if (insertionContext.targetNodeId) {
-        // Inserting between nodes - use existing logic
+        // Inserting between nodes
         const sourceNode = reactFlowInstance.getNode(insertionContext.sourceNodeId)
         const targetNode = reactFlowInstance.getNode(insertionContext.targetNodeId)
-        
+
         if (sourceNode && targetNode) {
           // Check if source node is in a group
           if (sourceNode.parentId) {
             parentGroupId = sourceNode.parentId
           }
-          
-          // Assume standard node width (adjust based on your node sizes)
-          const nodeWidth = 150
-          const gap = 25
-          
+
+          const sourceWidth = sourceNode.width || 200
+          const targetWidth = targetNode.width || 200
+          const newNodeWidth = 200
+          const gap = 80
+
           // Calculate the vector from source to target
           const deltaX = targetNode.position.x - sourceNode.position.x
           const deltaY = targetNode.position.y - sourceNode.position.y
           const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
-          
+
           // Calculate direction vector (normalized)
           const directionX = deltaX / distance
           const directionY = deltaY / distance
-          
-          // Position new node: source node + its width + gap
-          const distanceFromSource = nodeWidth + gap
-          nodePosition = {
-            x: sourceNode.position.x + directionX * distanceFromSource,
-            y: sourceNode.position.y + directionY * distanceFromSource
-          }
-          
-          // Calculate minimum distance needed: source width + gap + new node width + gap
-          const minDistanceNeeded = nodeWidth + gap + nodeWidth + gap
-          
-          // If current distance is less than needed, shift target node and all downstream nodes
-          if (distance < minDistanceNeeded) {
-            const additionalSpace = minDistanceNeeded - distance
+
+          // Calculate minimum distance needed for all three nodes
+          const minDistanceNeeded = sourceWidth + gap + newNodeWidth + gap
+
+          // Position new node between source and target
+          if (distance >= minDistanceNeeded + targetWidth) {
+            // Enough space - place in the middle
+            const distanceFromSource = sourceWidth + gap
+            nodePosition = {
+              x: sourceNode.position.x + directionX * distanceFromSource,
+              y: sourceNode.position.y + directionY * distanceFromSource
+            }
+          } else {
+            // Not enough space - shift target and downstream nodes
+            const additionalSpace = minDistanceNeeded - distance + targetWidth
             const shiftX = directionX * additionalSpace
             const shiftY = directionY * additionalSpace
-            
+
             // Helper function to recursively shift nodes
             const shiftNodeAndDownstream = (nodeId: string, visited = new Set<string>()) => {
               if (visited.has(nodeId)) return
               visited.add(nodeId)
-              
+
               const node = reactFlowInstance.getNode(nodeId)
               if (!node) return
-              
+
               // Shift this node
               updateNode(nodeId, {
                 position: {
@@ -202,7 +265,7 @@ export function AddNodeCommandDialog({
                   y: node.position.y + shiftY
                 }
               })
-              
+
               // Find all connections where this node is the source and shift their targets
               workflow?.connections.forEach(conn => {
                 if (conn.sourceNodeId === nodeId) {
@@ -210,47 +273,60 @@ export function AddNodeCommandDialog({
                 }
               })
             }
-            
+
             // Start shifting from the target node
             shiftNodeAndDownstream(insertionContext.targetNodeId)
+
+            // Now position the new node
+            const distanceFromSource = sourceWidth + gap
+            nodePosition = {
+              x: sourceNode.position.x + directionX * distanceFromSource,
+              y: sourceNode.position.y + directionY * distanceFromSource
+            }
           }
         } else if (sourceNode) {
           // Fallback: position to the right of source node
-          nodePosition = {
-            x: sourceNode.position.x + 300,
+          const sourceWidth = sourceNode.width || 200
+          const initialPosition = {
+            x: sourceNode.position.x + sourceWidth + 100,
             y: sourceNode.position.y
           }
+          nodePosition = findNonOverlappingPosition(initialPosition, 200, 100, sourceNode.parentId)
         }
       }
     } else {
       // No insertion context - check if there's a selected node to connect from
       const selectedNodes = reactFlowInstance.getNodes().filter(node => node.selected)
-      
+
       if (selectedNodes.length === 1) {
         // Single node selected - position new node to the right and connect
         const selectedNode = selectedNodes[0]
         sourceNodeIdForConnection = selectedNode.id
-        
+
         // Check if selected node is in a group
         if (selectedNode.parentId) {
           parentGroupId = selectedNode.parentId
         }
-        
-        // Position to the right of the selected node
-        nodePosition = {
-          x: selectedNode.position.x + 250,
+
+        // Position to the right of the selected node with overlap detection
+        const selectedWidth = selectedNode.width || 200
+        const gap = 100
+        const initialPosition = {
+          x: selectedNode.position.x + selectedWidth + gap,
           y: selectedNode.position.y
         }
+        nodePosition = findNonOverlappingPosition(initialPosition, 200, 100, parentGroupId)
       } else if (position) {
-        // Position is already in flow coordinates from openDialog caller
-        // (either from WorkflowEditor's viewport center or from connection drag)
-        nodePosition = position
+        // Position provided (e.g., from keyboard shortcut or viewport center)
+        // Check for overlaps and adjust if needed
+        nodePosition = findNonOverlappingPosition(position, 200, 100)
       } else {
         // Get center of viewport as fallback
-        nodePosition = reactFlowInstance.screenToFlowPosition({
+        const viewportCenter = reactFlowInstance.screenToFlowPosition({
           x: window.innerWidth / 2,
           y: window.innerHeight / 2,
         })
+        nodePosition = findNonOverlappingPosition(viewportCenter, 200, 100)
       }
     }
 
@@ -279,7 +355,7 @@ export function AddNodeCommandDialog({
       icon: nodeType.icon,
       color: nodeType.color,
       // If source node is in a group, add new node to the same group
-      ...(parentGroupId && { 
+      ...(parentGroupId && {
         parentId: parentGroupId,
         extent: 'parent' as const
       }),
@@ -291,11 +367,11 @@ export function AddNodeCommandDialog({
     // Create connection if we have a source node
     // Either from insertionContext (drag from connector) or sourceNodeIdForConnection (selected node)
     const effectiveSourceNodeId = insertionContext?.sourceNodeId || sourceNodeIdForConnection
-    
+
     if (effectiveSourceNodeId) {
       // Check if this is inserting between nodes (only possible with insertionContext)
       const isInsertingBetweenNodes = insertionContext?.targetNodeId && insertionContext.targetNodeId !== ''
-      
+
       if (isInsertingBetweenNodes && insertionContext) {
         // First, find and remove the existing connection between source and target
         const existingConnection = workflow?.connections.find(
@@ -324,10 +400,17 @@ export function AddNodeCommandDialog({
 
       // If there's a target node specified (inserting between nodes), wire the new node to it
       if (isInsertingBetweenNodes && insertionContext?.targetNodeId) {
+        // Determine the appropriate output handle for the new node
+        // Use the first available output from the node type, or 'main' as fallback
+        let newNodeOutput = 'main'
+        if (nodeType.outputs && nodeType.outputs.length > 0) {
+          newNodeOutput = nodeType.outputs[0] // outputs is string[], not object[]
+        }
+
         const targetConnection: WorkflowConnection = {
           id: `${newNode.id}-${insertionContext.targetNodeId}-${Date.now() + 1}`,
           sourceNodeId: newNode.id,
-          sourceOutput: 'main',
+          sourceOutput: newNodeOutput,
           targetNodeId: insertionContext.targetNodeId,
           targetInput: insertionContext.targetInput || 'main',
         }
@@ -346,12 +429,12 @@ export function AddNodeCommandDialog({
     )
 
     onOpenChange(false)
-  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext])
+  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext, findNonOverlappingPosition])
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput 
-        placeholder="Search nodes..." 
+      <CommandInput
+        placeholder="Search nodes..."
         value={searchQuery}
         onValueChange={setSearchQuery}
       />
@@ -360,7 +443,7 @@ export function AddNodeCommandDialog({
         {(() => {
           // Track which nodes have already been rendered to avoid duplicates
           const renderedNodeTypes = new Set<string>()
-          
+
           return groupedNodes.map((group, index) => (
             <div key={group.name}>
               {index > 0 && <CommandSeparator />}
@@ -371,7 +454,7 @@ export function AddNodeCommandDialog({
                     return null
                   }
                   renderedNodeTypes.add(node.type)
-                  
+
                   return (
                     <CommandItem
                       key={node.type}
@@ -399,9 +482,9 @@ export function AddNodeCommandDialog({
                       </div>
                       <div className="flex gap-1 flex-wrap">
                         {node.group.slice(0, 2).map((g) => (
-                          <Badge 
-                            key={g} 
-                            variant="secondary" 
+                          <Badge
+                            key={g}
+                            variant="secondary"
                             className="text-xs h-5"
                           >
                             {g}

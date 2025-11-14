@@ -14,14 +14,15 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { useDetachNodes } from '@/hooks/workflow'
+import { useDetachNodes, useDeleteNodes } from '@/hooks/workflow'
 import { useWorkflowStore } from '@/stores'
 import { GroupEditDialog } from '../GroupEditDialog'
 
 function GroupNode({ id, data }: NodeProps) {
   const detachNodes = useDetachNodes()
-  const { getNodes, setNodes } = useReactFlow()
-  const { saveToHistory, setDirty, workflow } = useWorkflowStore()
+  const deleteNodes = useDeleteNodes()
+  const { getNodes } = useReactFlow()
+  const { workflow } = useWorkflowStore()
   const [showEditDialog, setShowEditDialog] = useState(false)
 
   // Get the group node data from workflow store
@@ -47,37 +48,9 @@ function GroupNode({ id, data }: NodeProps) {
   }, [childNodes, detachNodes, id])
 
   const onDeleteGroup = useCallback(() => {
-    // Take snapshot for undo/redo
-    saveToHistory('Delete group')
-
-    // Get all nodes
-    const allNodes = getNodes()
-    
-    // Detach child nodes and convert to absolute positions
-    const nextNodes = allNodes.map((n) => {
-      if (n.parentId === id) {
-        const parentNode = allNodes.find(node => node.id === id)
-        
-        return {
-          ...n,
-          position: {
-            x: n.position.x + (parentNode?.position.x ?? 0),
-            y: n.position.y + (parentNode?.position.y ?? 0),
-          },
-          expandParent: undefined,
-          parentId: undefined,
-          extent: undefined,
-        }
-      }
-      return n
-    })
-
-    // Remove the group node itself
-    setNodes(nextNodes.filter((n) => n.id !== id))
-
-    // Mark workflow as dirty
-    setDirty(true)
-  }, [id, getNodes, setNodes, saveToHistory, setDirty])
+    // Use shared delete handler for consistency
+    deleteNodes([id])
+  }, [id, deleteNodes])
 
   return (
     <>

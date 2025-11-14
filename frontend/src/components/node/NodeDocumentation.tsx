@@ -33,7 +33,7 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
     }
 
     return (
-      <code className="text-xs bg-gray-100 px-2 py-1 rounded text-blue-600">
+      <code className="text-xs bg-muted px-2 py-1 rounded text-primary">
         {typeDisplay}
       </code>
     )
@@ -48,24 +48,24 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
     const isExpanded = expandedSections[key]
     
     return (
-      <div className="border border-gray-200 rounded-md">
+      <div className="border rounded-md">
         <button
           onClick={() => toggleSection(key)}
-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-4 py-3 flex items-center justify-between hover:bg-accent transition-colors"
         >
           <div className="flex items-center space-x-2">
             {icon}
-            <span className="font-medium text-gray-900">{title}</span>
+            <span className="font-medium">{title}</span>
           </div>
           {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
           )}
         </button>
         
         {isExpanded && (
-          <div className="px-4 pb-4 border-t border-gray-100">
+          <div className="px-4 pb-4 border-t">
             {content}
           </div>
         )}
@@ -75,24 +75,24 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
 
   const overviewContent = (
     <div className="space-y-3 pt-3">
-      <p className="text-gray-700">{nodeType.description}</p>
+      <p>{nodeType.description}</p>
       
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
-          <span className="font-medium text-gray-600">Version:</span>
-          <span className="ml-2 text-gray-900">{nodeType.version}</span>
+          <span className="font-medium text-muted-foreground">Version:</span>
+          <span className="ml-2">{nodeType.version}</span>
         </div>
         <div>
-          <span className="font-medium text-gray-600">Group:</span>
-          <span className="ml-2 text-gray-900">{nodeType.group.join(', ')}</span>
+          <span className="font-medium text-muted-foreground">Group:</span>
+          <span className="ml-2">{nodeType.group.join(', ')}</span>
         </div>
         <div>
-          <span className="font-medium text-gray-600">Inputs:</span>
-          <span className="ml-2 text-gray-900">{nodeType.inputs.join(', ')}</span>
+          <span className="font-medium text-muted-foreground">Inputs:</span>
+          <span className="ml-2">{nodeType.inputs.join(', ')}</span>
         </div>
         <div>
-          <span className="font-medium text-gray-600">Outputs:</span>
-          <span className="ml-2 text-gray-900">{nodeType.outputs.join(', ')}</span>
+          <span className="font-medium text-muted-foreground">Outputs:</span>
+          <span className="ml-2">{nodeType.outputs.join(', ')}</span>
         </div>
       </div>
     </div>
@@ -101,33 +101,33 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
   const propertiesContent = (
     <div className="space-y-4 pt-3">
       {nodeType.properties.length === 0 ? (
-        <p className="text-gray-500 italic">This node has no configurable properties.</p>
+        <p className="text-muted-foreground italic">This node has no configurable properties.</p>
       ) : (
         nodeType.properties.map((property) => (
-          <div key={property.name} className="border border-gray-100 rounded-md p-3">
+          <div key={property.name} className="border rounded-md p-3 bg-muted/20">
             <div className="flex items-start justify-between mb-2">
               <div>
-                <h4 className="font-medium text-gray-900 flex items-center space-x-2">
+                <h4 className="font-medium flex items-center space-x-2">
                   <span>{property.displayName}</span>
                   {property.required && (
                     <span className="text-red-500 text-xs">*</span>
                   )}
                 </h4>
-                <p className="text-sm text-gray-600 mt-1">{property.description}</p>
+                <p className="text-sm text-muted-foreground mt-1">{property.description}</p>
               </div>
               {renderPropertyType(property)}
             </div>
             
-            <div className="text-xs text-gray-500 space-y-1">
+            <div className="text-xs text-muted-foreground space-y-1">
               <div>
                 <span className="font-medium">Parameter name:</span>
-                <code className="ml-1 bg-gray-100 px-1 rounded">{property.name}</code>
+                <code className="ml-1 bg-muted px-1 rounded">{property.name}</code>
               </div>
               
               {property.default !== undefined && (
                 <div>
                   <span className="font-medium">Default value:</span>
-                  <code className="ml-1 bg-gray-100 px-1 rounded">
+                  <code className="ml-1 bg-muted px-1 rounded">
                     {JSON.stringify(property.default)}
                   </code>
                 </div>
@@ -139,10 +139,10 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
                   <div className="mt-1 space-y-1">
                     {property.options.map((option) => (
                       <div key={option.value} className="ml-2">
-                        <code className="bg-gray-100 px-1 rounded text-xs">
+                        <code className="bg-muted px-1 rounded text-xs">
                           {option.value}
                         </code>
-                        <span className="ml-2 text-gray-600">{option.name}</span>
+                        <span className="ml-2">{option.name}</span>
                       </div>
                     ))}
                   </div>
@@ -158,15 +158,15 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
   const credentialsContent = (
     <div className="space-y-3 pt-3">
       {!nodeType.credentials || nodeType.credentials.length === 0 ? (
-        <p className="text-gray-500 italic">This node does not require credentials.</p>
+        <p className="text-muted-foreground italic">This node does not require credentials.</p>
       ) : (
         nodeType.credentials.map((credential) => (
-          <div key={credential.name} className="border border-gray-100 rounded-md p-3">
-            <h4 className="font-medium text-gray-900">{credential.displayName}</h4>
-            <p className="text-sm text-gray-600 mt-1">{credential.description}</p>
-            <div className="text-xs text-gray-500 mt-2">
+          <div key={credential.name} className="border rounded-md p-3 bg-muted/20">
+            <h4 className="font-medium">{credential.displayName}</h4>
+            <p className="text-sm text-muted-foreground mt-1">{credential.description}</p>
+            <div className="text-xs text-muted-foreground mt-2">
               <span className="font-medium">Type:</span>
-              <code className="ml-1 bg-gray-100 px-1 rounded">{credential.name}</code>
+              <code className="ml-1 bg-muted px-1 rounded">{credential.name}</code>
             </div>
           </div>
         ))
@@ -176,9 +176,9 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
 
   const examplesContent = (
     <div className="space-y-4 pt-3">
-      <div className="border border-gray-100 rounded-md p-3">
-        <h4 className="font-medium text-gray-900 mb-2">Basic Configuration</h4>
-        <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+      <div className="border rounded-md p-3 bg-muted/20">
+        <h4 className="font-medium mb-2">Basic Configuration</h4>
+        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
 {JSON.stringify({
   type: nodeType.type,
   name: nodeType.displayName,
@@ -188,9 +188,9 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
       </div>
       
       {nodeType.properties.length > 0 && (
-        <div className="border border-gray-100 rounded-md p-3">
-          <h4 className="font-medium text-gray-900 mb-2">Example Parameters</h4>
-          <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+        <div className="border rounded-md p-3 bg-muted/20">
+          <h4 className="font-medium mb-2">Example Parameters</h4>
+          <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
 {JSON.stringify(
   nodeType.properties.reduce((acc, prop) => {
     if (prop.default !== undefined) {
@@ -213,9 +213,9 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
         </div>
       )}
 
-      <div className="border border-gray-100 rounded-md p-3">
-        <h4 className="font-medium text-gray-900 mb-2">Sample Input Data</h4>
-        <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+      <div className="border rounded-md p-3 bg-muted/20">
+        <h4 className="font-medium mb-2">Sample Input Data</h4>
+        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
 {JSON.stringify({
   main: [
     [
@@ -231,26 +231,26 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
   ]
 }, null, 2)}
         </pre>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           This is the expected input format for testing this node.
         </p>
       </div>
 
       {nodeType.group.includes('trigger') && (
-        <div className="border border-gray-100 rounded-md p-3">
-          <h4 className="font-medium text-gray-900 mb-2">Trigger Usage</h4>
-          <p className="text-xs text-gray-600 mb-2">
+        <div className="border rounded-md p-3 bg-muted/20">
+          <h4 className="font-medium mb-2">Trigger Usage</h4>
+          <p className="text-xs text-muted-foreground mb-2">
             This node can be used as a workflow trigger. It will start the workflow when the specified conditions are met.
           </p>
-          <div className="bg-blue-50 p-2 rounded text-xs text-blue-700">
+          <div className="bg-blue-50 dark:bg-blue-950 p-2 rounded text-xs text-blue-700 dark:text-blue-400">
             <strong>Note:</strong> Trigger nodes should be placed at the beginning of your workflow.
           </div>
         </div>
       )}
 
-      <div className="border border-gray-100 rounded-md p-3">
-        <h4 className="font-medium text-gray-900 mb-2">Common Use Cases</h4>
-        <ul className="text-xs text-gray-600 space-y-1">
+      <div className="border rounded-md p-3 bg-muted/20">
+        <h4 className="font-medium mb-2">Common Use Cases</h4>
+        <ul className="text-xs text-muted-foreground space-y-1">
           {nodeType.group.includes('http') && (
             <li>• Making API calls to external services</li>
           )}
@@ -274,7 +274,7 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
     <div className="space-y-3">
       <div className="flex items-center space-x-2 mb-4">
         <Book className="w-5 h-5 text-blue-500" />
-        <h3 className="text-lg font-semibold text-gray-900">Node Documentation</h3>
+        <h3 className="text-lg font-semibold">Node Documentation</h3>
       </div>
 
       <div className="space-y-2">

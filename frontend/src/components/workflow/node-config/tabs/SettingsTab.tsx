@@ -140,6 +140,12 @@ export function SettingsTab({ nodeType, readOnly = false }: SettingsTabProps) {
       [fieldName]: value,
     }
 
+    // If continueOnFail is being disabled, also disable alwaysOutputData
+    // since alwaysOutputData only makes sense when continueOnFail is enabled
+    if (fieldName === 'continueOnFail' && value === false) {
+      newSettings.alwaysOutputData = false
+    }
+
     updateNodeSettings(newSettings)
   }
 

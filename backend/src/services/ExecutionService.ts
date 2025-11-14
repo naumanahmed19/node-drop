@@ -84,8 +84,10 @@ export class ExecutionService {
     triggerData?: any,
     options: ExecutionOptions = {},
     triggerNodeId?: string, // Optional specific trigger node ID
-    workflowData?: { nodes?: any[]; connections?: any[]; settings?: any } // Optional workflow data
+    workflowData?: { nodes?: any[]; connections?: any[]; settings?: any }, // Optional workflow data
+    executionId?: string // Optional execution ID (for trigger-initiated executions)
   ): Promise<ExecutionResult> {
+    
     try {
 
 
@@ -205,7 +207,8 @@ export class ExecutionService {
             manual: true,
             isolatedExecution: false,
           },
-          parsedWorkflow // Pass the workflow data
+          parsedWorkflow, // Pass the workflow data
+          executionId // Pass the execution ID if provided
         );
       } else {
         // Execute from first node or specified starting node
@@ -232,7 +235,8 @@ export class ExecutionService {
             manual: true,
             isolatedExecution: false,
           },
-          parsedWorkflow // Pass the workflow data
+          parsedWorkflow, // Pass the workflow data
+          executionId // Pass the execution ID if provided
         );
       }
 
@@ -249,7 +253,8 @@ export class ExecutionService {
             connections: parsedWorkflow.connections,
             settings: parsedWorkflow.settings,
           }
-          : undefined
+          : undefined,
+        options // Pass options to check saveToDatabase
       );
 
       // Collect error information from failed nodes
@@ -388,7 +393,8 @@ export class ExecutionService {
             connections: parsedWorkflow.connections,
             settings: parsedWorkflow.settings,
           }
-          : undefined
+          : undefined,
+        options // Pass options to check saveToDatabase
       );
 
       // Collect error information from failed nodes
@@ -1388,7 +1394,9 @@ export class ExecutionService {
             flowResult,
             workflowId,
             userId,
-            nodeInputData
+            nodeInputData,
+            undefined, // No workflow snapshot for single node execution
+            undefined // No options - always save single node executions
           );
 
 
@@ -1459,63 +1467,13 @@ export class ExecutionService {
           // Generate proper UUID for execution ID (same as workflow executions)
           const executionId = uuidv4();
 
-          // Create main execution record (same table as workflow executions)
-
-
-          const executionRecord = await this.prisma.execution.create({
-            data: {
-              id: executionId,
-              workflowId,
-              status: nodeResult.success ? "SUCCESS" : "ERROR",
-              startedAt: new Date(startTime),
-              finishedAt: new Date(endTime),
-              triggerData: nodeInputData || undefined,
-              // Save workflow snapshot for single node execution too
-              workflowSnapshot: workflowData
-                ? {
-                  nodes: workflowData.nodes,
-                  connections: workflowData.connections || [],
-                  settings: workflowData.settings || {},
-                }
-                : {
-                  nodes: workflowNodes,
-                  connections: [], // We don't have connections in this context
-                  settings: {},
-                },
-              error: nodeResult.success
-                ? undefined
-                : {
-                  message: nodeResult.error
-                    ? String(nodeResult.error)
-                    : "Node execution failed",
-                  nodeId: nodeId,
-                  timestamp: new Date(),
-                },
-            },
-          });
-
-
-
-          // Also create detailed node execution record
-          await this.prisma.nodeExecution.create({
-            data: {
-              id: `${executionId}_${nodeId}`,
-              executionId: executionId,
-              nodeId: nodeId,
-              status: nodeResult.success ? "SUCCESS" : "ERROR",
-              startedAt: new Date(startTime),
-              finishedAt: new Date(endTime),
-              inputData: nodeInputData || {},
-              outputData: nodeResult.data
-                ? JSON.parse(JSON.stringify(nodeResult.data))
-                : {},
-              error: nodeResult.success
-                ? undefined
-                : nodeResult.error
-                  ? String(nodeResult.error)
-                  : "Unknown error",
-            },
-          });
+          // Skip database save for individual node executions
+          // Individual node executions are for testing/debugging and shouldn't clutter execution history
+          // logger.info(`Skipping database save for individual node execution`, {
+          //   executionId,
+          //   nodeId,
+          //   workflowId,
+          // });
 
 
 
@@ -1546,15 +1504,27 @@ export class ExecutionService {
             };
           }
 
+          // Format the response to match the structure from external webhook triggers
+          // This ensures consistency between execute button and actual webhook triggers
+          const nodeExecutionResult = {
+            nodeId: nodeId,
+            status: nodeResult.success ? "completed" : "failed",
+            data: nodeResult.data ? JSON.parse(JSON.stringify(nodeResult.data)) : undefined,
+            error: executionError,
+            duration,
+          };
+
           return {
             success: true, // Execution started and ran, even if node failed
             data: {
-              executionId: executionRecord.id,
+              executionId: executionId,
               status: nodeResult.success ? "completed" : "failed", // Use same status values as workflow execution
               executedNodes: [nodeId],
               failedNodes: nodeResult.success ? [] : [nodeId],
               duration,
               hasFailures: !nodeResult.success,
+              // Include output data in the same format as FlowExecutionEngine emits via socket
+              nodeExecutions: [nodeExecutionResult],
             },
             error: executionError,
           };
@@ -1591,43 +1561,8 @@ export class ExecutionService {
     } catch (error) {
       logger.error(`Failed to execute single node ${nodeId}:`, error);
 
-      // Try to create a failed execution record
-      try {
-        const failedExecutionId = uuidv4();
-
-        await this.prisma.execution.create({
-          data: {
-            id: failedExecutionId,
-            workflowId,
-            status: "ERROR",
-            startedAt: new Date(),
-            finishedAt: new Date(),
-            triggerData: inputData || undefined,
-            error: {
-              message: error instanceof Error ? error.message : "Unknown error",
-              stack: error instanceof Error ? error.stack : undefined,
-              nodeId: nodeId,
-              timestamp: new Date(),
-            },
-          },
-        });
-
-        await this.prisma.nodeExecution.create({
-          data: {
-            id: `${failedExecutionId}_${nodeId}`,
-            executionId: failedExecutionId,
-            nodeId: nodeId,
-            status: "ERROR",
-            startedAt: new Date(),
-            finishedAt: new Date(),
-            inputData: inputData || {},
-            outputData: {},
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
-      } catch (recordError) {
-        logger.error("Failed to create failed execution record:", recordError);
-      }
+      // Skip database save for individual node executions (even on error)
+      // Individual node executions are for testing/debugging and shouldn't clutter execution history
 
       return {
         success: false,
@@ -1669,9 +1604,27 @@ export class ExecutionService {
     workflowId: string,
     userId: string,
     triggerData?: any,
-    workflowSnapshot?: { nodes: any[]; connections: any[]; settings?: any }
+    workflowSnapshot?: { nodes: any[]; connections: any[]; settings?: any },
+    options?: ExecutionOptions
   ): Promise<any> {
     try {
+      // Skip database save if configured
+      if (options?.saveToDatabase === false) {
+        console.log(`⏭️  Skipping database save for execution ${flowResult.executionId} (saveToDatabase: false)`);
+        logger.info(`Skipping database save for execution`, {
+          executionId: flowResult.executionId,
+          workflowId,
+        });
+        
+        // Return a minimal execution record for compatibility
+        return {
+          id: flowResult.executionId,
+          workflowId,
+          status: flowResult.status === "completed" ? ExecutionStatus.SUCCESS : ExecutionStatus.ERROR,
+          startedAt: new Date(Date.now() - flowResult.totalDuration),
+          finishedAt: new Date(),
+        };
+      }
       // Map flow status to execution status
       let executionStatus: ExecutionStatus;
       switch (flowResult.status) {

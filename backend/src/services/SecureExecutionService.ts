@@ -27,6 +27,7 @@ export interface SecureExecutionOptions {
   maxOutputSize?: number;
   maxRequestTimeout?: number;
   maxConcurrentRequests?: number;
+  nodeId?: string; // For state management in stateful nodes
 }
 
 export interface CredentialData {
@@ -152,6 +153,9 @@ export class SecureExecutionService {
   /**
    * Create secure execution context with credential injection
    */
+  // Store node state per execution
+  private nodeStates: Map<string, Record<string, any>> = new Map();
+
   async createSecureContext(
     parameters: Record<string, any>,
     inputData: NodeInputData,
@@ -160,9 +164,68 @@ export class SecureExecutionService {
     executionId: string,
     options: SecureExecutionOptions = {},
     workflowId?: string,
-    settings?: Record<string, any>
+    settings?: Record<string, any>,
+    nodeId?: string
   ): Promise<NodeExecutionContext> {
     const limits = this.mergeLimits(options);
+    
+    // Create state key for this node in this execution
+    const stateKey = nodeId ? `${executionId}:${nodeId}` : executionId;
+
+    // Helper function to recursively resolve parameters (including nested objects/arrays)
+    const resolveParameterValue = async (value: any): Promise<any> => {
+      if (typeof value === "string" && (value.includes("$vars") || value.includes("$local"))) {
+        try {
+          let resolvedValue = await this.variableService.replaceVariablesInText(
+            value,
+            userId,
+            workflowId
+          );
+
+          // Unwrap simple {{value}} patterns
+          const wrappedMatch = resolvedValue.match(/^\{\{(.+)\}\}$/);
+          if (wrappedMatch) {
+            const innerContent = wrappedMatch[1].trim();
+            const hasExpressionSyntax =
+              /[+\-*%()[\]<>=!&|]/.test(innerContent) ||
+              innerContent.includes("{{") ||
+              innerContent.includes("json.") ||
+              innerContent.includes("$item") ||
+              innerContent.includes("$node") ||
+              innerContent.includes("$workflow");
+
+            if (!hasExpressionSyntax) {
+              resolvedValue = innerContent;
+            }
+          }
+
+          return resolvedValue;
+        } catch (error) {
+          logger.warn("Failed to resolve variables in parameter value", {
+            originalValue: value,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+          return value;
+        }
+      } else if (Array.isArray(value)) {
+        // Recursively resolve array elements
+        return Promise.all(value.map(item => resolveParameterValue(item)));
+      } else if (value && typeof value === "object" && value.constructor === Object) {
+        // Recursively resolve object properties
+        const resolved: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+          resolved[k] = await resolveParameterValue(v);
+        }
+        return resolved;
+      }
+      return value;
+    };
+
+    // Pre-resolve all variables in parameters before creating context (including nested)
+    const resolvedParameters: Record<string, any> = {};
+    for (const [key, value] of Object.entries(parameters)) {
+      resolvedParameters[key] = await resolveParameterValue(value);
+    }
 
     // Convert credentialIds to a mapping object if it's an array
     const credentialsMapping: Record<string, string> = Array.isArray(
@@ -173,106 +236,14 @@ export class SecureExecutionService {
 
     return {
       settings: settings || {}, // Node settings from Settings tab
-      getNodeParameter: async (parameterName: string, itemIndex?: number) => {
+      getNodeParameter: (parameterName: string, itemIndex?: number) => {
         // Validate parameter access
         if (typeof parameterName !== "string") {
           throw new Error("Parameter name must be a string");
         }
 
-        let value = parameters[parameterName];
+        let value = resolvedParameters[parameterName];
         value = this.sanitizeValue(value);
-
-        // Debug logging
-        logger.info("getNodeParameter called", {
-          parameterName,
-          originalValue: value,
-          valueType: typeof value,
-          userId,
-          workflowId,
-        });
-
-        // Resolve variables ($vars and $local) if value contains them
-        // Support both: $local.key and {{$local.key}}
-        if (
-          typeof value === "string" &&
-          (value.includes("$vars") || value.includes("$local"))
-        ) {
-          logger.info("Variable detected in parameter, resolving...", {
-            parameterName,
-            value,
-          });
-
-          try {
-            // First, replace variables in the text (handles both wrapped and unwrapped)
-            let resolvedValue =
-              await this.variableService.replaceVariablesInText(
-                value,
-                userId,
-                workflowId
-              );
-
-            logger.info("After variable text replacement", {
-              parameterName,
-              originalValue: value,
-              afterReplacement: resolvedValue,
-            });
-
-            // If the entire value is just {{resolved_value}}, unwrap it
-            // This handles cases like {{$local.apiUrl}} -> {{https://...}} -> https://...
-            const wrappedMatch = resolvedValue.match(/^\{\{(.+)\}\}$/);
-            if (wrappedMatch) {
-              logger.info("Detected wrapped value, checking if should unwrap", {
-                parameterName,
-                wrappedValue: resolvedValue,
-                innerContent: wrappedMatch[1],
-              });
-
-              // Check if the content is just a simple value (no operators or functions)
-              const innerContent = wrappedMatch[1].trim();
-              // Check for nodeDrop expression syntax patterns (but not URL slashes)
-              // Allow simple values and URLs to be unwrapped
-              const hasExpressionSyntax =
-                /[+\-*%()[\]<>=!&|]/.test(innerContent) ||
-                innerContent.includes("{{") ||
-                innerContent.includes("json.") ||
-                innerContent.includes("$item") ||
-                innerContent.includes("$node") ||
-                innerContent.includes("$workflow");
-
-              if (!hasExpressionSyntax) {
-                logger.info("Unwrapping simple value", {
-                  parameterName,
-                  before: resolvedValue,
-                  after: innerContent,
-                });
-                resolvedValue = innerContent;
-              } else {
-                logger.info(
-                  "Keeping wrapped value (contains expression syntax)",
-                  {
-                    parameterName,
-                    value: resolvedValue,
-                  }
-                );
-              }
-            }
-
-            logger.info("Variable resolved successfully", {
-              parameterName,
-              originalValue: value,
-              resolvedValue,
-            });
-
-            value = resolvedValue;
-          } catch (error) {
-            logger.warn("Failed to resolve variables in parameter", {
-              parameterName,
-              originalValue: value,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-            // Continue with original value if variable resolution fails
-          }
-        }
 
         // Also unwrap simple {{value}} patterns even without variables
         // This handles cases where variables were already resolved: {{https://...}} -> https://...
@@ -304,21 +275,34 @@ export class SecureExecutionService {
           }
         }
 
-        // Auto-resolve placeholders if value is a string with {{...}} patterns
-        // This now runs AFTER variable resolution
-        if (typeof value === "string" && value.includes("{{")) {
-          // Normalize and extract input items
-          const items = normalizeInputItems(inputData.main || []);
-          const processedItems = extractJsonData(items);
-
-          if (processedItems.length > 0) {
-            // Use specified itemIndex or default to first item (0)
-            const targetIndex = itemIndex ?? 0;
-            const itemToUse = processedItems[targetIndex];
-
-            if (itemToUse) {
-              return resolveValue(value, itemToUse);
+        // Helper function to recursively resolve expressions in nested structures
+        const resolveExpressions = (val: any, itemData: any): any => {
+          if (typeof val === "string" && val.includes("{{")) {
+            return resolveValue(val, itemData);
+          } else if (Array.isArray(val)) {
+            return val.map(item => resolveExpressions(item, itemData));
+          } else if (val && typeof val === "object" && val.constructor === Object) {
+            const resolved: Record<string, any> = {};
+            for (const [k, v] of Object.entries(val)) {
+              resolved[k] = resolveExpressions(v, itemData);
             }
+            return resolved;
+          }
+          return val;
+        };
+
+        // Auto-resolve placeholders if value contains {{...}} patterns (recursively)
+        // This now runs AFTER variable resolution
+        const items = normalizeInputItems(inputData.main || []);
+        const processedItems = extractJsonData(items);
+
+        if (processedItems.length > 0) {
+          // Use specified itemIndex or default to first item (0)
+          const targetIndex = itemIndex ?? 0;
+          const itemToUse = processedItems[targetIndex];
+
+          if (itemToUse) {
+            return resolveExpressions(value, itemToUse);
           }
         }
 
@@ -377,6 +361,13 @@ export class SecureExecutionService {
       extractJsonData,
       wrapJsonData,
       normalizeInputItems,
+      // State management for stateful nodes
+      getNodeState: () => {
+        return this.nodeStates.get(stateKey) || {};
+      },
+      setNodeState: (state: Record<string, any>) => {
+        this.nodeStates.set(stateKey, state);
+      },
     };
   }
 

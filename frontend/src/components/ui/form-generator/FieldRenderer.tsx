@@ -14,10 +14,14 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { CalendarDays, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
+import { CollectionField } from './CollectionField'
+import { ConditionRow } from './ConditionRow'
+import { KeyValueRow } from './KeyValueRow'
 import { getCustomComponent } from './customComponentRegistry'
 import { DynamicAutocomplete } from './DynamicAutocomplete'
 import { ExpressionInput } from './ExpressionInput'
 import { RepeatingField } from './RepeatingField'
+import { SimpleRepeater } from './SimpleRepeater'
 import { FormFieldRendererProps } from './types'
 
 export function FieldRenderer({
@@ -43,6 +47,23 @@ export function FieldRenderer({
     if (onBlur) {
       onBlur(value)
     }
+  }
+
+  // Handle SimpleRepeater component
+  if (field.component === 'SimpleRepeater') {
+    const operations = field.componentProps?.operations || field.options?.map(opt => ({
+      name: opt.name,
+      value: opt.value
+    }))
+    
+    return (
+      <SimpleRepeater
+        value={Array.isArray(value) ? value : []}
+        onChange={handleChange}
+        placeholder={field.componentProps?.placeholder}
+        operations={operations}
+      />
+    )
   }
 
   // Custom field component - support both inline and registry-based components
@@ -142,6 +163,28 @@ export function FieldRenderer({
     )
   }
 
+  // Collection type without multipleValues - use CollectionField (single object with optional nested fields)
+  if (field.type === 'collection' && !field.typeOptions?.multipleValues) {
+    const nestedFields = field.options as any[] || []
+    const placeholder = field.placeholder || 'Add Option'
+    
+    return (
+      <CollectionField
+        displayName={field.displayName}
+        fields={nestedFields}
+        value={value || {}}
+        onChange={handleChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        allValues={allValues}
+        allFields={allFields}
+        onFieldChange={onFieldChange}
+        nodeId={nodeId}
+        nodeType={nodeType}
+      />
+    )
+  }
+
   // Collection type with multipleValues - use RepeatingField
   if (field.type === 'collection' && field.typeOptions?.multipleValues) {
     // Get nested fields from componentProps
@@ -149,17 +192,86 @@ export function FieldRenderer({
     const buttonText = field.typeOptions?.multipleValueButtonText || 'Add Item'
     const titleField = field.componentProps?.titleField // Get titleField from componentProps
     
+    // Normalize value to ensure it has the correct structure
+    // Handle backward compatibility: convert old format to new format
+    const normalizedValue = Array.isArray(value) 
+      ? value.map((item, index) => {
+          // If item already has id and values, use it as-is
+          if (item && typeof item === 'object' && 'id' in item && 'values' in item) {
+            return item
+          }
+          // Otherwise, wrap it in the expected structure
+          return {
+            id: item?.id || `item_${Date.now()}_${index}`,
+            values: item || {}
+          }
+        })
+      : []
+    
     return (
       <RepeatingField
         displayName={field.displayName}
         fields={nestedFields}
-        value={Array.isArray(value) ? value : []}
+        value={normalizedValue}
         onChange={handleChange}
         addButtonText={buttonText}
         titleField={titleField}
         disabled={disabled}
         minItems={field.validation?.min}
         maxItems={field.validation?.max}
+        compact={field.componentProps?.compact}
+        nodeId={nodeId}
+        nodeType={nodeType}
+      />
+    )
+  }
+
+  // FixedCollection type - similar to collection but with predefined structure
+  if (field.type === 'fixedCollection' && field.typeOptions?.multipleValues) {
+    // Get the first option which contains the field definitions
+    const fixedCollectionOptions = field.options as any[]
+    if (!fixedCollectionOptions || fixedCollectionOptions.length === 0) {
+      return <div className="text-sm text-amber-600">No options defined for fixedCollection</div>
+    }
+    
+    const firstOption = fixedCollectionOptions[0]
+    const nestedFields = firstOption.values || []
+    const buttonText = field.typeOptions?.multipleValueButtonText || `Add ${firstOption.displayName || 'Item'}`
+    const titleField = field.componentProps?.titleField
+    
+    // Normalize value - fixedCollection stores items under the option name
+    const optionName = firstOption.name
+    const items = value?.[optionName] || []
+    
+    const normalizedValue = Array.isArray(items)
+      ? items.map((item: any, index: number) => {
+          if (item && typeof item === 'object' && 'id' in item && 'values' in item) {
+            return item
+          }
+          return {
+            id: item?.id || `item_${Date.now()}_${index}`,
+            values: item || {}
+          }
+        })
+      : []
+    
+    return (
+      <RepeatingField
+        displayName={field.displayName}
+        fields={nestedFields}
+        value={normalizedValue}
+        onChange={(newValue) => {
+          // Wrap the value back in the option name structure
+          handleChange({ [optionName]: newValue })
+        }}
+        addButtonText={buttonText}
+        titleField={titleField}
+        disabled={disabled}
+        minItems={field.validation?.min}
+        maxItems={field.validation?.max}
+        compact={field.componentProps?.compact}
+        nodeId={nodeId}
+        nodeType={nodeType}
       />
     )
   }
@@ -511,6 +623,82 @@ export function FieldRenderer({
           <CalendarDays className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         </div>
       )
+
+    case 'conditionRow':
+      return (
+        <ConditionRow
+          value={value || { key: '', expression: '', value: '' }}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          disabled={disabled || field.disabled}
+          error={error}
+          nodeId={nodeId}
+          expressionOptions={field.options}
+          keyPlaceholder={field.componentProps?.keyPlaceholder}
+          valuePlaceholder={field.componentProps?.valuePlaceholder}
+          expressionPlaceholder={field.componentProps?.expressionPlaceholder}
+        />
+      )
+
+    case 'keyValueRow':
+      return (
+        <KeyValueRow
+          value={value || { key: '', value: '' }}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          disabled={disabled || field.disabled}
+          error={error}
+          nodeId={nodeId}
+          keyPlaceholder={field.componentProps?.keyPlaceholder}
+          valuePlaceholder={field.componentProps?.valuePlaceholder}
+        />
+      )
+
+    case 'columnsMap': {
+      // Check if this field has dynamic loading
+      const loadOptionsMethod = field.typeOptions?.loadOptionsMethod;
+
+      if (loadOptionsMethod && nodeType) {
+        // Get credentials from form values
+        const credentials: Record<string, any> = {};
+        allFields.forEach((f) => {
+          if (f.type === 'credential' && allValues[f.name]) {
+            credentials[f.name] = allValues[f.name];
+          }
+        });
+
+        return (
+          <DynamicAutocomplete
+            nodeType={nodeType}
+            loadOptionsMethod={loadOptionsMethod}
+            loadOptionsDependsOn={field.typeOptions?.loadOptionsDependsOn}
+            value={value || {}}
+            onChange={handleChange}
+            placeholder={field.placeholder}
+            searchPlaceholder={`Search columns...`}
+            disabled={disabled || field.disabled}
+            error={error}
+            required={field.required}
+            displayName={field.displayName}
+            parameters={allValues}
+            credentials={credentials}
+            renderAsColumnsMap={true}
+            nodeId={nodeId}
+            onColumnsMapChange={(columnsData) => {
+              // columnsData will be an object with column names as keys and values
+              handleChange(columnsData);
+            }}
+          />
+        );
+      }
+
+      // Fallback if no dynamic loading
+      return (
+        <div className="text-sm text-amber-600">
+          columnsMap requires loadOptionsMethod to be configured
+        </div>
+      );
+    }
 
     default:
       return (

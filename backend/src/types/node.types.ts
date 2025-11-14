@@ -20,6 +20,7 @@ export interface NodeDefinition {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  outputNames?: string[]; // Optional names for each output
   credentials?: CredentialDefinition[];
   credentialSelector?: CredentialSelectorConfig;
   properties: NodeProperty[] | (() => NodeProperty[]); // Support both static and dynamic properties
@@ -63,10 +64,13 @@ export interface NodeProperty {
     | "collection"
     | "autocomplete"
     | "credential" // New: Support for credential selector
-    | "custom"; // New: Support for custom components
+    | "custom" // New: Support for custom components
+    | "conditionRow" // New: Support for condition row (key-expression-value)
+    | "columnsMap"; // New: Support for columns map (dynamic column-to-value mapping)
   required?: boolean;
   default?: any;
   description?: string;
+  tooltip?: string; // Tooltip text shown as help icon next to label
   placeholder?: string; // Placeholder text for input fields
   options?: NodePropertyOption[];
   displayOptions?: {
@@ -76,6 +80,8 @@ export interface NodeProperty {
   typeOptions?: {
     multipleValues?: boolean;
     multipleValueButtonText?: string;
+    loadOptionsMethod?: string; // Method name for dynamic options loading
+    loadOptionsDependsOn?: string[]; // Fields that this field depends on for loading options
   };
   // New: Custom component configuration
   component?: string; // Component identifier/name
@@ -134,6 +140,9 @@ export interface NodeExecutionContext {
   extractJsonData: (items: any[]) => any[];
   wrapJsonData: (items: any[]) => any[];
   normalizeInputItems: (items: any[] | any[][]) => any[];
+  // State management for stateful nodes (like Loop)
+  getNodeState?: () => Record<string, any>;
+  setNodeState?: (state: Record<string, any>) => void;
 }
 
 export interface NodeHelpers {

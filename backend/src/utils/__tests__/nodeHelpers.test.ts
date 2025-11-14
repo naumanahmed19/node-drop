@@ -7,6 +7,9 @@ import {
 } from "../nodeHelpers";
 
 describe("Node Helper Functions", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
   describe("resolveValue", () => {
     it("should resolve simple placeholders", () => {
       const item = { name: "John", age: 30 };
@@ -42,6 +45,49 @@ describe("Node Helper Functions", () => {
       const item = { name: "John" };
       const result = resolveValue("Static text", item);
       expect(result).toBe("Static text");
+    });
+
+    it("should handle URL-encoded placeholders", () => {
+      const item = { iteration: 1 };
+      // URL-encoded version of {{json.iteration}}
+      const result = resolveValue("https://jsonplaceholder.typicode.com/todos/%7B%7Bjson.iteration%7D%7D", item);
+      expect(result).toBe("https://jsonplaceholder.typicode.com/todos/1");
+    });
+
+    it("should handle partially URL-encoded values", () => {
+      const item = { id: 42 };
+      const result = resolveValue("https://api.example.com/items/%7B%7Bjson.id%7D%7D/details", item);
+      expect(result).toBe("https://api.example.com/items/42/details");
+    });
+
+    it("should resolve array-based access for multiple inputs", () => {
+      const items = [
+        { name: "John", age: 30 },
+        { name: "Jane", age: 25 }
+      ];
+      const result = resolveValue("{{json[0].name}} and {{json[1].name}}", items);
+      expect(result).toBe("John and Jane");
+    });
+
+    it("should resolve nested fields with array-based access", () => {
+      const items = [
+        { user: { profile: { email: "john@example.com" } } },
+        { user: { profile: { email: "jane@example.com" } } }
+      ];
+      const result = resolveValue("{{json[0].user.profile.email}}", items);
+      expect(result).toBe("john@example.com");
+    });
+
+    it("should handle out of bounds array access", () => {
+      const items = [{ name: "John" }];
+      const result = resolveValue("{{json[5].name}}", items);
+      expect(result).toBe("{{json[5].name}}");
+    });
+
+    it("should handle array access on non-array item", () => {
+      const item = { name: "John" };
+      const result = resolveValue("{{json[0].name}}", item);
+      expect(result).toBe("{{json[0].name}}");
     });
   });
 

@@ -5,7 +5,7 @@ import {
   SpreadsheetSelector,
   TriggerAutocomplete,
   TriggerOnAutocomplete,
-  WebhookUrlGenerator,
+  UrlGenerator,
   WidgetEmbedGenerator,
   WorkflowAutocomplete,
 } from "@/components/workflow/node-config/custom-fields";
@@ -23,7 +23,8 @@ export const customFieldComponents: Record<string, any> = {
   TriggerOnAutocomplete,
   WorkflowAutocomplete,
   TriggerAutocomplete,
-  WebhookUrlGenerator,
+  UrlGenerator,
+  WebhookUrlGenerator: UrlGenerator, // Backward compatibility alias
   WidgetEmbedGenerator,
   CodeEditor,
 };

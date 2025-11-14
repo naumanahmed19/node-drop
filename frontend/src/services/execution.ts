@@ -1,89 +1,22 @@
 import { apiClient } from "./api";
+import type {
+  ExecutionRequest,
+  ExecutionResponse,
+  ExecutionProgress,
+  ExecutionDetails,
+  SingleNodeExecutionRequest,
+  SingleNodeExecutionResult,
+} from "@/types/execution";
 
-export interface ExecutionRequest {
-  workflowId: string;
-  triggerData?: any;
-  triggerNodeId?: string;
-  // Optional workflow data to avoid requiring database save
-  workflowData?: {
-    nodes?: any[];
-    connections?: any[];
-    settings?: any;
-  };
-  options?: {
-    timeout?: number;
-    priority?: "low" | "normal" | "high";
-    manual?: boolean;
-  };
-}
-
-export interface ExecutionResponse {
-  executionId: string;
-  status?: "completed" | "failed" | "cancelled" | "partial";
-  executedNodes?: string[];
-  failedNodes?: string[];
-  duration?: number;
-  hasFailures?: boolean;
-}
-
-export interface ExecutionProgress {
-  executionId: string;
-  totalNodes: number;
-  completedNodes: number;
-  failedNodes: number;
-  currentNode?: string;
-  status: "running" | "success" | "error" | "cancelled" | "paused" | "partial";
-  startedAt: string;
-  finishedAt?: string;
-  error?: {
-    message: string;
-    stack?: string;
-    nodeId?: string;
-    timestamp: string;
-  };
-}
-
-export interface ExecutionDetails {
-  id: string;
-  workflowId: string;
-  status: "running" | "success" | "error" | "cancelled" | "paused" | "partial";
-  startedAt: string;
-  finishedAt?: string;
-  triggerData: any;
-  error?: any;
-  workflowSnapshot?: {
-    nodes: any[];
-    connections: any[];
-    settings?: any;
-  };
-  nodeExecutions: Array<{
-    id: string;
-    nodeId: string;
-    status: "running" | "success" | "error";
-    startedAt: string;
-    finishedAt?: string;
-    inputData?: any;
-    outputData?: any;
-    error?: any;
-  }>;
-}
-
-export interface SingleNodeExecutionRequest {
-  workflowId: string;
-  nodeId: string;
-  inputData?: any;
-  parameters?: Record<string, any>;
-  mode?: "single" | "workflow";
-  workflowData?: {
-    nodes?: any[];
-    connections?: any[];
-    settings?: any;
-  };
-}
-
-// Note: SingleNodeExecutionResult is now identical to ExecutionResponse
-// due to unified API - keeping interface for backward compatibility
-export type SingleNodeExecutionResult = ExecutionResponse;
+// Re-export types for convenience
+export type {
+  ExecutionRequest,
+  ExecutionResponse,
+  ExecutionProgress,
+  ExecutionDetails,
+  SingleNodeExecutionRequest,
+  SingleNodeExecutionResult,
+};
 
 export class ExecutionService {
   /**

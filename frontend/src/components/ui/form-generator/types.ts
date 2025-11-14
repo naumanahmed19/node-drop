@@ -6,6 +6,12 @@ export interface FormFieldOption {
   description?: string;
 }
 
+export interface FixedCollectionOption {
+  name: string;
+  displayName: string;
+  values: FormFieldConfig[];
+}
+
 export interface FormFieldConfig {
   name: string;
   displayName: string;
@@ -19,6 +25,7 @@ export interface FormFieldConfig {
   | "json"
   | "dateTime"
   | "collection"
+  | "fixedCollection"
   | "textarea"
   | "password"
   | "email"
@@ -26,13 +33,16 @@ export interface FormFieldConfig {
   | "switch"
   | "autocomplete"
   | "credential"
-  | "custom";
+  | "custom"
+  | "conditionRow"
+  | "keyValueRow"
+  | "columnsMap";
   required?: boolean;
   default?: any;
   description?: string;
   tooltip?: string;
   placeholder?: string;
-  options?: FormFieldOption[];
+  options?: FormFieldOption[] | FixedCollectionOption[]; // Can be regular options or fixedCollection options
   displayOptions?: {
     show?: Record<string, any[]>;
     hide?: Record<string, any[]>;
@@ -46,6 +56,8 @@ export interface FormFieldConfig {
   component?: string; // Component name for custom rendering
   componentProps?: {
     fields?: FormFieldConfig[]; // Nested fields for collection type
+    titleField?: string; // Field name to use as title in repeating items
+    compact?: boolean; // Compact mode for repeating fields
     [key: string]: any;
   };
   validation?: {
@@ -145,4 +157,6 @@ export interface RepeatingFieldProps {
   className?: string;
   showItemNumbers?: boolean;
   collapsedByDefault?: boolean;
+  nodeId?: string; // Optional: node ID for dynamic field suggestions in ExpressionInput
+  nodeType?: string; // Optional: node type for loadOptions API calls
 }

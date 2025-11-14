@@ -1,4 +1,4 @@
-import { useDetachNodes } from "@/hooks/workflow";
+import { useDetachNodes, useDeleteNodes } from "@/hooks/workflow";
 import { useAddNodeDialogStore } from "@/stores/addNodeDialog";
 import { useWorkflowStore } from "@/stores/workflow";
 import { WorkflowNode } from "@/types";
@@ -8,7 +8,6 @@ export function useNodeActions(nodeId: string) {
   const executeNode = useWorkflowStore((state) => state.executeNode);
   const updateNode = useWorkflowStore((state) => state.updateNode);
   const addNode = useWorkflowStore((state) => state.addNode);
-  const removeNode = useWorkflowStore((state) => state.removeNode);
   const toggleNodeLock = useWorkflowStore((state) => state.toggleNodeLock);
   const openNodeProperties = useWorkflowStore(
     (state) => state.openNodeProperties
@@ -20,6 +19,7 @@ export function useNodeActions(nodeId: string) {
 
   const { openDialog } = useAddNodeDialogStore();
   const detachNodes = useDetachNodes();
+  const deleteNodes = useDeleteNodes();
   const { getNodes, setNodes, getNodesBounds } = useReactFlow();
 
   const handleToggleDisabled = (nodeId: string, disabled: boolean) => {
@@ -52,7 +52,8 @@ export function useNodeActions(nodeId: string) {
   };
 
   const handleDelete = () => {
-    removeNode(nodeId);
+    // Use shared delete handler for consistency
+    deleteNodes([nodeId]);
   };
 
   const handleToggleLock = () => {
@@ -65,6 +66,7 @@ export function useNodeActions(nodeId: string) {
 
   const handleGroup = () => {
     // Get all selected nodes that are not groups and not in groups
+    // Use fresh nodes from React Flow to ensure we have current positions
     const allNodes = getNodes();
     const selectedNodes = allNodes.filter(
       (node) => node.selected && !node.parentId && node.type !== "group"
@@ -79,6 +81,8 @@ export function useNodeActions(nodeId: string) {
     saveToHistory("Group nodes");
 
     const groupId = `group_${Math.random() * 10000}`;
+    
+    // Calculate bounds using fresh positions from getNodes()
     const selectedNodesRectangle = getNodesBounds(selectedNodes);
     const GROUP_PADDING = 25;
     const groupNodePosition = {
@@ -155,7 +159,8 @@ export function useNodeActions(nodeId: string) {
         }
       });
 
-      updateWorkflow({ nodes: updatedWorkflowNodes });
+      // Skip history since we already saved before grouping
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true);
       setDirty(true);
     }
   };

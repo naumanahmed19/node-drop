@@ -523,6 +523,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
             sortOrder={marketplaceSortOrder}
             selectedCategory={marketplaceSelectedCategory}
             onCategoriesChange={setMarketplaceCategories}
+            onRefreshNodes={refetchNodeTypes}
           />
         </TabsContent>
 

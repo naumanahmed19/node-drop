@@ -43,12 +43,23 @@
  *
  */
 
+export { useAutoLayout } from "./useAutoLayout";
 export { useCopyPaste } from "./useCopyPaste";
+export { useCrossWindowCopyPaste } from "./useCrossWindowCopyPaste";
+export { useDeleteNodes } from "./useDeleteNodes";
 export { default as useDetachNodes } from "./useDetachNodes";
+export {
+  useEdgeAnimation,
+  useExecutionAwareEdges,
+  useHasAnimatedEdges,
+  useActiveEdges,
+  useCompletedEdges,
+} from "./useEdgeAnimation";
 export { useExecutionControls } from "./useExecutionControls";
 export { useExecutionPanelData } from "./useExecutionPanelData";
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 export { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
+export { useNodeValidation } from "./useNodeValidation";
 export { useReactFlowInteractions } from "./useReactFlowInteractions";
 export { useWorkflowEditorUI } from "./useWorkflowEditorUI";
 export { useWorkflowOperations } from "./useWorkflowOperations";

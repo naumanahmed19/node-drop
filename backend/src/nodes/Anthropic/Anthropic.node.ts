@@ -35,6 +35,16 @@ export const AnthropicNode: NodeDefinition = {
   ],
   properties: [
     {
+      displayName: "Authentication",
+      name: "authentication",
+      type: "credential",
+      required: true,
+      default: "",
+      description: "Select Anthropic API credentials",
+      placeholder: "Select credentials...",
+      allowedTypes: ["apiKey"],
+    },
+    {
       displayName: "Model",
       name: "model",
       type: "options",

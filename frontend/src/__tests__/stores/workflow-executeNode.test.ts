@@ -81,6 +81,12 @@ describe("WorkflowStore - executeNode", () => {
       failedNodes: [],
       duration: 1000,
       hasFailures: false,
+      // Single node executions now return output data directly (not saved to database)
+      nodeExecutions: [{
+        nodeId: "node-1",
+        outputData: { main: [[{ json: { result: "success" } }]] },
+        error: undefined,
+      }],
     };
 
     // Mock the execution service
@@ -100,6 +106,12 @@ describe("WorkflowStore - executeNode", () => {
       nodeId: "node-1",
       inputData: { main: [[]] },
       parameters: {},
+      mode: "single",
+      workflowData: {
+        nodes: mockWorkflow.nodes,
+        connections: mockWorkflow.connections,
+        settings: mockWorkflow.settings,
+      },
     });
 
     // Verify the node execution result was updated

@@ -117,12 +117,24 @@ export const HttpRequestNode: NodeDefinition = {
         },
       },
     },
+    {
+      displayName: "Response Format",
+      name: "responseFormat",
+      type: "options",
+      required: false,
+      default: "dataOnly",
+      options: [
+        { name: "Data Only", value: "dataOnly" },
+        { name: "Full Response", value: "fullResponse" },
+      ],
+      description: "Choose whether to return only the response data or the complete response including status, headers, etc.",
+    },
   ],
   execute: async function (
     inputData: NodeInputData
   ): Promise<NodeOutputData[]> {
-    const method = (await this.getNodeParameter("method")) as string;
-    const url = (await this.getNodeParameter("url")) as string;
+    const method = this.getNodeParameter("method") as string;
+    const url = this.getNodeParameter("url") as string;
 
     // Debug logging to see what we actually received
     this.logger.info("HTTP Request - Parameter values received", {
@@ -133,16 +145,18 @@ export const HttpRequestNode: NodeDefinition = {
     });
 
     const headers =
-      ((await this.getNodeParameter("headers")) as Record<string, string>) ||
+      (this.getNodeParameter("headers") as Record<string, string>) ||
       {};
-    const body = await this.getNodeParameter("body");
+    const body = this.getNodeParameter("body");
     const timeout =
-      ((await this.getNodeParameter("timeout")) as number) || 30000;
-    const followRedirects = (await this.getNodeParameter(
+      (this.getNodeParameter("timeout") as number) || 30000;
+    const followRedirects = this.getNodeParameter(
       "followRedirects"
-    )) as boolean;
+    ) as boolean;
     const maxRedirects =
-      ((await this.getNodeParameter("maxRedirects")) as number) || 5;
+      (this.getNodeParameter("maxRedirects") as number) || 5;
+    const responseFormat =
+      (this.getNodeParameter("responseFormat") as string) || "dataOnly";
 
     // Get settings from Settings tab
     const continueOnFail = this.settings?.continueOnFail ?? false;
@@ -386,8 +400,8 @@ export const HttpRequestNode: NodeDefinition = {
               responseHeaders[key] = value;
             });
 
-            // Return structured response data
-            return {
+            // Return structured response data based on format preference
+            const fullResponse = {
               status: response.status,
               statusText: response.statusText,
               headers: responseHeaders,
@@ -396,6 +410,9 @@ export const HttpRequestNode: NodeDefinition = {
               url: response.url, // Final URL after redirects
               ok: response.ok,
             };
+
+            // Return only data if dataOnly format is selected
+            return responseFormat === "dataOnly" ? responseData : fullResponse;
           } catch (fetchError) {
             clearTimeout(timeoutId);
 

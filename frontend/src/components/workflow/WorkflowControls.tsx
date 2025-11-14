@@ -2,6 +2,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { useAddNodeDialogStore, useWorkflowStore } from '@/stores'
 import { WorkflowNode } from '@/types'
+import { canExecuteWorkflow } from '@/utils/workflowExecutionGuards'
 import { useReactFlow, useStore } from '@xyflow/react'
 import { Box, Maximize2, MessageSquare, Plus, Redo, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { ReactNode, useCallback, useState } from 'react'
@@ -21,14 +22,21 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
   const [isSaving] = useState(false)
 
   // Get selected nodes count for the group button
+  // Only count top-level, non-group nodes that are selected
   const selectedNodes = useStore((state) => {
-    return state.nodes.filter(
+    const nodes = state.nodes.filter(
       (node) =>
         node.selected && 
         !node.parentId && 
-        !state.parentLookup.get(node.id) &&
         node.type !== 'group'
-    )
+    );
+    
+    // Remove duplicates by ID (shouldn't happen, but just in case)
+    const uniqueNodes = Array.from(
+      new Map(nodes.map(node => [node.id, node])).values()
+    );
+    
+    return uniqueNodes;
   })
   const selectedNodeCount = selectedNodes.length
 
@@ -88,7 +96,8 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         }
       ]
       
-      updateWorkflow({ nodes: updatedWorkflowNodes })
+      // Skip history since we already saved before adding group
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true)
     }
   }
 
@@ -99,7 +108,14 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
     saveToHistory('Group nodes')
     
     const groupId = `group_${Math.random() * 10000}`
-    const selectedNodesRectangle = getNodesBounds(selectedNodes)
+    
+    // Get fresh nodes from React Flow to ensure we have current positions
+    const allNodes = getNodes()
+    const selectedNodeIds = selectedNodes.map(n => n.id)
+    const freshSelectedNodes = allNodes.filter(n => selectedNodeIds.includes(n.id))
+    
+    // Calculate bounds using fresh positions
+    const selectedNodesRectangle = getNodesBounds(freshSelectedNodes)
     const GROUP_PADDING = 25
     const groupNodePosition = {
       x: selectedNodesRectangle.x,
@@ -117,9 +133,6 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
       },
       data: {},
     }
-
-    const allNodes = getNodes()
-    const selectedNodeIds = selectedNodes.map(n => n.id)
     
     const nextNodes = allNodes.map((node) => {
       if (selectedNodeIds.includes(node.id)) {
@@ -176,7 +189,8 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         }
       })
       
-      updateWorkflow({ nodes: updatedWorkflowNodes })
+      // Skip history since we already saved before grouping nodes
+      updateWorkflow({ nodes: updatedWorkflowNodes }, true)
       setDirty(true)
     }
   }
@@ -220,9 +234,10 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
         disabled: false,
       }
 
+      // Skip history since we already saved before adding annotation
       updateWorkflow({
         nodes: [...workflow.nodes, newWorkflowNode],
-      })
+      }, true)
       setDirty(true)
     }
   }, [screenToFlowPosition, setNodes, workflow, updateWorkflow, setDirty, saveToHistory])
@@ -230,10 +245,12 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
   const handleExecuteWorkflow = async (triggerNodeId?: string) => {
     if (!workflow) return
     
+    // Check if workflow can be executed (must be saved first)
+    if (!canExecuteWorkflow()) {
+      return
+    }
+    
     try {
-      // If workflow is not saved (has unsaved changes), we'll execute anyway
-      // The toolbar handles the save logic before execution
-      
       // Execute the workflow using the workflow store's executeNode method
       const { executeNode } = useWorkflowStore.getState()
       await executeNode(triggerNodeId || workflow.nodes.find(n => 

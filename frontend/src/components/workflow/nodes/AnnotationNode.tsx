@@ -112,9 +112,10 @@ function AnnotationNode({ id, data, selected, parentId }: NodeProps) {
     setNodes((nodes) => nodes.filter((node) => node.id !== id))
     
     // Remove from workflow store
+    // Skip history since we already saved before deletion
     updateWorkflow({
       nodes: workflow.nodes.filter((node) => node.id !== id),
-    })
+    }, true)
   }, [id, workflow, updateWorkflow, saveToHistory, setNodes])
 
   // Copy handler

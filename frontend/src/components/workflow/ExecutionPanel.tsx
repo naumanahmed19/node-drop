@@ -1,16 +1,8 @@
-import { ExecutionFlowStatus, ExecutionMetrics, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
+import { ExecutionFlowStatus, ExecutionLogEntry, ExecutionMetrics, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { useState } from 'react'
 import { ExecutionPanelContent } from './ExecutionPanelContent'
 import { ExecutionPanelHeader } from './ExecutionPanelHeader'
 import { ExecutionPanelTabs, TabType } from './ExecutionPanelTabs'
-
-interface ExecutionLogEntry {
-  timestamp: string
-  level: 'info' | 'warn' | 'error' | 'debug'
-  nodeId?: string
-  message: string
-  data?: any
-}
 
 interface ExecutionPanelProps {
   executionState: ExecutionState

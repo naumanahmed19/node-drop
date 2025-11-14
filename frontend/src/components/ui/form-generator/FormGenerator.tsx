@@ -157,36 +157,38 @@ export const FormGenerator = forwardRef<FormGeneratorRef, FormGeneratorProps>(({
   }, [visibleFields, values, externalErrors, validateOnMount, validateOnChange, hasValidated])
 
   return (
-    <div className={cn('space-y-6', className)}>
-      {visibleFields.map((field, index) => (
-        <FieldWrapper key={`${field.name}-${index}`} field={field} values={values} allFields={fields}>
-          <div className={cn('space-y-2', fieldClassName)}>
-            <FormFieldLabel 
-              field={field}
-              showRequiredIndicator={showRequiredIndicator}
-              requiredIndicator={requiredIndicator}
-            />
-            <div>
-              <FieldRenderer
+    <TooltipProvider delayDuration={200}>
+      <div className={cn('space-y-6', className)}>
+        {visibleFields.map((field) => (
+          <FieldWrapper key={field.name} field={field} values={values} allFields={fields}>
+            <div className={cn('space-y-2', fieldClassName)}>
+              <FormFieldLabel 
                 field={field}
-                value={values[field.name] ?? field.default}
-                error={allErrors[field.name]}
-                onChange={(value) => handleFieldChange(field.name, value)}
-                onBlur={(value) => handleFieldBlur(field.name, value)}
-                disabled={disabled}
-                allValues={values}
-                allFields={fields}
-                onFieldChange={handleFieldChange}
-                nodeId={nodeId}
-                nodeType={nodeType}
+                showRequiredIndicator={showRequiredIndicator}
+                requiredIndicator={requiredIndicator}
               />
+              <div>
+                <FieldRenderer
+                  field={field}
+                  value={values[field.name] ?? field.default ?? (Array.isArray(field.default) ? [] : undefined)}
+                  error={allErrors[field.name]}
+                  onChange={(value) => handleFieldChange(field.name, value)}
+                  onBlur={(value) => handleFieldBlur(field.name, value)}
+                  disabled={disabled}
+                  allValues={values}
+                  allFields={fields}
+                  onFieldChange={handleFieldChange}
+                  nodeId={nodeId}
+                  nodeType={nodeType}
+                />
+              </div>
+              <FormFieldDescription field={field} />
+              <FormFieldError error={allErrors[field.name]} />
             </div>
-            <FormFieldDescription field={field} />
-            <FormFieldError error={allErrors[field.name]} />
-          </div>
-        </FieldWrapper>
-      ))}
-    </div>
+          </FieldWrapper>
+        ))}
+      </div>
+    </TooltipProvider>
   )
 })
 
@@ -219,13 +221,13 @@ interface FormFieldLabelProps {
 }
 
 function FormFieldLabel({ field, showRequiredIndicator, requiredIndicator }: FormFieldLabelProps) {
-  // Don't show label for boolean, switch, custom component types, and collection with multipleValues (RepeatingField)
-  // RepeatingField renders its own header with displayName
+  // Don't show label for boolean, switch, custom component types, and collection types
+  // Collection components (both CollectionField and RepeatingField) render their own header with displayName
   if (
     field.type === 'boolean' || 
     field.type === 'switch' || 
     field.type === 'custom' ||
-    (field.type === 'collection' && field.typeOptions?.multipleValues)
+    field.type === 'collection'
   ) {
     return null
   }
@@ -236,17 +238,18 @@ function FormFieldLabel({ field, showRequiredIndicator, requiredIndicator }: For
         {field.displayName}
         {field.required && showRequiredIndicator && requiredIndicator}
       </span>
+    
       {field.tooltip && (
-        <TooltipProvider delayDuration={200}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
-              <p>{field.tooltip}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="inline-flex items-center justify-center">
+              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground cursor-help transition-colors" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs">
+            <p>{field.tooltip}</p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </label>
   )

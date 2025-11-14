@@ -1,52 +1,18 @@
 import { io, Socket } from 'socket.io-client';
+import type {
+  ExecutionEvent,
+  ExecutionProgress,
+  ExecutionLogEntry,
+  NodeExecutionEvent,
+} from '@/types/execution';
 
-export interface ExecutionEvent {
-  executionId: string;
-  type: 'started' | 'node-started' | 'node-completed' | 'node-failed' | 'completed' | 'failed' | 'cancelled';
-  nodeId?: string;
-  data?: any;
-  error?: {
-    message: string;
-    stack?: string;
-    nodeId?: string;
-    timestamp: Date;
-  };
-  timestamp: Date;
-}
-
-export interface ExecutionProgress {
-  executionId: string;
-  totalNodes: number;
-  completedNodes: number;
-  failedNodes: number;
-  currentNode?: string;
-  status: 'running' | 'success' | 'error' | 'cancelled';
-  startedAt: Date;
-  finishedAt?: Date;
-  error?: {
-    message: string;
-    stack?: string;
-    nodeId?: string;
-    timestamp: Date;
-  };
-}
-
-export interface ExecutionLogEntry {
-  executionId: string;
-  level: 'info' | 'warn' | 'error' | 'debug';
-  message: string;
-  nodeId?: string;
-  data?: any;
-  timestamp: Date;
-}
-
-export interface NodeExecutionEvent {
-  executionId: string;
-  nodeId: string;
-  type: 'started' | 'completed' | 'failed';
-  data?: any;
-  timestamp: string;
-}
+// Re-export types for convenience
+export type {
+  ExecutionEvent,
+  ExecutionProgress,
+  ExecutionLogEntry,
+  NodeExecutionEvent,
+};
 
 export type SocketEventHandler<T = any> = (data: T) => void;
 
@@ -93,9 +59,12 @@ export class SocketService {
           token
         },
         transports: ['websocket', 'polling'],
+        timeout: 45000,            // Match backend connectTimeout
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: this.reconnectDelay
+        reconnectionDelay: this.reconnectDelay,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
       });
 
       this.setupEventHandlers();
@@ -178,6 +147,12 @@ export class SocketService {
       console.log('Unsubscribed from workflow:', data.workflowId);
       this.emit('workflow-unsubscribed', data);
     });
+
+    // Webhook test mode event
+    this.socket.on('webhook-test-triggered', (data) => {
+      console.log('🧪 Webhook test triggered (socket.ts):', data);
+      this.emit('webhook-test-triggered', data);
+    });
   }
 
   /**
@@ -185,9 +160,6 @@ export class SocketService {
    */
   public async subscribeToExecution(executionId: string): Promise<void> {
     await this.ensureConnected();
-    
-    // Wait for connection to be established
-    await this.waitForConnection();
     
     if (!this.socket?.connected) {
       console.warn('Socket not connected, cannot subscribe to execution');
@@ -217,9 +189,6 @@ export class SocketService {
    */
   public async subscribeToWorkflow(workflowId: string): Promise<void> {
     await this.ensureConnected();
-    
-    // Wait for connection to be established
-    await this.waitForConnection();
     
     if (!this.socket?.connected) {
       console.warn('Socket not connected, cannot subscribe to workflow');
@@ -311,6 +280,13 @@ export class SocketService {
   private async ensureConnected(): Promise<void> {
     if (!this.socket || (!this.socket.connected && !this.isConnecting)) {
       await this.connect();
+      // Wait for the socket to be initialized after connect() completes
+      if (this.socket) {
+        await this.waitForConnection();
+      }
+    } else if (this.socket && !this.socket.connected) {
+      // Socket exists but not connected, wait for connection
+      await this.waitForConnection();
     }
   }
 

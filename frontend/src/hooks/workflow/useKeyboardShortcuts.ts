@@ -24,10 +24,6 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsProps) {
   // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
-  const removeNode = useWorkflowStore((state) => state.removeNode);
-  const closeNodeProperties = useWorkflowStore(
-    (state) => state.closeNodeProperties
-  );
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -67,21 +63,8 @@ export function useKeyboardShortcuts({
     [onSave, onUndo, onRedo, onDelete, onAddNode, selectedNodeId, disabled]
   );
 
-  // Delete action handler
-  const handleDelete = useCallback(() => {
-    if (disabled) return; // Don't delete in read-only mode
-    if (selectedNodeId) {
-      removeNode(selectedNodeId);
-      closeNodeProperties();
-    }
-  }, [selectedNodeId, removeNode, closeNodeProperties, disabled]);
-
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  return {
-    handleDelete,
-  };
 }

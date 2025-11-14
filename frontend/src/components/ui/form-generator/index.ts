@@ -1,8 +1,10 @@
 export * from "./CustomComponentRegistry.tsx";
+export { ConditionRow } from "./ConditionRow";
 export { FieldRenderer } from "./FieldRenderer";
 export { FieldValidator } from "./FieldValidator";
 export { FieldVisibilityManager } from "./FieldVisibilityManager";
 export { FormGenerator } from "./FormGenerator";
+export { KeyValueRow } from "./KeyValueRow";
 export { PropertyField } from "./PropertyField";
 export { RepeatingField } from "./RepeatingField";
 export * from "./types";

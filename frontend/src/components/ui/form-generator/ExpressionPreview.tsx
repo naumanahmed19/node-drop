@@ -132,7 +132,7 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
         return `[Variable not found: $local.${varKey}]`
       }
 
-      // If not a variable, check if it's a json.* expression (from connected nodes)
+      // If not a variable, check if it's a json.* or json[*].* expression (from connected nodes)
       if (!nodeId) return expression
 
       const { workflow } = workflowStore
@@ -145,12 +145,27 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
 
       if (inputConnections.length === 0) return expression
 
-      // Get data from the first connected node (or iterate through all)
-      for (const connection of inputConnections) {
+      // Check if expression is array-based (json[0].field) or object-based (json.field)
+      const arrayAccessMatch = expression.match(/^json\[(\d+)\]\.(.+)$/)
+      const objectAccessMatch = expression.match(/^json\.(.+)$/)
+      
+      if (arrayAccessMatch) {
+        // Array-based access: json[0].field
+        const inputIndex = parseInt(arrayAccessMatch[1], 10)
+        const fieldPath = arrayAccessMatch[2]
+        
+        // Get the specific input connection by index
+        if (inputIndex >= inputConnections.length) {
+          return `[Input ${inputIndex} not found - only ${inputConnections.length} input(s) available]`
+        }
+        
+        const connection = inputConnections[inputIndex]
         const sourceNodeId = connection.sourceNodeId
         const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
         
-        if (!sourceNodeResult?.data) continue
+        if (!sourceNodeResult?.data) {
+          return `[No data from input ${inputIndex}]`
+        }
 
         // Extract data structure
         let sourceData: any[] = []
@@ -160,7 +175,9 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
           sourceData = [{ json: sourceNodeResult.data }]
         }
 
-        if (sourceData.length === 0) continue
+        if (sourceData.length === 0) {
+          return `[No data from input ${inputIndex}]`
+        }
 
         // Get the first item's data
         const firstItem = sourceData[0]
@@ -172,12 +189,51 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
           itemData = firstItem
         }
 
-        if (!itemData) continue
+        if (!itemData) {
+          return `[No data from input ${inputIndex}]`
+        }
 
-        // Parse the expression (e.g., "json.field" or "json.nested.field")
-        const exprMatch = expression.match(/^json\.(.+)$/)
-        if (exprMatch) {
-          const fieldPath = exprMatch[1]
+        // Get the field value
+        const value = getNestedValue(itemData, fieldPath)
+        if (value !== undefined) {
+          return formatValue(value)
+        }
+        
+        return `[Field not found: json[${inputIndex}].${fieldPath}]`
+      } else if (objectAccessMatch) {
+        // Object-based access: json.field (single input)
+        const fieldPath = objectAccessMatch[1]
+        
+        // Get data from the first connected node
+        for (const connection of inputConnections) {
+          const sourceNodeId = connection.sourceNodeId
+          const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
+          
+          if (!sourceNodeResult?.data) continue
+
+          // Extract data structure
+          let sourceData: any[] = []
+          if (sourceNodeResult.data.main && Array.isArray(sourceNodeResult.data.main)) {
+            sourceData = sourceNodeResult.data.main
+          } else if (sourceNodeResult.status === 'skipped') {
+            sourceData = [{ json: sourceNodeResult.data }]
+          }
+
+          if (sourceData.length === 0) continue
+
+          // Get the first item's data
+          const firstItem = sourceData[0]
+          let itemData: any = null
+          
+          if (firstItem && firstItem.json) {
+            itemData = firstItem.json
+          } else if (firstItem) {
+            itemData = firstItem
+          }
+
+          if (!itemData) continue
+
+          // Get the field value
           const value = getNestedValue(itemData, fieldPath)
           if (value !== undefined) {
             return formatValue(value)
@@ -390,12 +446,29 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
         return `[Preview not available - complex array method]`
       }
       
-      // Check if it's a json.* expression (with or without methods)
-      const jsonMatch = trimmedExpr.match(/^json\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
-      if (jsonMatch) {
-        const fieldPath = jsonMatch[1]
-        const method = jsonMatch[2]
-        const methodArgs = jsonMatch[3]
+      // Check if it's a json.* or json[*].* expression (with or without methods)
+      // Match both json.field and json[0].field patterns
+      const jsonArrayMatch = trimmedExpr.match(/^json\[(\d+)\]\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
+      const jsonObjectMatch = trimmedExpr.match(/^json\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
+      
+      if (jsonArrayMatch || jsonObjectMatch) {
+        let inputIndex: number | null = null
+        let fieldPath: string
+        let method: string | undefined
+        let methodArgs: string | undefined
+        
+        if (jsonArrayMatch) {
+          // Array-based: json[0].field
+          inputIndex = parseInt(jsonArrayMatch[1], 10)
+          fieldPath = jsonArrayMatch[2]
+          method = jsonArrayMatch[3]
+          methodArgs = jsonArrayMatch[4]
+        } else {
+          // Object-based: json.field
+          fieldPath = jsonObjectMatch![1]
+          method = jsonObjectMatch![2]
+          methodArgs = jsonObjectMatch![3]
+        }
         
         // Get json data from connected nodes
         if (!nodeId) return trimmedExpr
@@ -409,97 +482,119 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
         
         if (inputConnections.length === 0) return trimmedExpr
         
-        // Get data from the first connected node
-        for (const connection of inputConnections) {
-          const sourceNodeId = connection.sourceNodeId
-          const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
-          
-          if (!sourceNodeResult?.data) continue
-          
-          // Extract data structure
-          let sourceData: any[] = []
-          if (sourceNodeResult.data.main && Array.isArray(sourceNodeResult.data.main)) {
-            sourceData = sourceNodeResult.data.main
-          } else if (sourceNodeResult.status === 'skipped') {
-            sourceData = [{ json: sourceNodeResult.data }]
+        // Determine which connection to use
+        let targetConnection: any
+        if (inputIndex !== null) {
+          // Use specific input by index
+          if (inputIndex >= inputConnections.length) {
+            return `[Input ${inputIndex} not found - only ${inputConnections.length} input(s) available]`
           }
-          
-          if (sourceData.length === 0) continue
-          
-          const firstItem = sourceData[0]
-          let itemData: any = null
-          
-          if (firstItem && firstItem.json) {
-            itemData = firstItem.json
-          } else if (firstItem) {
-            itemData = firstItem
-          }
-          
-          if (!itemData) continue
-          
-          // Get the field value
-          const fieldValue = getNestedValue(itemData, fieldPath)
-          
-          if (fieldValue === undefined) {
-            return `[Field not found: json.${fieldPath}]`
-          }
-          
-          // Apply method if exists
-          if (method && typeof fieldValue === 'string') {
-            try {
-              switch (method) {
-                case 'toUpperCase':
-                  return fieldValue.toUpperCase()
-                case 'toLowerCase':
-                  return fieldValue.toLowerCase()
-                case 'trim':
-                  return fieldValue.trim()
-                case 'length':
-                  return String(fieldValue.length)
-                case 'substring':
-                case 'substr':
-                  if (methodArgs) {
-                    const args = methodArgs.split(',').map((a: string) => parseInt(a.trim()))
-                    return fieldValue.substring(args[0], args[1])
-                  }
-                  return fieldValue
-                case 'replace':
-                  if (methodArgs) {
-                    const args = methodArgs.split(',').map((a: string) => a.trim().replace(/['"]/g, ''))
-                    return fieldValue.replace(args[0], args[1] || '')
-                  }
-                  return fieldValue
-                default:
-                  return formatValue(fieldValue)
-              }
-            } catch (error) {
-              return `[Error applying method: ${method}]`
-            }
-          } else if (method && Array.isArray(fieldValue)) {
-            // Handle array methods
-            try {
-              switch (method) {
-                case 'length':
-                  return String(fieldValue.length)
-                case 'join':
-                  if (methodArgs) {
-                    const separator = methodArgs.replace(/['"]/g, '')
-                    return fieldValue.join(separator)
-                  }
-                  return fieldValue.join(',')
-                default:
-                  return formatValue(fieldValue)
-              }
-            } catch (error) {
-              return `[Error applying method: ${method}]`
-            }
-          }
-          
-          // No method, just return the value
-          return formatValue(fieldValue)
+          targetConnection = inputConnections[inputIndex]
+        } else {
+          // Use first connection for object-based access
+          targetConnection = inputConnections[0]
         }
         
-        return trimmedExpr
+        const sourceNodeId = targetConnection.sourceNodeId
+        const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
+        
+        if (!sourceNodeResult?.data) {
+          return inputIndex !== null 
+            ? `[No data from input ${inputIndex}]`
+            : trimmedExpr
+        }
+        
+        // Extract data structure
+        let sourceData: any[] = []
+        if (sourceNodeResult.data.main && Array.isArray(sourceNodeResult.data.main)) {
+          sourceData = sourceNodeResult.data.main
+        } else if (sourceNodeResult.status === 'skipped') {
+          sourceData = [{ json: sourceNodeResult.data }]
+        }
+        
+        if (sourceData.length === 0) {
+          return inputIndex !== null 
+            ? `[No data from input ${inputIndex}]`
+            : trimmedExpr
+        }
+        
+        const firstItem = sourceData[0]
+        let itemData: any = null
+        
+        if (firstItem && firstItem.json) {
+          itemData = firstItem.json
+        } else if (firstItem) {
+          itemData = firstItem
+        }
+        
+        if (!itemData) {
+          return inputIndex !== null 
+            ? `[No data from input ${inputIndex}]`
+            : trimmedExpr
+        }
+        
+        // Get the field value
+        const fieldValue = getNestedValue(itemData, fieldPath)
+        
+        if (fieldValue === undefined) {
+          return inputIndex !== null
+            ? `[Field not found: json[${inputIndex}].${fieldPath}]`
+            : `[Field not found: json.${fieldPath}]`
+        }
+        
+        // Apply method if exists
+        if (method && typeof fieldValue === 'string') {
+          try {
+            switch (method) {
+              case 'toUpperCase':
+                return fieldValue.toUpperCase()
+              case 'toLowerCase':
+                return fieldValue.toLowerCase()
+              case 'trim':
+                return fieldValue.trim()
+              case 'length':
+                return String(fieldValue.length)
+              case 'substring':
+              case 'substr':
+                if (methodArgs) {
+                  const args = methodArgs.split(',').map((a: string) => parseInt(a.trim()))
+                  return fieldValue.substring(args[0], args[1])
+                }
+                return fieldValue
+              case 'replace':
+                if (methodArgs) {
+                  const args = methodArgs.split(',').map((a: string) => a.trim().replace(/['"]/g, ''))
+                  return fieldValue.replace(args[0], args[1] || '')
+                }
+                return fieldValue
+              default:
+                return formatValue(fieldValue)
+            }
+          } catch (error) {
+            return `[Error applying method: ${method}]`
+          }
+        } else if (method && Array.isArray(fieldValue)) {
+          // Handle array methods
+          try {
+            switch (method) {
+              case 'length':
+                return String(fieldValue.length)
+              case 'join':
+                if (methodArgs) {
+                  const separator = methodArgs.replace(/['"]/g, '')
+                  return fieldValue.join(separator)
+                }
+                return fieldValue.join(',')
+              default:
+                return formatValue(fieldValue)
+            }
+          } catch (error) {
+            return `[Error applying method: ${method}]`
+          }
+        }
+        
+        // No method, just return the value
+        return formatValue(fieldValue)
       }
       
       // Check if it's a complex expression (contains operators or function calls)

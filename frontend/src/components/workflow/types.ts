@@ -2,28 +2,14 @@
  * Types for toolbar button components
  */
 
-export interface NodeExecutionState {
-  nodeId: string
-  status: 'idle' | 'running' | 'success' | 'error'
-  startTime?: number
-  endTime?: number
-  error?: string
-  result?: any
-}
+import type { NodeExecutionError } from '@/types/execution';
+
+// Re-export for convenience
+export type { NodeExecutionError };
 
 export interface ToolbarButtonBaseProps {
   nodeId: string
   className?: string
-}
-
-export interface NodeExecutionError {
-  type: 'timeout' | 'network' | 'validation' | 'security' | 'server' | 'unknown'
-  message: string
-  userFriendlyMessage: string
-  isRetryable: boolean
-  retryAfter?: number
-  timestamp: number
-  details?: any
 }
 
 export interface ExecuteToolbarButtonProps extends ToolbarButtonBaseProps {

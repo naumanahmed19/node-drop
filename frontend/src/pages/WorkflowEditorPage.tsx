@@ -5,6 +5,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { WorkflowToolbar } from '@/components/workflow/WorkflowToolbar'
 import {
   useWorkflowOperations
@@ -22,11 +23,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 export function WorkflowEditorPage() {
   const { id, executionId } = useParams<{ id: string; executionId?: string }>()
   const navigate = useNavigate()
-  const { 
-    workflow, 
-    setWorkflow, 
-    setLoading, 
-    isLoading, 
+  const {
+    workflow,
+    setWorkflow,
+    setLoading,
+    isLoading,
     setExecutionMode,
     setNodeExecutionResult,
     clearExecutionState
@@ -34,12 +35,13 @@ export function WorkflowEditorPage() {
   const { user } = useAuthStore()
   const [error, setError] = useState<string | null>(null)
   // Use global node types store instead of local state
-  const { activeNodeTypes: nodeTypes, isLoading: isLoadingNodeTypes, fetchNodeTypes } = useNodeTypes()
+  const { activeNodeTypes: nodeTypes, isLoading: isLoadingNodeTypes } = useNodeTypes()
   const [execution, setExecution] = useState<ExecutionDetails | null>(null)
   const [isLoadingExecution, setIsLoadingExecution] = useState(false)
-  
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
   // Workflow operations for toolbar
-  const { 
+  const {
     saveWorkflow,
   } = useWorkflowOperations()
 
@@ -48,86 +50,123 @@ export function WorkflowEditorPage() {
     await saveWorkflow()
   }
 
+  // Handle onboarding completion
+  const handleOnboardingComplete = async (data: {
+    name: string
+    category: string
+    saveExecutionHistory: boolean
+  }) => {
+    if (!workflow) return
+
+    // Save the workflow with basic info first
+    try {
+      const savedWorkflow = await workflowService.createWorkflow({
+        name: data.name,
+        description: '',
+        category: data.category || undefined,
+        tags: [],
+      })
+
+      // Update the workflow settings with execution history preference
+      const updatedWorkflow = await workflowService.updateWorkflow(savedWorkflow.id, {
+        settings: {
+          timezone: 'UTC',
+          saveDataSuccessExecution: data.saveExecutionHistory ? 'all' : 'none',
+          saveDataErrorExecution: data.saveExecutionHistory ? 'all' : 'none',
+          saveManualExecutions: true,
+          callerPolicy: 'workflowsFromSameOwner',
+        },
+      })
+
+      setWorkflow(updatedWorkflow)
+      setShowOnboarding(false)
+
+      // Navigate to the new workflow
+      navigate(`/workflows/${updatedWorkflow.id}/edit`, { replace: true })
+    } catch (error) {
+      console.error('Failed to create workflow:', error)
+      setError('Failed to create workflow. Please try again.')
+    }
+  }
+
   // Subscribe to workflow socket events for real-time webhook execution updates
   useEffect(() => {
     if (!id || id === 'new') return
 
     console.log('[WorkflowEditor] Subscribing to workflow:', id)
-    
-    // Subscribe to workflow updates (async)
+
+    let isSubscribed = false;
+    let subscriptionAttempts = 0;
+    const maxAttempts = 3;
+
+    // Subscribe to workflow updates with retry logic
     const subscribeToWorkflow = async () => {
       try {
+        subscriptionAttempts++;
+        console.log(`[WorkflowEditor] Subscription attempt ${subscriptionAttempts} for workflow:`, id)
+
         await socketService.subscribeToWorkflow(id)
+        isSubscribed = true;
+        console.log('[WorkflowEditor] ✅ Successfully subscribed to workflow:', id)
       } catch (error) {
         console.error('[WorkflowEditor] Failed to subscribe to workflow:', error)
+
+        // Retry if not at max attempts
+        if (subscriptionAttempts < maxAttempts) {
+          console.log(`[WorkflowEditor] Retrying subscription in 1 second...`)
+          setTimeout(subscribeToWorkflow, 1000)
+        }
       }
     }
-    
+
+    // Initial subscription
     subscribeToWorkflow()
 
-    // Listen for execution events
-    const handleExecutionEvent = (event: any) => {
-      console.log('🟢 [WorkflowEditor] Execution event received:', {
-        type: event.type,
-        executionId: event.executionId,
-        nodeId: event.nodeId,
-        status: event.status,
-        timestamp: event.timestamp,
-        data: event.data
-      })
+    // Also re-subscribe when socket reconnects
+    const handleSocketConnected = () => {
+      console.log('[WorkflowEditor] Socket reconnected, re-subscribing to workflow:', id)
+      subscribeToWorkflow()
     }
 
-    const handleExecutionProgress = (progress: any) => {
-      console.log('🔵 [WorkflowEditor] Execution progress:', {
-        executionId: progress.executionId,
-        completedNodes: progress.completedNodes,
-        totalNodes: progress.totalNodes,
-        status: progress.status
-      })
+    socketService.on('socket-connected', handleSocketConnected)
+
+    // NOTE: Execution events are now handled by the workflow store via ExecutionWebSocket
+    // We don't need duplicate listeners here - the store will update and trigger re-renders
+
+    // Listen for webhook test triggers and auto-subscribe to execution
+    const handleWebhookTestTriggered = async (data: any) => {
+      try {
+        await socketService.subscribeToExecution(data.executionId)
+      } catch (error) {
+        console.error('Failed to subscribe to webhook execution:', error)
+      }
     }
 
-    const handleNodeExecutionEvent = (nodeEvent: any) => {
-      console.log('🟡 [WorkflowEditor] Node execution event:', {
-        executionId: nodeEvent.executionId,
-        nodeId: nodeEvent.nodeId,
-        type: nodeEvent.type,
-        status: nodeEvent.status
-      })
-    }
-
-    const handleExecutionLog = (log: any) => {
-      console.log('📝 [WorkflowEditor] Execution log:', log)
-    }
-
-    // Register event listeners
-    socketService.on('execution-event', handleExecutionEvent)
-    socketService.on('execution-progress', handleExecutionProgress)
-    socketService.on('node-execution-event', handleNodeExecutionEvent)
-    socketService.on('execution-log', handleExecutionLog)
+    socketService.on('webhook-test-triggered', handleWebhookTestTriggered)
 
     // Cleanup: unsubscribe and remove listeners when component unmounts or workflow changes
     return () => {
-      console.log('[WorkflowEditor] Unsubscribing from workflow:', id)
-      
-      // Unsubscribe from workflow (async but don't wait)
-      socketService.unsubscribeFromWorkflow(id).catch(error => {
-        console.error('[WorkflowEditor] Failed to unsubscribe from workflow:', error)
-      })
-      
+      // Only unsubscribe if we actually subscribed
+      if (isSubscribed) {
+        console.log('[WorkflowEditor] Unsubscribing from workflow:', id)
+
+        // Unsubscribe from workflow (async but don't wait)
+        socketService.unsubscribeFromWorkflow(id).catch(error => {
+          console.error('[WorkflowEditor] Failed to unsubscribe from workflow:', error)
+        })
+      }
+
       // Remove event listeners
-      socketService.off('execution-event', handleExecutionEvent)
-      socketService.off('execution-progress', handleExecutionProgress)
-      socketService.off('node-execution-event', handleNodeExecutionEvent)
-      socketService.off('execution-log', handleExecutionLog)
+      socketService.off('webhook-test-triggered', handleWebhookTestTriggered)
+      socketService.off('socket-connected', handleSocketConnected)
     }
   }, [id])
 
-  // Initialize node types store
-  useEffect(() => {
-    if (nodeTypes.length === 0 && !isLoadingNodeTypes) {
-      fetchNodeTypes()
-    }
-  }, [nodeTypes.length, isLoadingNodeTypes, fetchNodeTypes])
+  // Don't load node types on page mount - let them load lazily when needed
+  // Node types will be loaded when:
+  // 1. User opens the add node dialog
+  // 2. User opens the nodes sidebar
+  // This improves initial page load performance
 
   // Load execution data if executionId is present
   useEffect(() => {
@@ -205,11 +244,11 @@ export function WorkflowEditorPage() {
             } else if (nodeExec.status === 'running') {
               status = 'success'
             }
-            
+
             // Calculate duration
             const startTime = nodeExec.startedAt ? new Date(nodeExec.startedAt).getTime() : Date.now()
             const endTime = nodeExec.finishedAt ? new Date(nodeExec.finishedAt).getTime() : Date.now()
-            
+
             setNodeExecutionResult(nodeExec.nodeId, {
               nodeId: nodeExec.nodeId,
               nodeName: nodeExec.nodeId,
@@ -277,7 +316,9 @@ export function WorkflowEditorPage() {
       }
 
       if (id === 'new') {
-        // Create new workflow
+        // Show onboarding dialog for new workflows
+        setShowOnboarding(true)
+        // Create temporary workflow
         const newWorkflow: Workflow = {
           id: 'new',
           name: 'New Workflow',
@@ -316,14 +357,14 @@ export function WorkflowEditorPage() {
     }
 
     loadWorkflow()
-  }, [id, executionId, setWorkflow, setLoading])
+  }, [id, executionId, setWorkflow, setLoading, user?.id])
 
   if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen w-screen bg-background">
         <div className="flex items-center space-x-2">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-          <span className="text-gray-600">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <span className="text-muted-foreground">
             {isLoadingExecution ? 'Loading execution...' : isLoadingNodeTypes ? 'Loading node types...' : 'Loading workflow...'}
           </span>
         </div>
@@ -333,14 +374,14 @@ export function WorkflowEditorPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen w-screen bg-background">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Workflow</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <h2 className="text-xl font-semibold mb-2">Error Loading Workflow</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
           <button
             onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
           >
             Back to Workflows
           </button>
@@ -351,14 +392,14 @@ export function WorkflowEditorPage() {
 
   if (!workflow) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen w-screen bg-background">
         <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Workflow Not Found</h2>
-          <p className="text-gray-600 mb-4">The requested workflow could not be found.</p>
+          <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Workflow Not Found</h2>
+          <p className="text-muted-foreground mb-4">The requested workflow could not be found.</p>
           <button
             onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
           >
             Back to Workflows
           </button>
@@ -378,27 +419,34 @@ export function WorkflowEditorPage() {
       >
         <AppSidebar />
         <SidebarInset>
-        {/* Show execution toolbar when in execution mode */}
-        {executionId && execution ? (
-          <ExecutionToolbar
-            execution={execution}
-            onBack={() =>  navigate(`/workflows/${id}`, { replace: true })}
-          />
-        ) : (
-          <WorkflowToolbar
-            onSave={handleSave}
-          />
-        )}
-        
-        <div className="flex flex-1 flex-col h-full overflow-hidden">
-          <WorkflowEditorWrapper 
-            nodeTypes={nodeTypes}
-            readOnly={!!executionId}
-            executionMode={!!executionId}
-          />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+          {/* Show execution toolbar when in execution mode */}
+          {executionId && execution ? (
+            <ExecutionToolbar
+              execution={execution}
+              onBack={() => navigate(`/workflows/${id}`, { replace: true })}
+            />
+          ) : (
+            <WorkflowToolbar
+              onSave={handleSave}
+            />
+          )}
+
+          <div className="flex flex-1 flex-col h-full overflow-hidden">
+            <WorkflowEditorWrapper
+              nodeTypes={nodeTypes}
+              readOnly={!!executionId}
+              executionMode={!!executionId}
+            />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+
+      {/* Onboarding Dialog */}
+      <WorkflowOnboardingDialog
+        isOpen={showOnboarding}
+        onStartBuilding={handleOnboardingComplete}
+        onClose={() => navigate('/workflows')}
+      />
     </TooltipProvider>
   )
 }

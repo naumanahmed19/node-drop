@@ -1,6 +1,6 @@
 "use client"
 import { CredentialsList } from "@/components/credential/CredentialsList"
-import { ExecutionsList } from "@/components/execution"
+import { ExecutionsList, ScheduledExecutionsList } from "@/components/execution"
 import { NavUser } from "@/components/nav-user"
 import { NodeTypesList } from "@/components/node/NodeTypesList"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,7 @@ import { useAuthStore, useReactFlowUIStore, useWorkflowStore } from "@/stores"
 import {
     Activity,
     ArrowLeft,
+    CalendarClock,
     Database,
     Home,
     Key,
@@ -69,6 +70,7 @@ const data = {
       icon: Plus,
       isActive: false,
     },
+
   ],
   workflowItems: [
 
@@ -84,7 +86,7 @@ const data = {
       icon: Activity,
       isActive: false,
     },
-        {
+    {
       title: "Variables",
       url: "#",
       icon: Variable,
@@ -92,6 +94,12 @@ const data = {
     },
   ],
   bottomItems: [
+    {
+      title: "Scheduled Jobs",
+      url: "#",
+      icon: CalendarClock,
+      isActive: false,
+    },
     {
       title: "All Credentials",
       url: "#",
@@ -202,7 +210,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                             setActiveWorkflowItem(item)
                             setOpen(true)
                           }
-                        } else {
+                        } else if (item.url !== "#") {
                           handleNavigation(item.url)
                         }
                       }}
@@ -350,6 +358,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   
                   {activeWorkflowItem?.title === "Executions" && (
                     <ExecutionsList />
+                  )}
+                  
+                  {activeWorkflowItem?.title === "Scheduled Jobs" && (
+                    <ScheduledExecutionsList />
                   )}
                   
                   {activeWorkflowItem?.title === "Settings" && (

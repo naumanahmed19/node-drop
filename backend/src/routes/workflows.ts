@@ -119,6 +119,32 @@ router.get(
   })
 );
 
+// GET /api/workflows/:id/upcoming-executions - Get upcoming scheduled executions
+router.get(
+  "/:id/upcoming-executions",
+  authenticateToken,
+  validateParams(IdParamSchema),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const workflow = await workflowService.getWorkflow(
+      req.params.id,
+      req.user!.id
+    );
+
+    const limit = parseInt(req.query.limit as string) || 10;
+    const upcomingExecutions = await workflowService.getUpcomingExecutions(
+      workflow,
+      limit
+    );
+
+    const response: ApiResponse = {
+      success: true,
+      data: upcomingExecutions,
+    };
+
+    res.json(response);
+  })
+);
+
 // GET /api/workflows/categories - Get available workflow categories
 router.get(
   "/categories",

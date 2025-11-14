@@ -55,6 +55,7 @@ export interface ExecutionOptions {
   retryDelay?: number;
   saveProgress?: boolean;
   saveData?: boolean;
+  saveToDatabase?: boolean; // Skip saving execution to database (for high-traffic APIs)
   manual?: boolean; // Allow execution even if workflow is inactive (for testing/manual runs)
 }
 
