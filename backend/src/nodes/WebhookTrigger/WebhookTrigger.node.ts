@@ -239,6 +239,7 @@ export const WebhookTriggerNode: NodeDefinition = {
             { name: "Body", value: "body" },
             { name: "Path", value: "path" },
             { name: "Client Info (IP & User Agent)", value: "clientInfo" },
+            { name: "Webhook URL", value: "webhookUrl" },
           ],
         },
         {
@@ -279,6 +280,7 @@ export const WebhookTriggerNode: NodeDefinition = {
     const includeBody = includeData.includes("body");
     const includePath = includeData.includes("path");
     const includeClientInfo = includeData.includes("clientInfo");
+    const includeWebhookUrl = includeData.includes("webhookUrl");
     const headersToInclude = options.headersToInclude ?? "";
     const binaryProperty = options.binaryProperty || "data";
     const rawBody = options.rawBody || false;
@@ -346,6 +348,11 @@ export const WebhookTriggerNode: NodeDefinition = {
       if (actualData.userAgent) {
         output.userAgent = actualData.userAgent;
       }
+    }
+
+    // Add webhook URL
+    if (includeWebhookUrl && actualData.webhookUrl) {
+      output.webhookUrl = actualData.webhookUrl;
     }
 
     // Handle binary data if present

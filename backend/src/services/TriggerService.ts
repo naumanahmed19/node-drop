@@ -789,6 +789,10 @@ export class TriggerService {
       
       const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false; // Default to true
 
+      // Construct the full webhook URL
+      const baseUrl = process.env.WEBHOOK_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 4000}`;
+      const webhookUrl = `${baseUrl}/webhook/${webhookId}`;
+
       // Create trigger execution request with webhook data (including path parameters, binary, and raw body)
       const triggerRequest: TriggerExecutionRequest = {
         triggerId: trigger.id,
@@ -804,6 +808,7 @@ export class TriggerService {
           params: pathParams, // Add extracted path parameters
           ip: request.ip,
           userAgent: request.userAgent,
+          webhookUrl, // Add the full webhook URL
           // Add binary data if present
           ...(request.binary && { binary: request.binary }),
           // Add raw body if present
