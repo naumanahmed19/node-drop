@@ -218,6 +218,7 @@ export function WorkflowCanvas({
                     deleteKeyCode={isDisabled ? null : ["Backspace", "Delete"]}
                     panOnDrag={panOnDrag}
                     zoomOnScroll={zoomOnScroll}
+                    zoomOnDoubleClick={false}
                     connectionLineStyle={connectionLineStyle}
                     // translateExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     // nodeExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
