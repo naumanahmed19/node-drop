@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 
-import { FormFieldConfig } from '@/components/ui/form-generator/types'
+import { FormFieldConfig, FormFieldOption } from '@/components/ui/form-generator/types'
 import { useExecutionControls } from '@/hooks/workflow'
 import { useWorkflowStore } from '@/stores'
 import { Node, NodeProps } from '@xyflow/react'
@@ -292,7 +292,7 @@ export const FormGeneratorNode = memo(function FormGeneratorNode({
         )
       
       case 'options':
-        const selectOptions = field.options || []
+        const selectOptions = (field.options || []).filter((opt): opt is FormFieldOption => 'value' in opt)
         return (
           <div key={field.name} className="space-y-1.5">
             <Label htmlFor={field.name} className="text-xs font-medium">

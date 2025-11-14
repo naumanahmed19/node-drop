@@ -1,4 +1,4 @@
-import { FormFieldConfig } from "./types";
+import { FormFieldConfig, FormFieldOption } from "./types";
 
 export class FieldValidator {
   /**
@@ -202,7 +202,9 @@ export class FieldValidator {
   ): string | null {
     if (!field.options || field.options.length === 0) return null;
 
-    const validValues = field.options.map((opt) => opt.value);
+    const validValues = field.options
+      .filter((opt): opt is FormFieldOption => 'value' in opt)
+      .map((opt) => opt.value);
     if (!validValues.includes(value)) {
       return `${field.displayName} must be one of the available options`;
     }
@@ -220,7 +222,9 @@ export class FieldValidator {
 
     if (!field.options || field.options.length === 0) return null;
 
-    const validValues = field.options.map((opt) => opt.value);
+    const validValues = field.options
+      .filter((opt): opt is FormFieldOption => 'value' in opt)
+      .map((opt) => opt.value);
     const invalidValues = value.filter((v) => !validValues.includes(v));
 
     if (invalidValues.length > 0) {

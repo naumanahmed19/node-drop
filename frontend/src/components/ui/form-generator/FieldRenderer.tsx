@@ -22,7 +22,7 @@ import { DynamicAutocomplete } from './DynamicAutocomplete'
 import { ExpressionInput } from './ExpressionInput'
 import { RepeatingField } from './RepeatingField'
 import { SimpleRepeater } from './SimpleRepeater'
-import { FormFieldRendererProps } from './types'
+import { FormFieldRendererProps, FormFieldOption } from './types'
 
 export function FieldRenderer({
   field,
@@ -51,7 +51,7 @@ export function FieldRenderer({
 
   // Handle SimpleRepeater component
   if (field.component === 'SimpleRepeater') {
-    const operations = field.componentProps?.operations || field.options?.map(opt => ({
+    const operations = field.componentProps?.operations || field.options?.filter((opt): opt is FormFieldOption => 'value' in opt).map(opt => ({
       name: opt.name,
       value: opt.value
     }))
@@ -449,7 +449,7 @@ export function FieldRenderer({
             <SelectValue placeholder={field.placeholder || `Select ${field.displayName}`} />
           </SelectTrigger>
           <SelectContent>
-            {field.options?.map((option) => (
+            {field.options?.filter((option): option is FormFieldOption => 'value' in option).map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 <div>
                   <div>{option.name}</div>
@@ -507,14 +507,16 @@ export function FieldRenderer({
       }
 
       // Fall back to static options
-      const autocompleteOptions: AutoCompleteOption[] = (field.options || []).map((option) => ({
-        id: String(option.value),
-        label: option.name,
-        value: String(option.value),
-        metadata: {
-          subtitle: option.description,
-        },
-      }));
+      const autocompleteOptions: AutoCompleteOption[] = (field.options || [])
+        .filter((option): option is FormFieldOption => 'value' in option)
+        .map((option) => ({
+          id: String(option.value),
+          label: option.name,
+          value: String(option.value),
+          metadata: {
+            subtitle: option.description,
+          },
+        }));
 
       console.log('FieldRenderer autocomplete:', {
         fieldName: field.name,
@@ -555,7 +557,7 @@ export function FieldRenderer({
     case 'multiOptions':
       return (
         <div className="space-y-2">
-          {field.options?.map((option) => {
+          {field.options?.filter((option): option is FormFieldOption => 'value' in option).map((option) => {
             const isChecked = Array.isArray(value) ? value.includes(option.value) : false
             return (
               <div key={option.value} className="flex items-center space-x-2">
@@ -633,7 +635,7 @@ export function FieldRenderer({
           disabled={disabled || field.disabled}
           error={error}
           nodeId={nodeId}
-          expressionOptions={field.options}
+          expressionOptions={field.options?.filter((opt): opt is FormFieldOption => 'value' in opt)}
           keyPlaceholder={field.componentProps?.keyPlaceholder}
           valuePlaceholder={field.componentProps?.valuePlaceholder}
           expressionPlaceholder={field.componentProps?.expressionPlaceholder}
