@@ -1,8 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useWorkflowOperations } from '@/hooks/workflow/useWorkflowOperations'
+import { useReactFlowUIStore } from '@/stores'
 import { ExecutionState } from '@/types'
-import { CheckCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronUp, Code } from 'lucide-react'
 
 interface ExecutionPanelHeaderProps {
   executionState: ExecutionState
@@ -16,6 +17,7 @@ export function ExecutionPanelHeader({
   onToggle
 }: ExecutionPanelHeaderProps) {
   const { validateAndShowResult } = useWorkflowOperations()
+  const { toggleCodePanel } = useReactFlowUIStore()
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'success': return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/30'
@@ -48,16 +50,30 @@ export function ExecutionPanelHeader({
           <TooltipTrigger asChild>
             <Button
               onClick={validateAndShowResult}
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-7 px-2.5 text-xs"
+              className="h-7 w-7 p-0"
             >
-              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-              Validate
+              <CheckCircle className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
             <p>Validate workflow</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={toggleCodePanel}
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+            >
+              <Code className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Show code</p>
           </TooltipContent>
         </Tooltip>
         <button
