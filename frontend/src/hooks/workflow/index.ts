@@ -44,6 +44,7 @@
  */
 
 export { useAutoLayout } from "./useAutoLayout";
+export { useCodePanel } from "./useCodePanel";
 export { useCopyPaste } from "./useCopyPaste";
 export { useCrossWindowCopyPaste } from "./useCrossWindowCopyPaste";
 export { useDeleteNodes } from "./useDeleteNodes";

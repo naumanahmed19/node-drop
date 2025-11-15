@@ -3,7 +3,7 @@ import {
     ReactFlowProvider
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import {
     ResizableHandle,
@@ -12,8 +12,10 @@ import {
 } from '@/components/ui/resizable'
 import { Button } from '@/components/ui/button'
 import { JsonEditor } from '@/components/ui/json-editor'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useExecutionAwareEdges } from '@/hooks/workflow'
 import {
+    useCodePanel,
     useCopyPaste,
     useExecutionControls,
     useExecutionPanelData,
@@ -49,10 +51,6 @@ export function WorkflowEditor({
     readOnly = false,
     executionMode = false
 }: WorkflowEditorProps) {
-    // Local state for code editor
-    const [codeContent, setCodeContent] = useState('')
-    const [codeError, setCodeError] = useState<string | null>(null)
-
     // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
     // Only subscribe to the specific state slices we need
     const workflow = useWorkflowStore(state => state.workflow)
@@ -163,6 +161,19 @@ export function WorkflowEditor({
     const {
         showNodePalette,
     } = useWorkflowToolbarStore()
+
+    // Code panel hook
+    const {
+        codeContent,
+        setCodeContent,
+        codeError,
+        setCodeError,
+        codeTab,
+        setCodeTab,
+        selectedNodes,
+        resetCodeContent,
+        validateCodeContent,
+    } = useCodePanel({ workflow, nodes, isCodeMode })
 
     // Execution panel data
     const { flowExecutionStatus, executionMetrics } = useExecutionPanelData({
@@ -323,21 +334,6 @@ export function WorkflowEditor({
         return chatNode?.name || 'Chat'
     }, [chatNode])
 
-    // Initialize code content when code panel opens
-    useEffect(() => {
-        if (isCodeMode && workflow) {
-            setCodeContent(JSON.stringify(workflow, null, 2))
-            setCodeError(null)
-        }
-    }, [isCodeMode])
-
-    // Update code content when workflow changes (only in code mode)
-    useEffect(() => {
-        if (isCodeMode && workflow) {
-            setCodeContent(JSON.stringify(workflow, null, 2))
-        }
-    }, [workflow, isCodeMode])
-
     return (
         <div className="flex flex-col h-full w-full">
             <WorkflowErrorBoundary>
@@ -415,84 +411,28 @@ export function WorkflowEditor({
                             <>
                                 <ResizableHandle withHandle />
                                 <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                                    <div className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
+                                    <Tabs value={codeTab} onValueChange={(value) => setCodeTab(value as 'full' | 'selected')} className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
                                         <div className="flex items-center justify-between mb-3 flex-shrink-0 px-4">
-                                            <h3 className="text-sm font-semibold">Workflow JSON</h3>
+                                            <TabsList>
+                                                <TabsTrigger value="full">Full Workflow</TabsTrigger>
+                                                <TabsTrigger value="selected" disabled={selectedNodes.length === 0}>
+                                                    Selected ({selectedNodes.length})
+                                                </TabsTrigger>
+                                            </TabsList>
                                             <div className="flex gap-2">
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => {
-                                                        setCodeContent(JSON.stringify(workflow, null, 2))
-                                                        setCodeError(null)
-                                                    }}
+                                                    onClick={resetCodeContent}
                                                 >
                                                     Reset
                                                 </Button>
                                                 <Button
                                                     size="sm"
                                                     onClick={() => {
-                                                        try {
-                                                            const parsed = JSON.parse(codeContent)
-                                                            
-                                                            // Basic workflow structure validation
-                                                            if (!parsed || typeof parsed !== 'object') {
-                                                                setCodeError('Workflow must be an object')
-                                                                return
-                                                            }
-                                                            
-                                                            if (!Array.isArray(parsed.nodes)) {
-                                                                setCodeError('Workflow must have a "nodes" array')
-                                                                return
-                                                            }
-                                                            
-                                                            if (!Array.isArray(parsed.connections)) {
-                                                                setCodeError('Workflow must have a "connections" array')
-                                                                return
-                                                            }
-                                                            
-                                                            // Validate node structure
-                                                            for (let i = 0; i < parsed.nodes.length; i++) {
-                                                                const node = parsed.nodes[i]
-                                                                if (!node.id) {
-                                                                    setCodeError(`Node at index ${i} is missing "id" field`)
-                                                                    return
-                                                                }
-                                                                if (!node.type) {
-                                                                    setCodeError(`Node "${node.id}" is missing "type" field`)
-                                                                    return
-                                                                }
-                                                            }
-                                                            
-                                                            // Validate connection structure
-                                                            for (let i = 0; i < parsed.connections.length; i++) {
-                                                                const conn = parsed.connections[i]
-                                                                if (!conn.source) {
-                                                                    setCodeError(`Connection at index ${i} is missing "source" field`)
-                                                                    return
-                                                                }
-                                                                if (!conn.target) {
-                                                                    setCodeError(`Connection at index ${i} is missing "target" field`)
-                                                                    return
-                                                                }
-                                                            }
-                                                            
+                                                        const parsed = validateCodeContent()
+                                                        if (parsed) {
                                                             updateWorkflow(parsed)
-                                                            setCodeError(null)
-                                                        } catch (error) {
-                                                            if (error instanceof SyntaxError) {
-                                                                // Extract line number from syntax error if available
-                                                                const match = error.message.match(/at position (\d+)/)
-                                                                if (match) {
-                                                                    const position = parseInt(match[1])
-                                                                    const lines = codeContent.substring(0, position).split('\n')
-                                                                    setCodeError(`JSON Syntax Error at line ${lines.length}: ${error.message}`)
-                                                                } else {
-                                                                    setCodeError(`JSON Syntax Error: ${error.message}`)
-                                                                }
-                                                            } else {
-                                                                setCodeError(error instanceof Error ? error.message : 'Invalid JSON')
-                                                            }
                                                         }
                                                     }}
                                                 >
@@ -500,8 +440,8 @@ export function WorkflowEditor({
                                                 </Button>
                                             </div>
                                         </div>
-                                        <div className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto">
+                                        <TabsContent value="full" className="flex-1 min-h-0 relative">
+                                            <div className="absolute inset-0 overflow-auto px-4">
                                                 <JsonEditor
                                                     value={codeContent}
                                                     onValueChange={(value) => {
@@ -511,8 +451,20 @@ export function WorkflowEditor({
                                                     error={codeError || undefined}
                                                 />
                                             </div>
-                                        </div>
-                                    </div>
+                                        </TabsContent>
+                                        <TabsContent value="selected" className="flex-1 min-h-0 relative">
+                                            <div className="absolute inset-0 overflow-auto px-4">
+                                                <JsonEditor
+                                                    value={codeContent}
+                                                    onValueChange={(value) => {
+                                                        setCodeContent(value)
+                                                        setCodeError(null)
+                                                    }}
+                                                    error={codeError || undefined}
+                                                />
+                                            </div>
+                                        </TabsContent>
+                                    </Tabs>
                                 </ResizablePanel>
                             </>
                         )}
