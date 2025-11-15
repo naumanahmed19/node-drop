@@ -420,42 +420,115 @@ export function useReactFlowInteractions() {
       if (!nodeTypeData) return;
 
       try {
-        const nodeType: NodeType = JSON.parse(nodeTypeData);
+        const nodeType: NodeType & { isTemplate?: boolean; templateData?: any } = JSON.parse(nodeTypeData);
+
+        console.log('🎯 Node dropped:', {
+          type: nodeType.type,
+          isTemplate: nodeType.isTemplate,
+          hasTemplateData: !!nodeType.templateData,
+          templateData: nodeType.templateData
+        });
 
         const position = reactFlowInstance.screenToFlowPosition({
           x: event.clientX - reactFlowBounds.left,
           y: event.clientY - reactFlowBounds.top,
         });
 
-        // Initialize parameters with defaults from node type and properties
-        const parameters: Record<string, any> = { ...nodeType.defaults };
+        // Check if this is a template node
+        if (nodeType.isTemplate && nodeType.templateData) {
+          console.log('📦 Expanding template at position:', position);
+          
+          // Import template expansion utilities dynamically
+          import('@/utils/templateExpansion').then(({ expandTemplate }) => {
+            const { nodes: templateNodes, connections: templateConnections } = nodeType.templateData;
+            
+            console.log('📦 Template data:', {
+              nodesCount: templateNodes?.length || 0,
+              connectionsCount: templateConnections?.length || 0,
+              nodes: templateNodes,
+              connections: templateConnections
+            });
 
-        // Add default values from properties
-        nodeType.properties.forEach((property) => {
-          if (
-            property.default !== undefined &&
-            parameters[property.name] === undefined
-          ) {
-            parameters[property.name] = property.default;
-          }
-        });
+            if (!templateNodes || templateNodes.length === 0) {
+              console.error('❌ Template has no nodes!');
+              return;
+            }
+            
+            // Expand template into individual nodes and connections
+            const { nodes: expandedNodes, connections: expandedConnections } = expandTemplate(
+              templateNodes,
+              templateConnections,
+              position
+            );
 
-        const newNode: WorkflowNode = {
-          id: `node-${Date.now()}`,
-          type: nodeType.type,
-          name: nodeType.displayName,
-          parameters,
-          position,
-          credentials: [],
-          disabled: false,
-        };
+            console.log('✅ Template expanded:', {
+              expandedNodesCount: expandedNodes.length,
+              expandedConnectionsCount: expandedConnections.length,
+              expandedNodes,
+              expandedConnections
+            });
 
-        addNode(newNode);
+            // Add all expanded nodes
+            const addNodes = useWorkflowStore.getState().addNodes;
+            const addConnections = useWorkflowStore.getState().addConnections;
+            
+            if (addNodes) {
+              console.log('➕ Adding nodes using batch operation');
+              addNodes(expandedNodes);
+            } else {
+              console.log('➕ Adding nodes one by one');
+              // Fallback: add nodes one by one
+              expandedNodes.forEach((node: WorkflowNode) => addNode(node));
+            }
+
+            // Add all connections
+            if (addConnections) {
+              console.log('🔗 Adding connections using batch operation');
+              addConnections(expandedConnections);
+            } else {
+              console.log('🔗 Adding connections one by one');
+              // Fallback: add connections one by one
+              expandedConnections.forEach((conn: WorkflowConnection) => addConnection(conn));
+            }
+
+            console.log('✅ Template expansion complete!');
+          }).catch(error => {
+            console.error('❌ Failed to import template expansion utility:', error);
+          });
+          
+          return; // Exit early for templates
+        } else {
+          // Regular node drop (not a template)
+          // Initialize parameters with defaults from node type and properties
+          const parameters: Record<string, any> = { ...nodeType.defaults };
+
+          // Add default values from properties
+          nodeType.properties.forEach((property) => {
+            if (
+              property.default !== undefined &&
+              parameters[property.name] === undefined
+            ) {
+              parameters[property.name] = property.default;
+            }
+          });
+
+          const newNode: WorkflowNode = {
+            id: `node-${Date.now()}`,
+            type: nodeType.type,
+            name: nodeType.displayName,
+            parameters,
+            position,
+            credentials: [],
+            disabled: false,
+          };
+
+          addNode(newNode);
+        }
       } catch (error) {
         console.error("Failed to parse dropped node data:", error);
       }
     },
-    [reactFlowInstance, addNode]
+    [reactFlowInstance, addNode, addConnection]
   );
 
   // Handle node double-click to open properties

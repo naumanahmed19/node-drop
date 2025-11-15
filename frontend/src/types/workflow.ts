@@ -179,6 +179,12 @@ export interface NodeType {
   canBeDisabled?: boolean;
   // Custom settings specific to this node type (flat object)
   settings?: Record<string, NodeSetting>;
+  // Template fields
+  isTemplate?: boolean;
+  templateData?: {
+    nodes: WorkflowNode[];
+    connections: WorkflowConnection[];
+  };
 }
 
 export interface CredentialDefinition {

@@ -3,7 +3,7 @@ import {
     ContextMenuItem,
     ContextMenuSeparator,
 } from '@/components/ui/context-menu'
-import { Box, Clipboard, Copy, Lock, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { Box, Clipboard, Copy, Lock, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
 
 interface NodeContextMenuProps {
   onOpenProperties: () => void
@@ -16,12 +16,14 @@ interface NodeContextMenuProps {
   onPaste?: () => void
   onUngroup?: () => void
   onGroup?: () => void
+  onCreateTemplate?: () => void
   isLocked: boolean
   readOnly?: boolean
   canCopy?: boolean
   canPaste?: boolean
   isInGroup?: boolean
   canGroup?: boolean
+  canCreateTemplate?: boolean
 }
 
 export function NodeContextMenu({
@@ -35,12 +37,14 @@ export function NodeContextMenu({
   onPaste,
   onUngroup,
   onGroup,
+  onCreateTemplate,
   isLocked,
   readOnly = false,
   canCopy = false,
   canPaste = false,
   isInGroup = false,
   canGroup = false,
+  canCreateTemplate = false,
 }: NodeContextMenuProps) {
   return (
     <ContextMenuContent className="w-48">
@@ -107,6 +111,21 @@ export function NodeContextMenu({
           >
             <Box className="mr-2 h-4 w-4" />
             Add to Group
+          </ContextMenuItem>
+        </>
+      )}
+
+      {/* Create Template option - show if multiple nodes are selected */}
+      {canCreateTemplate && onCreateTemplate && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onClick={onCreateTemplate}
+            disabled={readOnly}
+            className="cursor-pointer"
+          >
+            <PackagePlus className="mr-2 h-4 w-4" />
+            Create Template
           </ContextMenuItem>
         </>
       )}

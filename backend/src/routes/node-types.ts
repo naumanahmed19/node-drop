@@ -545,4 +545,240 @@ router.get("/groups/list", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/node-types/templates
+ * Create a new template from selected nodes
+ */
+router.post("/templates", async (req: Request, res: Response) => {
+  try {
+    const {
+      type,
+      displayName,
+      name,
+      description,
+      icon,
+      color,
+      group,
+      version,
+      defaults,
+      inputs,
+      outputs,
+      properties,
+      isTemplate,
+      templateData,
+    } = req.body;
+
+    // Validate required fields
+    if (!type || !displayName || !templateData) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: type, displayName, templateData",
+      });
+    }
+
+    // Check if template with this type already exists
+    const existing = await prisma.nodeType.findUnique({
+      where: { type },
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        error: `Template with type '${type}' already exists`,
+      });
+    }
+
+    // Create the template node type
+    const template = await prisma.nodeType.create({
+      data: {
+        type,
+        displayName,
+        name: name || displayName,
+        description: description || "",
+        icon: icon || "📦",
+        color: color || "#6366f1",
+        group: group || ["Templates"],
+        version: version || 1,
+        defaults: defaults || {},
+        inputs: inputs || ["main"],
+        outputs: outputs || ["main"],
+        properties: properties || [],
+        isTemplate: isTemplate !== undefined ? isTemplate : true,
+        templateData: templateData || null,
+        active: true,
+      },
+    });
+
+    logger.info("Template created successfully", {
+      type: template.type,
+      displayName: template.displayName,
+      nodesCount: templateData?.nodes?.length || 0,
+      connectionsCount: templateData?.connections?.length || 0,
+    });
+
+    res.json({
+      success: true,
+      data: template,
+      message: "Template created successfully",
+    });
+  } catch (error) {
+    logger.error("Failed to create template", { error });
+    res.status(500).json({
+      success: false,
+      error: "Failed to create template",
+    });
+  }
+});
+
+/**
+ * GET /api/node-types/templates
+ * Get all templates
+ */
+router.get("/templates", async (req: Request, res: Response) => {
+  try {
+    const templates = await prisma.nodeType.findMany({
+      where: { isTemplate: true },
+      orderBy: { displayName: "asc" },
+    });
+
+    res.json({
+      success: true,
+      data: templates,
+      count: templates.length,
+    });
+  } catch (error) {
+    logger.error("Failed to get templates", { error });
+    res.status(500).json({
+      success: false,
+      error: "Failed to get templates",
+    });
+  }
+});
+
+/**
+ * GET /api/node-types/templates/:type
+ * Get a specific template by type
+ */
+router.get("/templates/:type", async (req: Request, res: Response) => {
+  try {
+    const { type } = req.params;
+
+    const template = await prisma.nodeType.findFirst({
+      where: {
+        type,
+        isTemplate: true,
+      },
+    });
+
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: "Template not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: template,
+    });
+  } catch (error) {
+    logger.error("Failed to get template", { error, type: req.params.type });
+    res.status(500).json({
+      success: false,
+      error: "Failed to get template",
+    });
+  }
+});
+
+/**
+ * PATCH /api/node-types/templates/:type
+ * Update a template
+ */
+router.patch("/templates/:type", async (req: Request, res: Response) => {
+  try {
+    const { type } = req.params;
+    const updateData = req.body;
+
+    const template = await prisma.nodeType.updateMany({
+      where: {
+        type,
+        isTemplate: true,
+      },
+      data: {
+        ...updateData,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (template.count === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Template not found",
+      });
+    }
+
+    // Fetch the updated template
+    const updatedTemplate = await prisma.nodeType.findUnique({
+      where: { type },
+    });
+
+    logger.info("Template updated successfully", { type });
+
+    res.json({
+      success: true,
+      data: updatedTemplate,
+      message: "Template updated successfully",
+    });
+  } catch (error) {
+    logger.error("Failed to update template", {
+      error,
+      type: req.params.type,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to update template",
+    });
+  }
+});
+
+/**
+ * DELETE /api/node-types/templates/:type
+ * Delete a template
+ */
+router.delete("/templates/:type", async (req: Request, res: Response) => {
+  try {
+    const { type } = req.params;
+
+    const result = await prisma.nodeType.deleteMany({
+      where: {
+        type,
+        isTemplate: true,
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Template not found",
+      });
+    }
+
+    logger.info("Template deleted successfully", { type });
+
+    res.json({
+      success: true,
+      message: "Template deleted successfully",
+    });
+  } catch (error) {
+    logger.error("Failed to delete template", {
+      error,
+      type: req.params.type,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete template",
+    });
+  }
+});
+
 export { router as nodeTypeRoutes };

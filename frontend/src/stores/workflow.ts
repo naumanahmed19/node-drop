@@ -82,10 +82,14 @@ interface WorkflowStore extends WorkflowEditorState {
   showChatDialog: boolean;
   chatDialogNodeId: string | null;
 
+  // Template dialog state
+  showTemplateDialog: boolean;
+
   // Actions
   setWorkflow: (workflow: Workflow | null) => void;
   updateWorkflow: (updates: Partial<Workflow>, skipHistory?: boolean) => void;
   addNode: (node: WorkflowNode) => void;
+  addNodes: (nodes: WorkflowNode[]) => void;
   updateNode: (
     nodeId: string,
     updates: Partial<WorkflowNode>,
@@ -93,6 +97,7 @@ interface WorkflowStore extends WorkflowEditorState {
   ) => void;
 
   addConnection: (connection: WorkflowConnection) => void;
+  addConnections: (connections: WorkflowConnection[]) => void;
   removeConnection: (connectionId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -203,6 +208,10 @@ interface WorkflowStore extends WorkflowEditorState {
   // Chat dialog actions
   openChatDialog: (nodeId: string) => void;
   closeChatDialog: () => void;
+
+  // Template dialog actions
+  openTemplateDialog: () => void;
+  closeTemplateDialog: () => void;
 
   // Error handling
   handleError: (
@@ -321,6 +330,9 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       showChatDialog: false,
       chatDialogNodeId: null,
 
+      // Template dialog state
+      showTemplateDialog: false,
+
       // Actions
       setWorkflow: (workflow) => {
         let processedWorkflow = workflow;
@@ -411,6 +423,18 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         get().saveToHistory(`Add node: ${node.name}`);
       },
 
+      addNodes: (nodes) => {
+        const current = get().workflow;
+        if (!current) return;
+
+        const updated = {
+          ...current,
+          nodes: [...current.nodes, ...nodes],
+        };
+        set({ workflow: updated, isDirty: true });
+        get().saveToHistory(`Add ${nodes.length} nodes`);
+      },
+
       updateNode: (nodeId, updates, skipHistory = false) => {
         const current = get().workflow;
         if (!current) return;
@@ -450,6 +474,25 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         };
         set({ workflow: updated, isDirty: true });
         get().saveToHistory("Add connection");
+      },
+
+      addConnections: (connections) => {
+        const current = get().workflow;
+        if (!current) return;
+
+        // Filter out invalid connections
+        const validConnections = connections.filter(conn =>
+          get().validateConnection(conn.sourceNodeId, conn.targetNodeId)
+        );
+
+        if (validConnections.length === 0) return;
+
+        const updated = {
+          ...current,
+          connections: [...current.connections, ...validConnections],
+        };
+        set({ workflow: updated, isDirty: true });
+        get().saveToHistory(`Add ${validConnections.length} connections`);
       },
 
       removeConnection: (connectionId) => {
@@ -3318,6 +3361,19 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         set({
           showChatDialog: false,
           chatDialogNodeId: null,
+        });
+      },
+
+      // Template dialog actions
+      openTemplateDialog: () => {
+        set({
+          showTemplateDialog: true,
+        });
+      },
+
+      closeTemplateDialog: () => {
+        set({
+          showTemplateDialog: false,
         });
       },
 

@@ -25,10 +25,13 @@ import {
 } from '@/hooks/workflow'
 import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
 import { useNodeTypes } from '@/stores/nodeTypes'
+import { templateService } from '@/services'
 import { NodeType } from '@/types'
+import { useToast } from '@/hooks/useToast'
 import { AddNodeCommandDialog } from './AddNodeCommandDialog'
 
 import { ChatDialog } from './ChatDialog'
+import { CreateTemplateDialog } from './CreateTemplateDialog'
 import { CustomNode } from './CustomNode'
 import { ExecutionPanel } from './ExecutionPanel'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -63,9 +66,13 @@ export function WorkflowEditor({
     const redo = useWorkflowStore(state => state.redo)
     const closeNodeProperties = useWorkflowStore(state => state.closeNodeProperties)
     const closeChatDialog = useWorkflowStore(state => state.closeChatDialog)
+    const showTemplateDialog = useWorkflowStore(state => state.showTemplateDialog)
+    const closeTemplateDialog = useWorkflowStore(state => state.closeTemplateDialog)
+
+    const { showSuccess, showError } = useToast()
 
     // Get dynamic node types from store to include newly uploaded nodes
-    const { activeNodeTypes: storeNodeTypes } = useNodeTypes()
+    const { activeNodeTypes: storeNodeTypes, refetchNodeTypes } = useNodeTypes()
 
     // Don't load node types on component mount - let them load lazily when needed
     // Node types will be loaded when user opens the add node dialog or nodes sidebar
@@ -189,6 +196,37 @@ export function WorkflowEditor({
 
     // Memoize empty delete handler to prevent recreation on every render
     const emptyDeleteHandler = useCallback(() => { }, [])
+
+    // Handle template creation
+    const handleCreateTemplate = useCallback(async (data: {
+        name: string
+        displayName: string
+        description: string
+        icon?: string
+        color?: string
+        group?: string[]
+    }) => {
+        if (!workflow || selectedNodes.length === 0) return
+
+        const selectedNodeIds = new Set(selectedNodes.map(n => n.id))
+        const templateNodes = workflow.nodes.filter(node => selectedNodeIds.has(node.id))
+        const templateConnections = workflow.connections.filter(conn =>
+            selectedNodeIds.has(conn.sourceNodeId) && selectedNodeIds.has(conn.targetNodeId)
+        )
+
+        await templateService.createTemplate({
+            ...data,
+            nodes: templateNodes,
+            connections: templateConnections,
+        })
+
+        showSuccess('Template created', {
+            message: `Template "${data.displayName}" has been created successfully.`,
+        })
+
+        // Reload node types to include the new template
+        await refetchNodeTypes()
+    }, [workflow, selectedNodes, showSuccess, showError, refetchNodeTypes])
 
     // Memoize add node handler - calculate viewport center position
     const handleAddNode = useCallback(() => {
@@ -420,6 +458,15 @@ export function WorkflowEditor({
                                                 </TabsTrigger>
                                             </TabsList>
                                             <div className="flex gap-2">
+                                                {codeTab === 'selected' && selectedNodes.length > 0 && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => useWorkflowStore.getState().openTemplateDialog()}
+                                                    >
+                                                        Create Template
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -502,6 +549,20 @@ export function WorkflowEditor({
                     open={showAddNodeDialog}
                     onOpenChange={closeDialog}
                     position={position}
+                />
+            )}
+
+            {/* Create Template Dialog */}
+            {workflow && selectedNodes.length > 0 && (
+                <CreateTemplateDialog
+                    open={showTemplateDialog}
+                    onOpenChange={closeTemplateDialog}
+                    nodes={workflow.nodes.filter(n => selectedNodes.some(sn => sn.id === n.id))}
+                    connections={workflow.connections.filter(conn =>
+                        selectedNodes.some(n => n.id === conn.sourceNodeId) &&
+                        selectedNodes.some(n => n.id === conn.targetNodeId)
+                    )}
+                    onCreateTemplate={handleCreateTemplate}
                 />
             )}
         </div>
