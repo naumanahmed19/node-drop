@@ -212,6 +212,18 @@ export function BaseNodeWrapper({
   )
   const canGroup = selectedNodesForGrouping.length >= 1
 
+  // Check if we can create template (need at least 1 selected node)
+  const selectedNodesForTemplate = getNodes().filter(node => node.selected && node.type !== 'group')
+  const canCreateTemplate = selectedNodesForTemplate.length >= 1
+
+  // Get template dialog action from store
+  const openTemplateDialog = useWorkflowStore(state => state.openTemplateDialog)
+  
+  // Handle create template
+  const handleCreateTemplate = useCallback(() => {
+    openTemplateDialog()
+  }, [openTemplateDialog])
+
   // Use execution hook for toolbar functionality and visual state
   const {
     nodeExecutionState,
@@ -388,12 +400,14 @@ export function BaseNodeWrapper({
                   onPaste={paste || undefined}
                   onUngroup={isInGroup ? handleUngroup : undefined}
                   onGroup={canGroup ? handleGroup : undefined}
+                  onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
                   isLocked={!!data.locked}
                   readOnly={isReadOnly}
                   canCopy={canCopy}
                   canPaste={canPaste}
                   isInGroup={isInGroup}
                   canGroup={canGroup}
+                  canCreateTemplate={canCreateTemplate}
                 />
               </ContextMenu>
             </div>
@@ -526,12 +540,14 @@ export function BaseNodeWrapper({
           onPaste={paste || undefined}
           onUngroup={isInGroup ? handleUngroup : undefined}
           onGroup={canGroup ? handleGroup : undefined}
+          onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
           isLocked={!!data.locked}
           readOnly={isReadOnly}
           canCopy={canCopy}
           canPaste={canPaste}
           isInGroup={isInGroup}
           canGroup={canGroup}
+          canCreateTemplate={canCreateTemplate}
         />
       </ContextMenu>
     )
@@ -611,12 +627,14 @@ export function BaseNodeWrapper({
         onPaste={paste || undefined}
         onUngroup={isInGroup ? handleUngroup : undefined}
         onGroup={canGroup ? handleGroup : undefined}
+        onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
         isLocked={!!data.locked}
         readOnly={isReadOnly}
         canCopy={canCopy}
         canPaste={canPaste}
         isInGroup={isInGroup}
         canGroup={canGroup}
+        canCreateTemplate={canCreateTemplate}
       />
     </ContextMenu>
   )

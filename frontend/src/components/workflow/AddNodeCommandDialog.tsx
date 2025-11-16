@@ -9,6 +9,7 @@ import {
   CommandList,
   CommandSeparator
 } from '@/components/ui/command'
+import { useTemplateExpansion } from '@/hooks/workflow'
 import { useAddNodeDialogStore, useNodeTypes, useWorkflowStore } from '@/stores'
 import { NodeType, WorkflowConnection, WorkflowNode } from '@/types'
 import { fuzzyFilter } from '@/utils/fuzzySearch'
@@ -29,6 +30,7 @@ export function AddNodeCommandDialog({
   const { addNode, addConnection, removeConnection, workflow, updateNode } = useWorkflowStore()
   const { insertionContext } = useAddNodeDialogStore()
   const reactFlowInstance = useReactFlow()
+  const { isTemplateNode, handleTemplateExpansion } = useTemplateExpansion()
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
@@ -176,6 +178,30 @@ export function AddNodeCommandDialog({
   const handleSelectNode = useCallback((nodeType: NodeType) => {
     if (!reactFlowInstance) return
 
+    // Check if this is a template node
+    if (isTemplateNode(nodeType)) {
+      // Calculate position where to add the template
+      let templatePosition = { x: 300, y: 300 }
+
+      if (position) {
+        templatePosition = position
+      } else {
+        // Get center of viewport as fallback
+        const viewportCenter = reactFlowInstance.screenToFlowPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        })
+        templatePosition = viewportCenter
+      }
+
+      // Handle template expansion (with or without variables)
+      handleTemplateExpansion(nodeType, templatePosition, () => {
+        onOpenChange(false)
+      })
+      return
+    }
+
+    // Regular node (not a template) - continue with normal flow
     // Calculate position where to add the node
     let nodePosition = { x: 300, y: 300 }
     let parentGroupId: string | undefined = undefined
@@ -429,7 +455,7 @@ export function AddNodeCommandDialog({
     )
 
     onOpenChange(false)
-  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext, findNonOverlappingPosition])
+  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext, findNonOverlappingPosition, isTemplateNode, handleTemplateExpansion])
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>

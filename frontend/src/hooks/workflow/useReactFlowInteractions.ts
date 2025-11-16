@@ -16,6 +16,7 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
 import { useDeleteNodes } from "./useDeleteNodes";
+import { useTemplateExpansion } from "./useTemplateExpansion";
 
 /**
  * Custom hook for ReactFlow interactions
@@ -42,6 +43,7 @@ export function useReactFlowInteractions() {
   );
 
   const { openDialog } = useAddNodeDialogStore();
+  const { isTemplateNode, handleTemplateExpansion } = useTemplateExpansion();
 
   const [connectionInProgress, setConnectionInProgress] =
     useState<Connection | null>(null);
@@ -420,42 +422,56 @@ export function useReactFlowInteractions() {
       if (!nodeTypeData) return;
 
       try {
-        const nodeType: NodeType = JSON.parse(nodeTypeData);
+        const nodeType: NodeType & { isTemplate?: boolean; templateData?: any } = JSON.parse(nodeTypeData);
+
+        console.log('🎯 Node dropped:', {
+          type: nodeType.type,
+          isTemplate: nodeType.isTemplate,
+          hasTemplateData: !!nodeType.templateData,
+          templateData: nodeType.templateData
+        });
 
         const position = reactFlowInstance.screenToFlowPosition({
           x: event.clientX - reactFlowBounds.left,
           y: event.clientY - reactFlowBounds.top,
         });
 
-        // Initialize parameters with defaults from node type and properties
-        const parameters: Record<string, any> = { ...nodeType.defaults };
+        // Check if this is a template node
+        if (isTemplateNode(nodeType)) {
+          handleTemplateExpansion(nodeType, position);
+          return; // Exit early for templates
+        } else {
+          // Regular node drop (not a template)
+          // Initialize parameters with defaults from node type and properties
+          const parameters: Record<string, any> = { ...nodeType.defaults };
 
-        // Add default values from properties
-        nodeType.properties.forEach((property) => {
-          if (
-            property.default !== undefined &&
-            parameters[property.name] === undefined
-          ) {
-            parameters[property.name] = property.default;
-          }
-        });
+          // Add default values from properties
+          nodeType.properties.forEach((property) => {
+            if (
+              property.default !== undefined &&
+              parameters[property.name] === undefined
+            ) {
+              parameters[property.name] = property.default;
+            }
+          });
 
-        const newNode: WorkflowNode = {
-          id: `node-${Date.now()}`,
-          type: nodeType.type,
-          name: nodeType.displayName,
-          parameters,
-          position,
-          credentials: [],
-          disabled: false,
-        };
+          const newNode: WorkflowNode = {
+            id: `node-${Date.now()}`,
+            type: nodeType.type,
+            name: nodeType.displayName,
+            parameters,
+            position,
+            credentials: [],
+            disabled: false,
+          };
 
-        addNode(newNode);
+          addNode(newNode);
+        }
       } catch (error) {
         console.error("Failed to parse dropped node data:", error);
       }
     },
-    [reactFlowInstance, addNode]
+    [reactFlowInstance, addNode, addConnection]
   );
 
   // Handle node double-click to open properties

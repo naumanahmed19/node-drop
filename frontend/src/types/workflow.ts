@@ -179,6 +179,33 @@ export interface NodeType {
   canBeDisabled?: boolean;
   // Custom settings specific to this node type (flat object)
   settings?: Record<string, NodeSetting>;
+  // Template fields
+  isTemplate?: boolean;
+  templateData?: {
+    nodes: WorkflowNode[];
+    connections: WorkflowConnection[];
+    variables?: TemplateVariable[];
+  };
+}
+
+export interface TemplateVariable {
+  name: string;
+  displayName: string;
+  description?: string;
+  type: 'string' | 'text' | 'number' | 'boolean' | 'options' | 'multiOptions' | 'json' | 'dateTime' | 'textarea' | 'password' | 'email' | 'url' | 'switch' | 'credential';
+  default?: any;
+  required?: boolean;
+  options?: Array<{ name: string; value: any; description?: string }>; // For options type
+  placeholder?: string;
+  tooltip?: string;
+  validation?: {
+    min?: number;
+    max?: number;
+    pattern?: string;
+    minLength?: number;
+    maxLength?: number;
+  };
+  allowedTypes?: string[]; // For credential type - array of credential type names
 }
 
 export interface CredentialDefinition {

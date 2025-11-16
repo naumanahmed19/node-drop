@@ -44,6 +44,7 @@
  */
 
 export { useAutoLayout } from "./useAutoLayout";
+export { useCodePanel } from "./useCodePanel";
 export { useCopyPaste } from "./useCopyPaste";
 export { useCrossWindowCopyPaste } from "./useCrossWindowCopyPaste";
 export { useDeleteNodes } from "./useDeleteNodes";
@@ -61,5 +62,6 @@ export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 export { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
 export { useNodeValidation } from "./useNodeValidation";
 export { useReactFlowInteractions } from "./useReactFlowInteractions";
+export { useTemplateExpansion } from "./useTemplateExpansion";
 export { useWorkflowEditorUI } from "./useWorkflowEditorUI";
 export { useWorkflowOperations } from "./useWorkflowOperations";

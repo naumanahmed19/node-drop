@@ -22,7 +22,6 @@ export function UrlGenerator({
   webhookPath = "",
   mode = "test",
   urlType = "webhook",
-  nodeId,
 }: UrlGeneratorProps) {
   const [webhookId, setWebhookId] = useState<string>(() => {
     // For forms, don't auto-generate - let user provide the path

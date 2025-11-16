@@ -3,7 +3,7 @@ import {
     ReactFlowProvider
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import {
     ResizableHandle,
@@ -12,8 +12,10 @@ import {
 } from '@/components/ui/resizable'
 import { Button } from '@/components/ui/button'
 import { JsonEditor } from '@/components/ui/json-editor'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useExecutionAwareEdges } from '@/hooks/workflow'
 import {
+    useCodePanel,
     useCopyPaste,
     useExecutionControls,
     useExecutionPanelData,
@@ -23,10 +25,14 @@ import {
 } from '@/hooks/workflow'
 import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore, useWorkflowToolbarStore } from '@/stores'
 import { useNodeTypes } from '@/stores/nodeTypes'
+import { templateService } from '@/services'
 import { NodeType } from '@/types'
+import { useToast } from '@/hooks/useToast'
 import { AddNodeCommandDialog } from './AddNodeCommandDialog'
 
 import { ChatDialog } from './ChatDialog'
+import { CreateTemplateDialog } from './CreateTemplateDialog'
+import { TemplateVariableDialog } from './TemplateVariableDialog'
 import { CustomNode } from './CustomNode'
 import { ExecutionPanel } from './ExecutionPanel'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -49,10 +55,6 @@ export function WorkflowEditor({
     readOnly = false,
     executionMode = false
 }: WorkflowEditorProps) {
-    // Local state for code editor
-    const [codeContent, setCodeContent] = useState('')
-    const [codeError, setCodeError] = useState<string | null>(null)
-
     // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
     // Only subscribe to the specific state slices we need
     const workflow = useWorkflowStore(state => state.workflow)
@@ -65,9 +67,16 @@ export function WorkflowEditor({
     const redo = useWorkflowStore(state => state.redo)
     const closeNodeProperties = useWorkflowStore(state => state.closeNodeProperties)
     const closeChatDialog = useWorkflowStore(state => state.closeChatDialog)
+    const showTemplateDialog = useWorkflowStore(state => state.showTemplateDialog)
+    const closeTemplateDialog = useWorkflowStore(state => state.closeTemplateDialog)
+    const showTemplateVariableDialog = useWorkflowStore(state => state.showTemplateVariableDialog)
+    const templateVariableDialogData = useWorkflowStore(state => state.templateVariableDialogData)
+    const closeTemplateVariableDialog = useWorkflowStore(state => state.closeTemplateVariableDialog)
+
+    const { showSuccess, showError } = useToast()
 
     // Get dynamic node types from store to include newly uploaded nodes
-    const { activeNodeTypes: storeNodeTypes } = useNodeTypes()
+    const { activeNodeTypes: storeNodeTypes, refetchNodeTypes } = useNodeTypes()
 
     // Don't load node types on component mount - let them load lazily when needed
     // Node types will be loaded when user opens the add node dialog or nodes sidebar
@@ -164,6 +173,19 @@ export function WorkflowEditor({
         showNodePalette,
     } = useWorkflowToolbarStore()
 
+    // Code panel hook
+    const {
+        codeContent,
+        setCodeContent,
+        codeError,
+        setCodeError,
+        codeTab,
+        setCodeTab,
+        selectedNodes,
+        resetCodeContent,
+        validateCodeContent,
+    } = useCodePanel({ workflow, nodes, isCodeMode })
+
     // Execution panel data
     const { flowExecutionStatus, executionMetrics } = useExecutionPanelData({
         executionId: executionState.executionId,
@@ -178,6 +200,68 @@ export function WorkflowEditor({
 
     // Memoize empty delete handler to prevent recreation on every render
     const emptyDeleteHandler = useCallback(() => { }, [])
+
+    // Handle template variable submission
+    const handleTemplateVariableSubmit = useCallback((values: Record<string, any>) => {
+        if (!templateVariableDialogData) return
+
+        const { nodeType, position } = templateVariableDialogData
+        const { nodes: templateNodes, connections: templateConnections } = nodeType.templateData
+
+        // Import and expand template with variable values
+        import('@/utils/templateExpansion').then(({ expandTemplate }) => {
+            const { nodes: expandedNodes, connections: expandedConnections } = expandTemplate(
+                templateNodes,
+                templateConnections,
+                position,
+                values // Pass variable values
+            )
+
+            // Add nodes and connections
+            const addNodes = useWorkflowStore.getState().addNodes
+            const addConnections = useWorkflowStore.getState().addConnections
+
+            if (addNodes) {
+                addNodes(expandedNodes)
+            }
+            if (addConnections) {
+                addConnections(expandedConnections)
+            }
+
+            console.log('✅ Template with variables expanded successfully')
+        })
+    }, [templateVariableDialogData])
+
+    // Handle template creation
+    const handleCreateTemplate = useCallback(async (data: {
+        name: string
+        displayName: string
+        description: string
+        icon?: string
+        color?: string
+        group?: string[]
+    }) => {
+        if (!workflow || selectedNodes.length === 0) return
+
+        const selectedNodeIds = new Set(selectedNodes.map(n => n.id))
+        const templateNodes = workflow.nodes.filter(node => selectedNodeIds.has(node.id))
+        const templateConnections = workflow.connections.filter(conn =>
+            selectedNodeIds.has(conn.sourceNodeId) && selectedNodeIds.has(conn.targetNodeId)
+        )
+
+        await templateService.createTemplate({
+            ...data,
+            nodes: templateNodes,
+            connections: templateConnections,
+        })
+
+        showSuccess('Template created', {
+            message: `Template "${data.displayName}" has been created successfully.`,
+        })
+
+        // Reload node types to include the new template
+        await refetchNodeTypes()
+    }, [workflow, selectedNodes, showSuccess, showError, refetchNodeTypes])
 
     // Memoize add node handler - calculate viewport center position
     const handleAddNode = useCallback(() => {
@@ -323,21 +407,6 @@ export function WorkflowEditor({
         return chatNode?.name || 'Chat'
     }, [chatNode])
 
-    // Initialize code content when code panel opens
-    useEffect(() => {
-        if (isCodeMode && workflow) {
-            setCodeContent(JSON.stringify(workflow, null, 2))
-            setCodeError(null)
-        }
-    }, [isCodeMode])
-
-    // Update code content when workflow changes (only in code mode)
-    useEffect(() => {
-        if (isCodeMode && workflow) {
-            setCodeContent(JSON.stringify(workflow, null, 2))
-        }
-    }, [workflow, isCodeMode])
-
     return (
         <div className="flex flex-col h-full w-full">
             <WorkflowErrorBoundary>
@@ -415,84 +484,37 @@ export function WorkflowEditor({
                             <>
                                 <ResizableHandle withHandle />
                                 <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                                    <div className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
+                                    <Tabs value={codeTab} onValueChange={(value) => setCodeTab(value as 'full' | 'selected')} className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
                                         <div className="flex items-center justify-between mb-3 flex-shrink-0 px-4">
-                                            <h3 className="text-sm font-semibold">Workflow JSON</h3>
+                                            <TabsList>
+                                                <TabsTrigger value="full">Full Workflow</TabsTrigger>
+                                                <TabsTrigger value="selected" disabled={selectedNodes.length === 0}>
+                                                    Selected ({selectedNodes.length})
+                                                </TabsTrigger>
+                                            </TabsList>
                                             <div className="flex gap-2">
+                                                {codeTab === 'selected' && selectedNodes.length > 0 && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => useWorkflowStore.getState().openTemplateDialog()}
+                                                    >
+                                                        Create Template
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => {
-                                                        setCodeContent(JSON.stringify(workflow, null, 2))
-                                                        setCodeError(null)
-                                                    }}
+                                                    onClick={resetCodeContent}
                                                 >
                                                     Reset
                                                 </Button>
                                                 <Button
                                                     size="sm"
                                                     onClick={() => {
-                                                        try {
-                                                            const parsed = JSON.parse(codeContent)
-                                                            
-                                                            // Basic workflow structure validation
-                                                            if (!parsed || typeof parsed !== 'object') {
-                                                                setCodeError('Workflow must be an object')
-                                                                return
-                                                            }
-                                                            
-                                                            if (!Array.isArray(parsed.nodes)) {
-                                                                setCodeError('Workflow must have a "nodes" array')
-                                                                return
-                                                            }
-                                                            
-                                                            if (!Array.isArray(parsed.connections)) {
-                                                                setCodeError('Workflow must have a "connections" array')
-                                                                return
-                                                            }
-                                                            
-                                                            // Validate node structure
-                                                            for (let i = 0; i < parsed.nodes.length; i++) {
-                                                                const node = parsed.nodes[i]
-                                                                if (!node.id) {
-                                                                    setCodeError(`Node at index ${i} is missing "id" field`)
-                                                                    return
-                                                                }
-                                                                if (!node.type) {
-                                                                    setCodeError(`Node "${node.id}" is missing "type" field`)
-                                                                    return
-                                                                }
-                                                            }
-                                                            
-                                                            // Validate connection structure
-                                                            for (let i = 0; i < parsed.connections.length; i++) {
-                                                                const conn = parsed.connections[i]
-                                                                if (!conn.source) {
-                                                                    setCodeError(`Connection at index ${i} is missing "source" field`)
-                                                                    return
-                                                                }
-                                                                if (!conn.target) {
-                                                                    setCodeError(`Connection at index ${i} is missing "target" field`)
-                                                                    return
-                                                                }
-                                                            }
-                                                            
+                                                        const parsed = validateCodeContent()
+                                                        if (parsed) {
                                                             updateWorkflow(parsed)
-                                                            setCodeError(null)
-                                                        } catch (error) {
-                                                            if (error instanceof SyntaxError) {
-                                                                // Extract line number from syntax error if available
-                                                                const match = error.message.match(/at position (\d+)/)
-                                                                if (match) {
-                                                                    const position = parseInt(match[1])
-                                                                    const lines = codeContent.substring(0, position).split('\n')
-                                                                    setCodeError(`JSON Syntax Error at line ${lines.length}: ${error.message}`)
-                                                                } else {
-                                                                    setCodeError(`JSON Syntax Error: ${error.message}`)
-                                                                }
-                                                            } else {
-                                                                setCodeError(error instanceof Error ? error.message : 'Invalid JSON')
-                                                            }
                                                         }
                                                     }}
                                                 >
@@ -500,8 +522,8 @@ export function WorkflowEditor({
                                                 </Button>
                                             </div>
                                         </div>
-                                        <div className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto">
+                                        <TabsContent value="full" className="flex-1 min-h-0 relative">
+                                            <div className="absolute inset-0 overflow-auto px-4">
                                                 <JsonEditor
                                                     value={codeContent}
                                                     onValueChange={(value) => {
@@ -511,8 +533,20 @@ export function WorkflowEditor({
                                                     error={codeError || undefined}
                                                 />
                                             </div>
-                                        </div>
-                                    </div>
+                                        </TabsContent>
+                                        <TabsContent value="selected" className="flex-1 min-h-0 relative">
+                                            <div className="absolute inset-0 overflow-auto px-4">
+                                                <JsonEditor
+                                                    value={codeContent}
+                                                    onValueChange={(value) => {
+                                                        setCodeContent(value)
+                                                        setCodeError(null)
+                                                    }}
+                                                    error={codeError || undefined}
+                                                />
+                                            </div>
+                                        </TabsContent>
+                                    </Tabs>
                                 </ResizablePanel>
                             </>
                         )}
@@ -550,6 +584,31 @@ export function WorkflowEditor({
                     open={showAddNodeDialog}
                     onOpenChange={closeDialog}
                     position={position}
+                />
+            )}
+
+            {/* Create Template Dialog */}
+            {workflow && selectedNodes.length > 0 && (
+                <CreateTemplateDialog
+                    open={showTemplateDialog}
+                    onOpenChange={closeTemplateDialog}
+                    nodes={workflow.nodes.filter(n => selectedNodes.some(sn => sn.id === n.id))}
+                    connections={workflow.connections.filter(conn =>
+                        selectedNodes.some(n => n.id === conn.sourceNodeId) &&
+                        selectedNodes.some(n => n.id === conn.targetNodeId)
+                    )}
+                    onCreateTemplate={handleCreateTemplate}
+                />
+            )}
+
+            {/* Template Variable Configuration Dialog */}
+            {showTemplateVariableDialog && templateVariableDialogData && (
+                <TemplateVariableDialog
+                    open={showTemplateVariableDialog}
+                    onOpenChange={closeTemplateVariableDialog}
+                    variables={templateVariableDialogData.nodeType.templateData?.variables || []}
+                    templateName={templateVariableDialogData.nodeType.displayName}
+                    onSubmit={handleTemplateVariableSubmit}
                 />
             )}
         </div>

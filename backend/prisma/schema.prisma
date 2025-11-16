@@ -241,6 +241,8 @@ model NodeType {
   color              String?
   outputComponent    String?  // Custom output component identifier for dynamic rendering
   active             Boolean  @default(true)
+  isTemplate         Boolean  @default(false) // Flag to identify template nodes
+  templateData       Json?    // Template structure (nodes and connections)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
