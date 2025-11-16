@@ -85,6 +85,13 @@ interface WorkflowStore extends WorkflowEditorState {
   // Template dialog state
   showTemplateDialog: boolean;
 
+  // Template variable dialog state
+  showTemplateVariableDialog: boolean;
+  templateVariableDialogData: {
+    nodeType: any;
+    position: { x: number; y: number };
+  } | null;
+
   // Actions
   setWorkflow: (workflow: Workflow | null) => void;
   updateWorkflow: (updates: Partial<Workflow>, skipHistory?: boolean) => void;
@@ -213,6 +220,10 @@ interface WorkflowStore extends WorkflowEditorState {
   openTemplateDialog: () => void;
   closeTemplateDialog: () => void;
 
+  // Template variable dialog actions
+  openTemplateVariableDialog: (nodeType: any, position: { x: number; y: number }) => void;
+  closeTemplateVariableDialog: () => void;
+
   // Error handling
   handleError: (
     error: unknown,
@@ -332,6 +343,10 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
       // Template dialog state
       showTemplateDialog: false,
+
+      // Template variable dialog state
+      showTemplateVariableDialog: false,
+      templateVariableDialogData: null,
 
       // Actions
       setWorkflow: (workflow) => {
@@ -3374,6 +3389,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       closeTemplateDialog: () => {
         set({
           showTemplateDialog: false,
+        });
+      },
+
+      // Template variable dialog actions
+      openTemplateVariableDialog: (nodeType, position) => {
+        set({
+          showTemplateVariableDialog: true,
+          templateVariableDialogData: { nodeType, position },
+        });
+      },
+
+      closeTemplateVariableDialog: () => {
+        set({
+          showTemplateVariableDialog: false,
+          templateVariableDialogData: null,
         });
       },
 

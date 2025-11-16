@@ -1,5 +1,6 @@
-import { WorkflowNode, WorkflowConnection, NodeType } from '@/types'
+import { WorkflowNode, WorkflowConnection, NodeType, TemplateVariable } from '@/types'
 import { apiClient as api } from './api'
+import { detectVariablesInNodes } from '@/utils/templateVariables'
 
 export interface CreateTemplateRequest {
   name: string
@@ -17,6 +18,7 @@ export interface TemplateNodeType extends NodeType {
   templateData: {
     nodes: WorkflowNode[]
     connections: WorkflowConnection[]
+    variables?: TemplateVariable[]
   }
 }
 
@@ -27,6 +29,18 @@ export class TemplateService {
    * Create a new template from selected nodes
    */
   async createTemplate(data: CreateTemplateRequest): Promise<TemplateNodeType> {
+    // Detect variables in the template nodes
+    const detectedVariables = detectVariablesInNodes(data.nodes)
+    const variables: TemplateVariable[] = Array.from(detectedVariables).map(varName => ({
+      name: varName,
+      displayName: varName.replace(/[_.$]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      description: `Value for ${varName}`,
+      type: 'string' as const,
+      required: true,
+    }))
+
+    console.log('📦 Creating template with detected variables:', variables)
+
     const response = await api.post<TemplateNodeType>(this.baseUrl, {
       type: data.name,
       displayName: data.displayName,
@@ -44,6 +58,7 @@ export class TemplateService {
       templateData: {
         nodes: data.nodes,
         connections: data.connections,
+        variables: variables.length > 0 ? variables : undefined,
       },
     })
 

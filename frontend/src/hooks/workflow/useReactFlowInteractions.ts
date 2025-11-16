@@ -16,6 +16,7 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
 import { useDeleteNodes } from "./useDeleteNodes";
+import { useTemplateExpansion } from "./useTemplateExpansion";
 
 /**
  * Custom hook for ReactFlow interactions
@@ -42,6 +43,7 @@ export function useReactFlowInteractions() {
   );
 
   const { openDialog } = useAddNodeDialogStore();
+  const { isTemplateNode, handleTemplateExpansion } = useTemplateExpansion();
 
   const [connectionInProgress, setConnectionInProgress] =
     useState<Connection | null>(null);
@@ -435,67 +437,8 @@ export function useReactFlowInteractions() {
         });
 
         // Check if this is a template node
-        if (nodeType.isTemplate && nodeType.templateData) {
-          console.log('📦 Expanding template at position:', position);
-          
-          // Import template expansion utilities dynamically
-          import('@/utils/templateExpansion').then(({ expandTemplate }) => {
-            const { nodes: templateNodes, connections: templateConnections } = nodeType.templateData;
-            
-            console.log('📦 Template data:', {
-              nodesCount: templateNodes?.length || 0,
-              connectionsCount: templateConnections?.length || 0,
-              nodes: templateNodes,
-              connections: templateConnections
-            });
-
-            if (!templateNodes || templateNodes.length === 0) {
-              console.error('❌ Template has no nodes!');
-              return;
-            }
-            
-            // Expand template into individual nodes and connections
-            const { nodes: expandedNodes, connections: expandedConnections } = expandTemplate(
-              templateNodes,
-              templateConnections,
-              position
-            );
-
-            console.log('✅ Template expanded:', {
-              expandedNodesCount: expandedNodes.length,
-              expandedConnectionsCount: expandedConnections.length,
-              expandedNodes,
-              expandedConnections
-            });
-
-            // Add all expanded nodes
-            const addNodes = useWorkflowStore.getState().addNodes;
-            const addConnections = useWorkflowStore.getState().addConnections;
-            
-            if (addNodes) {
-              console.log('➕ Adding nodes using batch operation');
-              addNodes(expandedNodes);
-            } else {
-              console.log('➕ Adding nodes one by one');
-              // Fallback: add nodes one by one
-              expandedNodes.forEach((node: WorkflowNode) => addNode(node));
-            }
-
-            // Add all connections
-            if (addConnections) {
-              console.log('🔗 Adding connections using batch operation');
-              addConnections(expandedConnections);
-            } else {
-              console.log('🔗 Adding connections one by one');
-              // Fallback: add connections one by one
-              expandedConnections.forEach((conn: WorkflowConnection) => addConnection(conn));
-            }
-
-            console.log('✅ Template expansion complete!');
-          }).catch(error => {
-            console.error('❌ Failed to import template expansion utility:', error);
-          });
-          
+        if (isTemplateNode(nodeType)) {
+          handleTemplateExpansion(nodeType, position);
           return; // Exit early for templates
         } else {
           // Regular node drop (not a template)

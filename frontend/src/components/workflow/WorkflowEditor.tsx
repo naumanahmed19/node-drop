@@ -32,6 +32,7 @@ import { AddNodeCommandDialog } from './AddNodeCommandDialog'
 
 import { ChatDialog } from './ChatDialog'
 import { CreateTemplateDialog } from './CreateTemplateDialog'
+import { TemplateVariableDialog } from './TemplateVariableDialog'
 import { CustomNode } from './CustomNode'
 import { ExecutionPanel } from './ExecutionPanel'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -68,6 +69,9 @@ export function WorkflowEditor({
     const closeChatDialog = useWorkflowStore(state => state.closeChatDialog)
     const showTemplateDialog = useWorkflowStore(state => state.showTemplateDialog)
     const closeTemplateDialog = useWorkflowStore(state => state.closeTemplateDialog)
+    const showTemplateVariableDialog = useWorkflowStore(state => state.showTemplateVariableDialog)
+    const templateVariableDialogData = useWorkflowStore(state => state.templateVariableDialogData)
+    const closeTemplateVariableDialog = useWorkflowStore(state => state.closeTemplateVariableDialog)
 
     const { showSuccess, showError } = useToast()
 
@@ -196,6 +200,37 @@ export function WorkflowEditor({
 
     // Memoize empty delete handler to prevent recreation on every render
     const emptyDeleteHandler = useCallback(() => { }, [])
+
+    // Handle template variable submission
+    const handleTemplateVariableSubmit = useCallback((values: Record<string, any>) => {
+        if (!templateVariableDialogData) return
+
+        const { nodeType, position } = templateVariableDialogData
+        const { nodes: templateNodes, connections: templateConnections } = nodeType.templateData
+
+        // Import and expand template with variable values
+        import('@/utils/templateExpansion').then(({ expandTemplate }) => {
+            const { nodes: expandedNodes, connections: expandedConnections } = expandTemplate(
+                templateNodes,
+                templateConnections,
+                position,
+                values // Pass variable values
+            )
+
+            // Add nodes and connections
+            const addNodes = useWorkflowStore.getState().addNodes
+            const addConnections = useWorkflowStore.getState().addConnections
+
+            if (addNodes) {
+                addNodes(expandedNodes)
+            }
+            if (addConnections) {
+                addConnections(expandedConnections)
+            }
+
+            console.log('✅ Template with variables expanded successfully')
+        })
+    }, [templateVariableDialogData])
 
     // Handle template creation
     const handleCreateTemplate = useCallback(async (data: {
@@ -563,6 +598,17 @@ export function WorkflowEditor({
                         selectedNodes.some(n => n.id === conn.targetNodeId)
                     )}
                     onCreateTemplate={handleCreateTemplate}
+                />
+            )}
+
+            {/* Template Variable Configuration Dialog */}
+            {showTemplateVariableDialog && templateVariableDialogData && (
+                <TemplateVariableDialog
+                    open={showTemplateVariableDialog}
+                    onOpenChange={closeTemplateVariableDialog}
+                    variables={templateVariableDialogData.nodeType.templateData?.variables || []}
+                    templateName={templateVariableDialogData.nodeType.displayName}
+                    onSubmit={handleTemplateVariableSubmit}
                 />
             )}
         </div>

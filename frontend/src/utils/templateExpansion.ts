@@ -1,5 +1,6 @@
 import { WorkflowNode, WorkflowConnection } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
+import { replaceVariablesInNodes } from './templateVariables'
 
 export interface TemplateExpansionResult {
   nodes: WorkflowNode[]
@@ -13,7 +14,8 @@ export interface TemplateExpansionResult {
 export function expandTemplate(
   templateNodes: WorkflowNode[],
   templateConnections: WorkflowConnection[],
-  dropPosition: { x: number; y: number }
+  dropPosition: { x: number; y: number },
+  variableValues?: Record<string, any>
 ): TemplateExpansionResult {
   console.log('🔧 expandTemplate called with:', {
     nodesCount: templateNodes.length,
@@ -28,9 +30,14 @@ export function expandTemplate(
     return { nodes: [], connections: [] }
   }
 
+  // Replace variables in nodes if values provided
+  const processedNodes = variableValues 
+    ? replaceVariablesInNodes(templateNodes, variableValues)
+    : templateNodes
+
   // Separate top-level nodes (no parent) from grouped nodes
-  const topLevelNodes = templateNodes.filter(n => !n.parentId)
-  const groupedNodes = templateNodes.filter(n => n.parentId)
+  const topLevelNodes = processedNodes.filter(n => !n.parentId)
+  const groupedNodes = processedNodes.filter(n => n.parentId)
 
   // Calculate the bounding box of top-level nodes only to find center
   const topLevelPositions = topLevelNodes.map(n => n.position)
@@ -50,12 +57,12 @@ export function expandTemplate(
 
   // Create mapping from old IDs to new IDs (including group nodes)
   const idMapping = new Map<string, string>()
-  templateNodes.forEach(node => {
+  processedNodes.forEach(node => {
     idMapping.set(node.id, `node-${Date.now()}-${uuidv4().slice(0, 8)}`)
   })
 
   // Create new nodes with updated IDs and positions
-  const newNodes: WorkflowNode[] = templateNodes.map(node => {
+  const newNodes: WorkflowNode[] = processedNodes.map(node => {
     const newId = idMapping.get(node.id)!
     
     let newPosition: { x: number; y: number }

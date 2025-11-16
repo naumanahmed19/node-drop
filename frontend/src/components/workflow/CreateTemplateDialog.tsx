@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -8,9 +8,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { FormGenerator, FormGeneratorRef, FormFieldConfig } from '@/components/ui/form-generator'
 import {
   Tags,
   TagsContent,
@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/shadcn-io/tags'
 import { WorkflowNode, WorkflowConnection } from '@/types'
 import { useNodeTypes } from '@/stores/nodeTypes'
+import { detectVariablesInNodes, detectCredentialsInNodes } from '@/utils/templateVariables'
+import { Variable, Key } from 'lucide-react'
 
 interface CreateTemplateDialogProps {
   open: boolean
@@ -47,11 +49,16 @@ export function CreateTemplateDialog({
   connections,
   onCreateTemplate,
 }: CreateTemplateDialogProps) {
-  const [name, setName] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('📦')
-  const [color, setColor] = useState('#6366f1')
+  const formRef = useRef<FormGeneratorRef>(null)
+  
+  const [formValues, setFormValues] = useState({
+    name: '',
+    displayName: '',
+    description: '',
+    icon: '📦',
+    color: '#6366f1',
+  })
+  
   const [selectedGroups, setSelectedGroups] = useState<string[]>(['Templates'])
   const [newGroup, setNewGroup] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -74,6 +81,42 @@ export function CreateTemplateDialog({
     return Array.from(combined).sort()
   }, [availableGroups, selectedGroups])
 
+  // Detect variables in the selected nodes
+  const detectedVariables = useMemo(() => {
+    return Array.from(detectVariablesInNodes(nodes))
+  }, [nodes])
+
+  // Detect credentials in the selected nodes
+  const nodesWithCredentials = useMemo(() => {
+    return Array.from(detectCredentialsInNodes(nodes))
+  }, [nodes])
+
+  // Define form fields (basic fields only, complex ones handled separately)
+  const formFields: FormFieldConfig[] = useMemo(() => [
+    {
+      name: 'name',
+      displayName: 'Template Name',
+      type: 'string',
+      required: true,
+      placeholder: 'e.g., AI Content Generator',
+      description: 'This will be converted to a type identifier (e.g., ai-content-generator)',
+    },
+    {
+      name: 'displayName',
+      displayName: 'Display Name',
+      type: 'string',
+      required: true,
+      placeholder: 'e.g., AI Content Generator',
+    },
+    {
+      name: 'description',
+      displayName: 'Description',
+      type: 'textarea',
+      placeholder: 'Describe what this template does...',
+      rows: 3,
+    },
+  ], [])
+
   const handleRemoveGroup = (group: string) => {
     setSelectedGroups(selectedGroups.filter(g => g !== group))
   }
@@ -94,20 +137,21 @@ export function CreateTemplateDialog({
     }
   }
 
-  const handleSubmit = async () => {
-    // Validation
-    if (!name.trim()) {
-      setError('Template name is required')
-      return
-    }
+  const handleFormChange = (name: string, value: any) => {
+    setFormValues(prev => ({ ...prev, [name]: value }))
+  }
 
-    if (!displayName.trim()) {
-      setError('Display name is required')
-      return
+  const handleSubmit = async () => {
+    // Validate using FormGenerator
+    if (formRef.current) {
+      const errors = formRef.current.validate()
+      if (Object.keys(errors).length > 0) {
+        return
+      }
     }
 
     // Generate type name from name (lowercase, no spaces)
-    const typeName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    const typeName = formValues.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 
     setIsSubmitting(true)
     setError(null)
@@ -115,19 +159,21 @@ export function CreateTemplateDialog({
     try {
       await onCreateTemplate({
         name: typeName,
-        displayName: displayName.trim(),
-        description: description.trim(),
-        icon,
-        color,
+        displayName: formValues.displayName.trim(),
+        description: formValues.description.trim(),
+        icon: formValues.icon,
+        color: formValues.color,
         group: selectedGroups.length > 0 ? selectedGroups : ['Templates'],
       })
 
       // Reset form
-      setName('')
-      setDisplayName('')
-      setDescription('')
-      setIcon('📦')
-      setColor('#6366f1')
+      setFormValues({
+        name: '',
+        displayName: '',
+        description: '',
+        icon: '📦',
+        color: '#6366f1',
+      })
       setSelectedGroups(['Templates'])
       onOpenChange(false)
     } catch (err) {
@@ -147,44 +193,18 @@ export function CreateTemplateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Template Name *</Label>
-            <Input
-              id="name"
-              placeholder="e.g., AI Content Generator"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isSubmitting}
-            />
-            <p className="text-xs text-muted-foreground">
-              This will be converted to a type identifier (e.g., ai-content-generator)
-            </p>
-          </div>
+        <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+          {/* Basic Form Fields */}
+          <FormGenerator
+            ref={formRef}
+            fields={formFields}
+            values={formValues}
+            onChange={handleFormChange}
+            disabled={isSubmitting}
+            validateOnBlur={true}
+          />
 
-          <div className="grid gap-2">
-            <Label htmlFor="displayName">Display Name *</Label>
-            <Input
-              id="displayName"
-              placeholder="e.g., AI Content Generator"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe what this template does..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isSubmitting}
-              rows={3}
-            />
-          </div>
-
+          {/* Groups Selector - Custom Component */}
           <div className="grid gap-2">
             <Label>Groups</Label>
             <Tags>
@@ -241,14 +261,15 @@ export function CreateTemplateDialog({
             </p>
           </div>
 
+          {/* Icon and Color - Custom Components */}
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="icon">Icon</Label>
               <Input
                 id="icon"
                 placeholder="📦"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
+                value={formValues.icon}
+                onChange={(e) => handleFormChange('icon', e.target.value)}
                 disabled={isSubmitting}
                 maxLength={2}
               />
@@ -260,20 +281,82 @@ export function CreateTemplateDialog({
                 <Input
                   id="color"
                   type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  value={formValues.color}
+                  onChange={(e) => handleFormChange('color', e.target.value)}
                   disabled={isSubmitting}
                   className="w-16 h-10 p-1"
                 />
                 <Input
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  value={formValues.color}
+                  onChange={(e) => handleFormChange('color', e.target.value)}
                   disabled={isSubmitting}
                   placeholder="#6366f1"
                 />
               </div>
             </div>
           </div>
+
+          {/* Variables Table */}
+          {detectedVariables.length > 0 && (
+            <div className="grid gap-2">
+              <div className="flex items-center gap-2">
+                <Variable className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Template Variables</Label>
+              </div>
+              <div className="rounded-md border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-3 py-2 text-left font-medium">Variable</th>
+                      <th className="px-3 py-2 text-left font-medium">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detectedVariables.map((variable, index) => (
+                      <tr key={variable} className={index !== detectedVariables.length - 1 ? 'border-b' : ''}>
+                        <td className="px-3 py-2 font-mono text-xs">{`{{${variable}}}`}</td>
+                        <td className="px-3 py-2 text-muted-foreground">text</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                These variables will be configurable when using this template.
+              </p>
+            </div>
+          )}
+
+          {/* Credentials Warning */}
+          {nodesWithCredentials.length > 0 && (
+            <div className="grid gap-2">
+              <div className="flex items-center gap-2">
+                <Key className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                <Label className="text-sm font-medium">Credentials Required</Label>
+              </div>
+              <div className="rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-amber-200 dark:border-amber-900 bg-amber-100/50 dark:bg-amber-900/20">
+                      <th className="px-3 py-2 text-left font-medium">Node</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nodesWithCredentials.map((nodeName, index) => (
+                      <tr key={nodeName} className={index !== nodesWithCredentials.length - 1 ? 'border-b border-amber-200 dark:border-amber-900' : ''}>
+                        <td className="px-3 py-2">{nodeName}</td>
+                        <td className="px-3 py-2 text-amber-700 dark:text-amber-400 text-xs">Requires credentials</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Users will need to configure credentials for these nodes when using this template.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="text-sm text-red-600 dark:text-red-400">

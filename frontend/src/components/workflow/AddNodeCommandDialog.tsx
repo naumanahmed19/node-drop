@@ -9,6 +9,7 @@ import {
   CommandList,
   CommandSeparator
 } from '@/components/ui/command'
+import { useTemplateExpansion } from '@/hooks/workflow'
 import { useAddNodeDialogStore, useNodeTypes, useWorkflowStore } from '@/stores'
 import { NodeType, WorkflowConnection, WorkflowNode } from '@/types'
 import { fuzzyFilter } from '@/utils/fuzzySearch'
@@ -29,6 +30,7 @@ export function AddNodeCommandDialog({
   const { addNode, addConnection, removeConnection, workflow, updateNode } = useWorkflowStore()
   const { insertionContext } = useAddNodeDialogStore()
   const reactFlowInstance = useReactFlow()
+  const { isTemplateNode, handleTemplateExpansion } = useTemplateExpansion()
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
@@ -177,9 +179,7 @@ export function AddNodeCommandDialog({
     if (!reactFlowInstance) return
 
     // Check if this is a template node
-    if (nodeType.isTemplate && nodeType.templateData) {
-      console.log('📦 Template selected from command dialog:', nodeType);
-      
+    if (isTemplateNode(nodeType)) {
       // Calculate position where to add the template
       let templatePosition = { x: 300, y: 300 }
 
@@ -194,59 +194,11 @@ export function AddNodeCommandDialog({
         templatePosition = viewportCenter
       }
 
-      // Import and expand template
-      import('@/utils/templateExpansion').then(({ expandTemplate }) => {
-        const { nodes: templateNodes, connections: templateConnections } = nodeType.templateData!;
-        
-        console.log('📦 Expanding template from command dialog:', {
-          nodesCount: templateNodes?.length || 0,
-          connectionsCount: templateConnections?.length || 0,
-          position: templatePosition
-        });
-
-        if (!templateNodes || templateNodes.length === 0) {
-          console.error('❌ Template has no nodes!');
-          return;
-        }
-        
-        // Expand template into individual nodes and connections
-        const { nodes: expandedNodes, connections: expandedConnections } = expandTemplate(
-          templateNodes,
-          templateConnections,
-          templatePosition
-        );
-
-        console.log('✅ Template expanded from command dialog:', {
-          expandedNodesCount: expandedNodes.length,
-          expandedConnectionsCount: expandedConnections.length
-        });
-
-        // Add all expanded nodes
-        const addNodes = useWorkflowStore.getState().addNodes;
-        const addConnections = useWorkflowStore.getState().addConnections;
-        
-        if (addNodes) {
-          addNodes(expandedNodes);
-        } else {
-          // Fallback: add nodes one by one
-          expandedNodes.forEach((node: WorkflowNode) => addNode(node));
-        }
-
-        // Add all connections
-        if (addConnections) {
-          addConnections(expandedConnections);
-        } else {
-          // Fallback: add connections one by one
-          expandedConnections.forEach((conn: WorkflowConnection) => addConnection(conn));
-        }
-
-        console.log('✅ Template expansion from command dialog complete!');
-      }).catch(error => {
-        console.error('❌ Failed to expand template from command dialog:', error);
-      });
-
-      onOpenChange(false);
-      return;
+      // Handle template expansion (with or without variables)
+      handleTemplateExpansion(nodeType, templatePosition, () => {
+        onOpenChange(false)
+      })
+      return
     }
 
     // Regular node (not a template) - continue with normal flow
@@ -503,7 +455,7 @@ export function AddNodeCommandDialog({
     )
 
     onOpenChange(false)
-  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext, findNonOverlappingPosition])
+  }, [addNode, addConnection, removeConnection, updateNode, workflow, onOpenChange, position, reactFlowInstance, insertionContext, findNonOverlappingPosition, isTemplateNode, handleTemplateExpansion])
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
