@@ -74,6 +74,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
       set({
         error: error?.message || "Failed to load node types",
         isLoading: false,
+        hasFetched: true, // Set hasFetched to true even on error to prevent infinite loops
       });
     }
   },
@@ -105,6 +106,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
       set({
         error: error?.message || "Failed to reload node types",
         isRefetching: false,
+        hasFetched: true, // Set hasFetched to true even on error to prevent infinite loops
       });
     }
   },
