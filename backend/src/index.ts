@@ -24,6 +24,7 @@ import oauthRoutes from "./routes/oauth";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
 import { scheduleJobsRoutes } from "./routes/schedule-jobs";
+import aiMemoryRoutes from "./routes/ai-memory.routes";
 import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
 import variableRoutes from "./routes/variables";
@@ -412,6 +413,7 @@ app.use("/api/execution-history", executionHistoryRoutes);
 app.use("/api/execution-recovery", executionRecoveryRoutes);
 app.use("/api/oauth", oauthRoutes);
 app.use("/api/google", googleRoutes);
+app.use("/api/ai-memory", aiMemoryRoutes);
 
 // Public API routes (no authentication required)
 app.use("/api/public/forms", publicFormsRoutes);
