@@ -99,23 +99,16 @@ function getNodeInputs(
   if (node.type === "chat" && node.parameters?.acceptInput === true) {
     return ["main"];
   }
+  
+  // If inputsConfig exists, extract all input names from it
+  if (nodeTypeDefinition?.inputsConfig) {
+    return Object.keys(nodeTypeDefinition.inputsConfig);
+  }
+  
   return nodeTypeDefinition?.inputs || [];
 }
 
-/**
- * Gets the service inputs for a node (for AI Agent and similar nodes)
- */
-function getNodeServiceInputs(
-  node: WorkflowNode,
-  nodeTypeDefinition: NodeType | undefined
-): Array<{
-  name: string;
-  displayName: string;
-  required?: boolean;
-  description?: string;
-}> | undefined {
-  return (nodeTypeDefinition as any)?.serviceInputs;
-}
+
 
 /**
  * Gets the custom style configuration for a node
@@ -212,7 +205,7 @@ export function transformWorkflowNodesToReactFlow(
         status: nodeStatus,
         inputs: getNodeInputs(node, nodeTypeDefinition),
         outputs: getNodeOutputs(node, nodeTypeDefinition),
-        serviceInputs: getNodeServiceInputs(node, nodeTypeDefinition),
+        inputsConfig: nodeTypeDefinition?.inputsConfig,
         position: node.position,
         dimensions: { width: 64, height: 64 },
         customStyle: getNodeCustomStyle(node, nodeTypeDefinition),
@@ -246,17 +239,19 @@ export function transformWorkflowEdgesToReactFlow(
   connections: WorkflowConnection[],
   executionStateKey?: string
 ) {
-  return connections.map((conn) => ({
-    id: conn.id,
-    source: conn.sourceNodeId,
-    target: conn.targetNodeId,
-    sourceHandle: conn.sourceOutput,
-    targetHandle: conn.targetInput,
-    type: "smoothstep",
-    data: {
-      label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
-      // Add execution state key to force edge re-render when execution completes
-      executionStateKey,
-    },
-  }));
+  return connections.map((conn) => {
+    return {
+      id: conn.id,
+      source: conn.sourceNodeId,
+      target: conn.targetNodeId,
+      sourceHandle: conn.sourceOutput,
+      targetHandle: conn.targetInput,
+      type: "smoothstep",
+      data: {
+        label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
+        // Add execution state key to force edge re-render when execution completes
+        executionStateKey,
+      },
+    };
+  });
 }

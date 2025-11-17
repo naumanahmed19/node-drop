@@ -43,6 +43,7 @@ import { NodeLoader } from "./services/NodeLoader";
 import { NodeService } from "./services/NodeService";
 import { RealtimeExecutionEngine } from "./services/RealtimeExecutionEngine";
 import { SocketService } from "./services/SocketService";
+import { logger } from "./utils/logger";
 
 // Load environment variables
 dotenv.config();
@@ -113,6 +114,13 @@ realtimeExecutionEngine.on("execution-started", (data) => {
 });
 
 realtimeExecutionEngine.on("node-started", (data) => {
+  logger.info('🔵 [RealtimeEngine] node-started event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-started",
@@ -120,9 +128,20 @@ realtimeExecutionEngine.on("node-started", (data) => {
     data: { nodeName: data.nodeName, nodeType: data.nodeType },
     timestamp: data.timestamp,
   });
+  
+  logger.info('✅ [RealtimeEngine] node-started event broadcast', {
+    nodeId: data.nodeId,
+  });
 });
 
 realtimeExecutionEngine.on("node-completed", (data) => {
+  logger.info('🟢 [RealtimeEngine] node-completed event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-completed",
@@ -134,15 +153,32 @@ realtimeExecutionEngine.on("node-completed", (data) => {
     },
     timestamp: data.timestamp,
   });
+  
+  logger.info('✅ [RealtimeEngine] node-completed event broadcast', {
+    nodeId: data.nodeId,
+  });
 });
 
 realtimeExecutionEngine.on("node-failed", (data) => {
+  logger.error('🔴 [RealtimeEngine] node-failed event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+    error: data.error,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-failed",
     nodeId: data.nodeId,
     error: data.error,
     timestamp: data.timestamp,
+  });
+  
+  logger.error('✅ [RealtimeEngine] node-failed event broadcast', {
+    nodeId: data.nodeId,
+    error: data.error,
   });
 });
 

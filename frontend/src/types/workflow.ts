@@ -157,11 +157,10 @@ export interface NodeType {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
-  serviceInputs?: Array<{
-    name: string;
-    displayName: string;
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
     required?: boolean;
-    description?: string;
   }>;
   icon?: string;
   color?: string;

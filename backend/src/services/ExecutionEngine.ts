@@ -1106,56 +1106,149 @@ export class ExecutionEngine extends EventEmitter {
         inputData.main = [[context.triggerData || {}]];
       }
     } else {
-      // Collect data from source nodes
-      // Keep data from each connection separate for multi-input support (like Merge node)
-      const sourceDataPerConnection: any[][] = [];
-
+      // Group connections by target input name (for nodes with multiple named inputs like AI Agent)
+      const connectionsByInput = new Map<string, typeof incomingConnections>();
+      
       for (const connection of incomingConnections) {
-        const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
-        const connectionData: any[] = [];
-
-        if (sourceOutput) {
-          // Check if this is a branching node (has branches property)
-          const hasBranches = (sourceOutput as any).branches;
-
-          if (hasBranches) {
-            // For branching nodes (like IfElse), only use data from the specific output branch
-            const branchName = connection.sourceOutput || "main";
-            const branchData = (sourceOutput as any).branches?.[branchName] || [];
-
-            logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
-              branchName,
-              itemCount: branchData.length,
-              availableBranches: Object.keys((sourceOutput as any).branches || {}),
-            });
-
-            connectionData.push(...branchData);
-          } else {
-            // For standard nodes, use main output
-            const outputItems = (sourceOutput as any).main || [];
-            connectionData.push(...outputItems);
-          }
+        const targetInput = connection.targetInput || 'main';
+        if (!connectionsByInput.has(targetInput)) {
+          connectionsByInput.set(targetInput, []);
         }
-        
-        // Add this connection's data as a separate array
-        sourceDataPerConnection.push(connectionData);
+        connectionsByInput.get(targetInput)!.push(connection);
       }
 
-      // For nodes with multiple inputs (like Merge), keep data from each connection separate
-      // For nodes with single input, flatten for backward compatibility
-      if (sourceDataPerConnection.length > 1) {
-        // Multiple connections: keep them separate (2D array)
-        inputData.main = sourceDataPerConnection;
-      } else if (sourceDataPerConnection.length === 1) {
-        // Single connection: use existing format for backward compatibility
-        const singleConnectionData = sourceDataPerConnection[0];
-        // If no source data, provide empty object
-        if (singleConnectionData.length === 0) {
-          singleConnectionData.push({ json: {} });
+      // Process each named input
+      for (const [inputName, connections] of connectionsByInput.entries()) {
+        // Check if this is a service input (model, memory, tools, etc.)
+        // Service inputs should receive node references, not data
+        const isServiceInput = inputName !== 'main' && inputName !== 'done';
+        
+        if (isServiceInput && connections.length > 0) {
+          // For service inputs, store references to the connected nodes
+          const serviceNodes: any[] = [];
+          
+          for (const connection of connections) {
+            const sourceNode = graph.nodes.get(connection.sourceNodeId);
+            if (sourceNode) {
+              // Store full node configuration including parameters and credentials
+              // Credentials can be stored in:
+              // 1. A separate credentials field (legacy)
+              // 2. In parameters (for nodes with credential-type properties)
+              const nodeParameters = (sourceNode as any).parameters || {};
+              const nodeCredentials = (sourceNode as any).credentials || {};
+              
+              // Build credentials mapping from parameters
+              // We need to map credential types to credential IDs
+              // For example: { "apiKey": "cred_123" } instead of { "authentication": "cred_123" }
+              const credentialsMapping: Record<string, string> = { ...nodeCredentials };
+              
+              // Get node definition from registry (synchronous access)
+              const nodeDefinition = this.nodeService['nodeRegistry']?.get(sourceNode.type);
+              if (nodeDefinition && nodeDefinition.properties) {
+                const properties = Array.isArray(nodeDefinition.properties) 
+                  ? nodeDefinition.properties 
+                  : [];
+                
+                // Find credential properties and map their types to IDs
+                for (const property of properties) {
+                  if (property.type === 'credential' && property.allowedTypes && property.allowedTypes.length > 0) {
+                    const credentialId = nodeParameters[property.name];
+                    // Check if this is a valid credential ID (any non-empty string)
+                    if (credentialId && typeof credentialId === 'string' && credentialId.trim().length > 0) {
+                      // Map the credential type to the credential ID
+                      // Use the first allowed type as the key
+                      const credentialType = property.allowedTypes[0];
+                      credentialsMapping[credentialType] = credentialId;
+                      
+                      logger.debug(`Mapped credential type '${credentialType}' to ID '${credentialId}' from parameter '${property.name}'`, {
+                        nodeType: sourceNode.type,
+                        parameterName: property.name,
+                      });
+                    }
+                  }
+                }
+              }
+              
+              // Fallback: Also scan parameters for any credential IDs not yet mapped
+              for (const [key, value] of Object.entries(nodeParameters)) {
+                if (typeof value === 'string' && value.startsWith('cred_')) {
+                  // Store with parameter name as key if not already mapped by type
+                  if (!Object.values(credentialsMapping).includes(value)) {
+                    credentialsMapping[key] = value;
+                  }
+                }
+              }
+              
+              serviceNodes.push({
+                id: sourceNode.id,
+                type: sourceNode.type,
+                nodeId: connection.sourceNodeId,
+                parameters: nodeParameters,
+                credentials: credentialsMapping,
+              });
+            }
+          }
+          
+          // Store service node references
+          (inputData as any)[inputName] = serviceNodes;
+          
+          logger.debug(`Prepared service input '${inputName}' for node ${nodeId}`, {
+            serviceNodeCount: serviceNodes.length,
+            serviceNodeTypes: serviceNodes.map(n => n.type),
+          });
+        } else {
+          // Regular data input - process normally
+          const sourceDataPerConnection: any[][] = [];
+
+          for (const connection of connections) {
+            const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+            const connectionData: any[] = [];
+
+            if (sourceOutput) {
+              // Check if this is a branching node (has branches property)
+              const hasBranches = (sourceOutput as any).branches;
+
+              if (hasBranches) {
+                // For branching nodes (like IfElse), only use data from the specific output branch
+                const branchName = connection.sourceOutput || "main";
+                const branchData = (sourceOutput as any).branches?.[branchName] || [];
+
+                logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
+                  branchName,
+                  itemCount: branchData.length,
+                  availableBranches: Object.keys((sourceOutput as any).branches || {}),
+                });
+
+                connectionData.push(...branchData);
+              } else {
+                // For standard nodes, use main output
+                const outputItems = (sourceOutput as any).main || [];
+                connectionData.push(...outputItems);
+              }
+            }
+            
+            // Add this connection's data as a separate array
+            sourceDataPerConnection.push(connectionData);
+          }
+
+          // Store data for this named input
+          if (sourceDataPerConnection.length > 1) {
+            // Multiple connections to same input: keep them separate (2D array)
+            (inputData as any)[inputName] = sourceDataPerConnection;
+          } else if (sourceDataPerConnection.length === 1) {
+            // Single connection: use existing format for backward compatibility
+            const singleConnectionData = sourceDataPerConnection[0];
+            // If no source data, provide empty object
+            if (singleConnectionData.length === 0) {
+              singleConnectionData.push({ json: {} });
+            }
+            (inputData as any)[inputName] = [singleConnectionData];
+          }
         }
-        inputData.main = [singleConnectionData];
-      } else {
-        // No connections
+      }
+
+      // Ensure 'main' input exists for backward compatibility
+      if (!inputData.main) {
         inputData.main = [[{ json: {} }]];
       }
     }

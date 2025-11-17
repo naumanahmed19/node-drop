@@ -22,12 +22,6 @@ interface CustomNodeData extends Record<string, unknown> {
   // Node definition properties
   inputs?: string[]
   outputs?: string[]
-  serviceInputs?: Array<{
-    name: string
-    displayName: string
-    required?: boolean
-    description?: string
-  }>
   nodeTypeDefinition?: NodeType  // Add full node type definition
   executionCapability?: 'trigger' | 'action' | 'transform' | 'condition'  // Add capability
   // Position and style properties
@@ -58,6 +52,16 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
 
   // Use custom hooks for node visual state
   const { nodeVisualState, nodeExecutionState } = useNodeExecution(id, data.nodeType)
+  
+  // Debug logging for service nodes
+  if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
+    console.log(`[CustomNode] ${data.nodeType} (${id}) state:`, {
+      isExecuting: nodeExecutionState.isExecuting,
+      hasError: nodeExecutionState.hasError,
+      hasSuccess: nodeExecutionState.hasSuccess,
+      visualState: nodeVisualState,
+    });
+  }
 
   // Get validation errors for this node
   const { hasErrors, errors } = useNodeValidation(id)
@@ -121,11 +125,11 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     isTrigger,
     inputs: data.inputs,
     outputs: computedOutputs,
-    serviceInputs: data.serviceInputs,  // Pass service inputs for AI Agent node
+    inputsConfig: (data as any).inputsConfig,
     imageUrl: data.parameters?.imageUrl as string,
     nodeType: data.nodeType,  // Pass nodeType for file: icon resolution
     dynamicHeight,  // Pass dynamic height to node config
-  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, data.serviceInputs, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
+  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, (data as any).inputsConfig, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
 
   // Render node enhancements (badges, overlays, etc.) using the registry
   const nodeEnhancements = useMemo(() => {

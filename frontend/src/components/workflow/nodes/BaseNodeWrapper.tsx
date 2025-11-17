@@ -7,7 +7,6 @@ import { ChevronDown, LucideIcon } from 'lucide-react'
 import React, { ReactNode, useCallback } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
 import { NodeHandles } from '../components/NodeHandles'
-import { ServiceHandles } from '../components/ServiceHandles'
 import { NodeHeader } from '../components/NodeHeader'
 import { NodeIcon } from '../components/NodeIcon'
 import { NodeToolbarContent } from '../components/NodeToolbarContent'
@@ -82,11 +81,10 @@ export interface BaseNodeWrapperProps {
     outputs?: string[]
     inputNames?: string[]
     outputNames?: string[]
-    serviceInputs?: Array<{
-      name: string
-      displayName: string
-      required?: boolean
-      description?: string
+    inputsConfig?: Record<string, {
+      position?: 'left' | 'right' | 'top' | 'bottom';
+      displayName?: string;
+      required?: boolean;
     }>
     imageUrl?: string
     nodeType?: string  // Added to support file: icons
@@ -204,6 +202,7 @@ export function BaseNodeWrapper({
     handleUngroup,
     handleGroup,
     handleOutputClick,
+    handleServiceInputClick,
     handleToggleDisabled
   } = useNodeActions(id)
 
@@ -243,6 +242,17 @@ export function BaseNodeWrapper({
     handleExecuteNode,
     handleRetryNode
   } = useNodeExecution(id, data.nodeType)
+
+  // Debug logging for service nodes
+  React.useEffect(() => {
+    if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
+      console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
+        isExecuting: nodeExecutionState.isExecuting,
+        hasError: nodeExecutionState.hasError,
+        hasSuccess: nodeExecutionState.hasSuccess,
+      });
+    }
+  }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
 
   // Get execution state and workflow from store
   const { executionState, workflow } = useWorkflowStore()
@@ -325,24 +335,20 @@ export function BaseNodeWrapper({
                         outputs={nodeOutputs}
                         inputNames={nodeInputNames}
                         outputNames={nodeOutputNames}
+                        inputsConfig={nodeConfig?.inputsConfig}
                         disabled={data.disabled}
                         isTrigger={isTrigger}
                         hoveredOutput={hoveredOutput}
                         onOutputMouseEnter={setHoveredOutput}
                         onOutputMouseLeave={() => setHoveredOutput(null)}
                         onOutputClick={handleOutputClick}
+                        onServiceInputClick={handleServiceInputClick}
                         readOnly={isReadOnly}
                         showInputLabels={showInputLabels}
                         showOutputLabels={showOutputLabels}
                       />
 
-                      {/* Service Handles (Bottom-Right) */}
-                      {nodeConfig?.serviceInputs && (
-                        <ServiceHandles
-                          serviceInputs={nodeConfig.serviceInputs}
-                          disabled={data.disabled}
-                        />
-                      )}
+
 
                       {/* Node Toolbar - Always show like CustomNode */}
                       <NodeToolbarContent
@@ -478,24 +484,20 @@ export function BaseNodeWrapper({
                 outputs={nodeOutputs}
                 inputNames={nodeInputNames}
                 outputNames={nodeOutputNames}
+                inputsConfig={nodeConfig?.inputsConfig}
                 disabled={data.disabled}
                 isTrigger={isTrigger}
                 hoveredOutput={hoveredOutput}
                 onOutputMouseEnter={setHoveredOutput}
                 onOutputMouseLeave={() => setHoveredOutput(null)}
                 onOutputClick={handleOutputClick}
+                onServiceInputClick={handleServiceInputClick}
                 readOnly={isReadOnly}
                 showInputLabels={showInputLabels}
                 showOutputLabels={showOutputLabels}
               />
 
-              {/* Service Handles (Bottom-Right) */}
-              {nodeConfig?.serviceInputs && (
-                <ServiceHandles
-                  serviceInputs={nodeConfig.serviceInputs}
-                  disabled={data.disabled}
-                />
-              )}
+
 
               {/* Node Toolbar - Always show like CustomNode */}
               <NodeToolbarContent
@@ -622,24 +624,20 @@ export function BaseNodeWrapper({
               outputs={nodeOutputs}
               inputNames={nodeInputNames}
               outputNames={nodeOutputNames}
+              inputsConfig={nodeConfig?.inputsConfig}
               disabled={data.disabled}
               isTrigger={isTrigger}
               hoveredOutput={hoveredOutput}
               onOutputMouseEnter={setHoveredOutput}
               onOutputMouseLeave={() => setHoveredOutput(null)}
               onOutputClick={handleOutputClick}
+              onServiceInputClick={handleServiceInputClick}
               readOnly={isReadOnly}
               showInputLabels={showInputLabels}
               showOutputLabels={showOutputLabels}
             />
 
-            {/* Service Handles (Bottom-Right) */}
-            {nodeConfig?.serviceInputs && (
-              <ServiceHandles
-                serviceInputs={nodeConfig.serviceInputs}
-                disabled={data.disabled}
-              />
-            )}
+
 
             {/* Node Toolbar - Always show like CustomNode */}
             <NodeToolbarContent

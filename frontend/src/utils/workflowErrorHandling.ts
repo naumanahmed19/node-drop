@@ -394,6 +394,48 @@ export function handleWorkflowError(
 }
 
 /**
+ * Validate service node connections (model, memory, tools)
+ */
+export function validateServiceNodeConnections(
+  nodes: WorkflowNode[],
+  connections: WorkflowConnection[]
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  
+  // Define required service inputs for each node type
+  const requiredServiceInputs: Record<string, string[]> = {
+    'ai-agent': ['model'], // AI Agent requires a model
+  };
+  
+  // Check each node that requires service inputs
+  nodes.forEach((node) => {
+    const requiredInputs = requiredServiceInputs[node.type];
+    if (!requiredInputs) return;
+    
+    requiredInputs.forEach((inputName) => {
+      // Find connections to this service input
+      const serviceConnections = connections.filter(
+        (conn) => conn.targetNodeId === node.id && conn.targetInput === inputName
+      );
+      
+      if (serviceConnections.length === 0) {
+        errors.push({
+          field: `node.${node.id}.${inputName}`,
+          message: `${node.parameters?.name || node.type}: Required service input '${inputName}' is not connected. Please connect a ${inputName} node.`,
+          code: ErrorCodes.VALIDATION_ERROR,
+        });
+      }
+      // Note: We don't validate service node types here because:
+      // 1. Frontend doesn't have access to node definitions
+      // 2. Backend will validate service nodes properly during execution
+      // 3. This keeps the validation flexible as new service nodes are added
+    });
+  });
+  
+  return errors;
+}
+
+/**
  * Validate workflow before execution
  */
 export function validateWorkflowForExecution(workflow: Workflow | null): {
@@ -420,6 +462,10 @@ export function validateWorkflowForExecution(workflow: Workflow | null): {
       code: ErrorCodes.VALIDATION_ERROR,
     });
   }
+
+  // Validate service node connections
+  const serviceErrors = validateServiceNodeConnections(workflow.nodes, workflow.connections);
+  errors.push(...serviceErrors);
 
   // Check for disabled nodes that might affect execution
   const disabledNodes = workflow.nodes.filter((node) => node.disabled);

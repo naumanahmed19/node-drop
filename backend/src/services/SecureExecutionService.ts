@@ -343,6 +343,12 @@ export class SecureExecutionService {
           );
         }
 
+        // Return data for the specified input name
+        const sanitizedData = validation.sanitizedData as any;
+        if (inputName && inputName !== "main" && sanitizedData[inputName]) {
+          return { [inputName]: sanitizedData[inputName] };
+        }
+
         return validation.sanitizedData;
       },
 
@@ -355,6 +361,8 @@ export class SecureExecutionService {
         userId
       ),
       logger: this.createSecureLogger(executionId),
+      // Expose userId for service nodes that need to fetch credentials
+      userId,
       // Utility functions for common node operations
       resolveValue,
       resolvePath,
@@ -673,6 +681,7 @@ export class SecureExecutionService {
    */
   private createSecureLogger(executionId: string): NodeLogger {
     return {
+      executionId, // Expose execution ID for service node event emission
       debug: (message: string, extra?: any) => {
         logger.debug(`[${executionId}] ${message}`, this.sanitizeValue(extra));
       },

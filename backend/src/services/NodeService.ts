@@ -182,7 +182,7 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
-          serviceInputs: (nodeDefinition as any).serviceInputs as any,
+          inputsConfig: (nodeDefinition as any).inputsConfig as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
@@ -199,7 +199,7 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
-          serviceInputs: (nodeDefinition as any).serviceInputs as any,
+          inputsConfig: (nodeDefinition as any).inputsConfig as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
@@ -373,6 +373,28 @@ export class NodeService {
   }
 
   /**
+   * Get raw node definition by type from in-memory registry
+   */
+  async getNodeDefinition(nodeType: string): Promise<NodeDefinition | null> {
+    try {
+      // Wait for built-in nodes to be initialized before accessing registry
+      await this.waitForInitialization();
+
+      // Get from in-memory registry
+      const nodeDefinition = this.nodeRegistry.get(nodeType);
+
+      if (nodeDefinition) {
+        return nodeDefinition;
+      }
+
+      return null;
+    } catch (error) {
+      logger.error(`Failed to get node definition for ${nodeType}`, { error });
+      return null;
+    }
+  }
+
+  /**
    * Get node schema by type from in-memory registry (live definition)
    */
   async getNodeSchema(nodeType: string): Promise<NodeSchema | null> {
@@ -478,7 +500,7 @@ export class NodeService {
 
       // Create secure execution context
       // credentials is already a mapping of type -> id (e.g., { "googleSheetsOAuth2": "cred_123" })
-      const context = await this.secureExecutionService.createSecureContext(
+      const baseContext = await this.secureExecutionService.createSecureContext(
         parameters,
         inputValidation.sanitizedData!,
         credentials || {},
@@ -489,6 +511,11 @@ export class NodeService {
         settings,
         options?.nodeId // Pass nodeId for state management
       );
+
+      // Merge context with node definition methods (for nodes with private methods)
+      // This allows private methods to be called via this.methodName()
+      const context = Object.create(nodeDefinition);
+      Object.assign(context, baseContext);
 
       // Execute the node in secure context
       const result = await nodeDefinition.execute.call(

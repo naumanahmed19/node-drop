@@ -199,6 +199,29 @@ export function useNodeActions(nodeId: string) {
     });
   };
 
+  const handleServiceInputClick = (
+    event: React.MouseEvent<HTMLDivElement>,
+    inputHandle: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const position = {
+      x: rect.left - 10,
+      y: rect.top + rect.height / 2,
+    };
+
+    // For service inputs, the new node will be the SOURCE and this node will be the TARGET
+    // We pass targetNodeId and targetInput to indicate where to connect TO
+    openDialog(position, {
+      sourceNodeId: "", // New node will be source
+      targetNodeId: nodeId, // This node is the target
+      sourceOutput: inputHandle, // The output type we need (model, memory, tool)
+      targetInput: inputHandle, // The input on this node (model, memory, tools)
+    });
+  };
+
   return {
     handleToggleDisabled,
     handleOpenProperties,
@@ -210,5 +233,6 @@ export function useNodeActions(nodeId: string) {
     handleUngroup,
     handleGroup,
     handleOutputClick,
+    handleServiceInputClick,
   };
 }

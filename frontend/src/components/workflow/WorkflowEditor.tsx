@@ -318,6 +318,15 @@ export function WorkflowEditor({
     const workflowId = workflow?.id;
     const prevWorkflowIdRef = useRef<string | undefined>();
     const prevReactFlowNodesRef = useRef<any[]>([]);
+    
+    // Initialize socket listeners for real-time updates
+    const initializeRealTimeUpdates = useWorkflowStore(state => state.initializeRealTimeUpdates)
+    
+    useEffect(() => {
+        // Setup socket listeners when component mounts
+        initializeRealTimeUpdates()
+        console.log('🔌 Initialized real-time socket listeners')
+    }, [initializeRealTimeUpdates])
 
     useEffect(() => {
         const workflowChanged = workflowId !== prevWorkflowIdRef.current;

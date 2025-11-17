@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import { Plus } from 'lucide-react'
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { calculateHandlePosition } from '../utils/handlePositioning'
 
@@ -9,12 +9,18 @@ interface NodeHandlesProps {
   outputs?: string[]
   inputNames?: string[]
   outputNames?: string[]
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
+    required?: boolean;
+  }>
   disabled: boolean
   isTrigger: boolean
   hoveredOutput: string | null
   onOutputMouseEnter: (output: string) => void
   onOutputMouseLeave: () => void
   onOutputClick: (event: React.MouseEvent<HTMLDivElement>, output: string) => void
+  onServiceInputClick?: (event: React.MouseEvent<HTMLDivElement>, input: string) => void
   readOnly?: boolean
   showInputLabels?: boolean
   showOutputLabels?: boolean
@@ -25,24 +31,42 @@ export const NodeHandles = memo(function NodeHandles({
   outputs,
   inputNames,
   outputNames,
+  inputsConfig,
   disabled,
   isTrigger,
   hoveredOutput,
   onOutputMouseEnter,
   onOutputMouseLeave,
   onOutputClick,
+  onServiceInputClick,
   readOnly = false,
   showInputLabels = false,
   showOutputLabels = false
 }: NodeHandlesProps) {
+  // Separate inputs by position - memoized to prevent recalculation
+  const { leftInputs, bottomInputs } = useMemo(() => {
+    const left: string[] = []
+    const bottom: string[] = []
+    
+    inputs?.forEach(input => {
+      const position = inputsConfig?.[input]?.position || 'left'
+      if (position === 'bottom') {
+        bottom.push(input)
+      } else {
+        left.push(input)
+      }
+    })
+    
+    return { leftInputs: left, bottomInputs: bottom }
+  }, [inputs, inputsConfig])
   return (
     <>
-      {/* Input Handles */}
-      {inputs && inputs.length > 0 && (
+      {/* Left Input Handles */}
+      {leftInputs.length > 0 && (
         <>
-          {inputs.map((input, index) => {
-            const top = calculateHandlePosition(index, inputs.length)
-            const inputLabel = inputNames?.[index] || input
+          {leftInputs.map((input, index) => {
+            const top = calculateHandlePosition(index, leftInputs.length)
+            const inputLabel = inputsConfig?.[input]?.displayName || inputNames?.[inputs?.indexOf(input) || 0] || input
 
             return (
               <div
@@ -83,13 +107,99 @@ export const NodeHandles = memo(function NodeHandles({
         </>
       )}
 
+      {/* Bottom Input Handles (Service Inputs) */}
+      {bottomInputs.length > 0 && (
+        <>
+          {bottomInputs.map((input, index) => {
+            const left = calculateHandlePosition(index, bottomInputs.length)
+            const inputLabel = inputsConfig?.[input]?.displayName || input
+            const isRequired = inputsConfig?.[input]?.required
+            const isHovered = hoveredOutput === input
+
+            return (
+              <>
+                {/* Label inside node, above the handle */}
+                <div
+                  key={`input-bottom-label-${input}-${index}`}
+                  className="absolute flex items-center justify-center"
+                  style={{
+                    bottom: '4px',
+                    left,
+                    transform: 'translateX(-50%)',
+                  }}
+                >
+                  <span className="text-[6px] font-medium text-muted-foreground whitespace-nowrap pointer-events-none select-none">
+                    {inputLabel}
+                    {isRequired && <span className="text-destructive ml-0.5">*</span>}
+                  </span>
+                </div>
+
+                {/* Handle at bottom edge with interactive behavior */}
+                <div
+                  key={`input-bottom-${input}-${index}`}
+                  className="absolute"
+                  style={{
+                    bottom: '-6px',
+                    left,
+                    transform: 'translateX(-50%)',
+                  }}
+                  onMouseEnter={() => onOutputMouseEnter(input)}
+                  onMouseLeave={onOutputMouseLeave}
+                >
+                  <div className="relative">
+                    <Handle
+                      id={input}
+                      type="target"
+                      position={Position.Bottom}
+                      style={{
+                        position: 'relative',
+                        top: 0,
+                        left: 0,
+                        right: 'auto',
+                        bottom: 'auto',
+                        transform: 'none',
+                      }}
+                      className={clsx(
+                        "w-3 h-3 border-2 border-white dark:border-background rounded-full cursor-pointer transition-all duration-200",
+                        disabled ? "!bg-muted" : "!bg-muted-foreground hover:!bg-primary hover:scale-125",
+                        isRequired && "ring-2 ring-muted-foreground/30"
+                      )}
+                      onClick={(e) => onServiceInputClick ? onServiceInputClick(e, input) : onOutputClick(e, input)}
+                    />
+
+                    {/* Plus icon on hover */}
+                    {isHovered && !disabled && !readOnly && (
+                      <div
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                        style={{ zIndex: 10 }}
+                      >
+                        <div className="bg-primary rounded-full p-0.5 shadow-lg animate-in fade-in zoom-in duration-150">
+                          <Plus className="w-3 h-3 text-primary-foreground" strokeWidth={3} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )
+          })}
+        </>
+      )}
+
       {/* Output Handles */}
       {outputs && outputs.length > 0 && (
         <>
           {outputs.map((output, index) => {
-            // Check if this is a service output (tool, memory, model) - position at top instead of right
-            const isServiceOutput = output === 'tool' || output === 'memory' || output === 'model'
-            const top = calculateHandlePosition(index, outputs.length)
+            // Check if this is a service output (tool, memory, model)
+            const serviceOutputTypes = ['tool', 'memory', 'model']
+            const isServiceOutput = serviceOutputTypes.includes(output)
+            
+            // For service outputs at top, use horizontal positioning
+            // For regular outputs on right, use vertical positioning
+            const position = isServiceOutput 
+              ? calculateHandlePosition(index, outputs.length) // horizontal position (left percentage)
+              : calculateHandlePosition(index, outputs.length) // vertical position (top percentage)
+            
             const isHovered = hoveredOutput === output
             const outputLabel = outputNames?.[index] || output
 
@@ -98,7 +208,7 @@ export const NodeHandles = memo(function NodeHandles({
                 key={`output-${output}-${index}`}
                 output={output}
                 outputLabel={outputLabel}
-                top={top}
+                top={position}
                 isHovered={isHovered}
                 disabled={disabled}
                 isTrigger={isTrigger}
@@ -146,20 +256,19 @@ const OutputHandle = memo(function OutputHandle({
   onMouseLeave,
   onClick
 }: OutputHandleProps) {
-  // Service outputs (tool, memory, model) are positioned at the top
+  // Service outputs (tool, memory, model) are positioned at the top with standard color
   if (isServiceOutput) {
     return (
       <div
-        className="absolute flex flex-col items-center gap-1"
+        className="absolute"
         style={{
           top: '-6px',
-          left: '50%',
+          left: top, // Use 'top' prop as horizontal position (left percentage)
           transform: 'translateX(-50%)',
         }}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {/* Handle wrapper for proper plus icon positioning */}
         <div className="relative">
           <Handle
             id={output}
@@ -192,13 +301,6 @@ const OutputHandle = memo(function OutputHandle({
             </div>
           )}
         </div>
-        
-        {/* Label below handle */}
-        {showLabel && (
-          <span className="text-[9px] font-medium text-muted-foreground bg-background/80 px-1 py-0.5 rounded whitespace-nowrap pointer-events-none select-none">
-            {outputLabel}
-          </span>
-        )}
       </div>
     )
   }
