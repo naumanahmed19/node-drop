@@ -182,6 +182,7 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          serviceInputs: (nodeDefinition as any).serviceInputs as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
@@ -198,6 +199,7 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          serviceInputs: (nodeDefinition as any).serviceInputs as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
@@ -295,6 +297,9 @@ export class NodeService {
           defaults: nodeDefinition.defaults || {},
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          inputNames: nodeDefinition.inputNames, // Include input names for labeled inputs
+          outputNames: nodeDefinition.outputNames, // Include output names for labeled outputs
+          serviceInputs: nodeDefinition.serviceInputs, // Include service inputs for AI Agent and similar nodes
           properties: this.resolveProperties(nodeDefinition.properties || []),
           credentials: nodeDefinition.credentials, // Include credentials
           credentialSelector: nodeDefinition.credentialSelector, // Include unified credential selector

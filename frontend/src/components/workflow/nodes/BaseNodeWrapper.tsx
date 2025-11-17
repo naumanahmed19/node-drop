@@ -7,6 +7,7 @@ import { ChevronDown, LucideIcon } from 'lucide-react'
 import React, { ReactNode, useCallback } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
 import { NodeHandles } from '../components/NodeHandles'
+import { ServiceHandles } from '../components/ServiceHandles'
 import { NodeHeader } from '../components/NodeHeader'
 import { NodeIcon } from '../components/NodeIcon'
 import { NodeToolbarContent } from '../components/NodeToolbarContent'
@@ -34,6 +35,8 @@ export interface BaseNodeWrapperProps {
     lastExecutionData?: any
     inputs?: string[]
     outputs?: string[]
+    inputNames?: string[]
+    outputNames?: string[]
     executionCapability?: 'trigger' | 'action' | 'transform' | 'condition'
   }
 
@@ -77,6 +80,14 @@ export interface BaseNodeWrapperProps {
     isTrigger?: boolean
     inputs?: string[]
     outputs?: string[]
+    inputNames?: string[]
+    outputNames?: string[]
+    serviceInputs?: Array<{
+      name: string
+      displayName: string
+      required?: boolean
+      description?: string
+    }>
     imageUrl?: string
     nodeType?: string  // Added to support file: icons
     dynamicHeight?: string  // Added to support dynamic height based on outputs
@@ -189,6 +200,7 @@ export function BaseNodeWrapper({
     handleDuplicate,
     handleDelete,
     handleToggleLock,
+    handleToggleCompact,
     handleUngroup,
     handleGroup,
     handleOutputClick,
@@ -232,11 +244,16 @@ export function BaseNodeWrapper({
     handleRetryNode
   } = useNodeExecution(id, data.nodeType)
 
-  // Get execution state from store for toolbar
-  const { executionState } = useWorkflowStore()
+  // Get execution state and workflow from store
+  const { executionState, workflow } = useWorkflowStore()
 
-  // Get compact mode from UI store
-  const { compactMode } = useReactFlowUIStore()
+  // Get compact mode from UI store (global) and node settings (per-node)
+  const { compactMode: globalCompactMode } = useReactFlowUIStore()
+  const workflowNode = workflow?.nodes.find(n => n.id === id)
+  const nodeCompactMode = workflowNode?.settings?.compact || false
+  
+  // Use node-specific compact mode if set, otherwise use global
+  const compactMode = nodeCompactMode || globalCompactMode
 
   // Determine effective node status from visual state or data.status
   // Priority: nodeVisualState > data.status for consistent styling across execution modes
@@ -271,7 +288,12 @@ export function BaseNodeWrapper({
   // If nodeConfig has outputs, use those (for dynamic outputs like Switch node)
   const nodeInputs = nodeConfig?.inputs || data.inputs || (showInputHandle ? ['main'] : [])
   const nodeOutputs = nodeConfig?.outputs || data.outputs || (showOutputHandle ? ['main'] : [])
+  const nodeInputNames = nodeConfig?.inputNames || data.inputNames
+  const nodeOutputNames = nodeConfig?.outputNames || data.outputNames
   const isTrigger = data.executionCapability === 'trigger'
+  
+  // Show input labels if inputNames are provided
+  const showInputLabels = !!nodeInputNames && nodeInputNames.length > 0
 
   // Calculate node width based on compact mode
   const effectiveCollapsedWidth = compactMode ? 'auto' : collapsedWidth
@@ -301,6 +323,8 @@ export function BaseNodeWrapper({
                       <NodeHandles
                         inputs={nodeInputs}
                         outputs={nodeOutputs}
+                        inputNames={nodeInputNames}
+                        outputNames={nodeOutputNames}
                         disabled={data.disabled}
                         isTrigger={isTrigger}
                         hoveredOutput={hoveredOutput}
@@ -308,8 +332,17 @@ export function BaseNodeWrapper({
                         onOutputMouseLeave={() => setHoveredOutput(null)}
                         onOutputClick={handleOutputClick}
                         readOnly={isReadOnly}
+                        showInputLabels={showInputLabels}
                         showOutputLabels={showOutputLabels}
                       />
+
+                      {/* Service Handles (Bottom-Right) */}
+                      {nodeConfig?.serviceInputs && (
+                        <ServiceHandles
+                          serviceInputs={nodeConfig.serviceInputs}
+                          disabled={data.disabled}
+                        />
+                      )}
 
                       {/* Node Toolbar - Always show like CustomNode */}
                       <NodeToolbarContent
@@ -395,6 +428,7 @@ export function BaseNodeWrapper({
                   onDuplicate={handleDuplicate}
                   onDelete={handleDelete}
                   onToggleLock={handleToggleLock}
+                  onToggleCompact={handleToggleCompact}
                   onCopy={copy || undefined}
                   onCut={cut || undefined}
                   onPaste={paste || undefined}
@@ -402,6 +436,7 @@ export function BaseNodeWrapper({
                   onGroup={canGroup ? handleGroup : undefined}
                   onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
                   isLocked={!!data.locked}
+                  isCompact={nodeCompactMode}
                   readOnly={isReadOnly}
                   canCopy={canCopy}
                   canPaste={canPaste}
@@ -441,6 +476,8 @@ export function BaseNodeWrapper({
               <NodeHandles
                 inputs={nodeInputs}
                 outputs={nodeOutputs}
+                inputNames={nodeInputNames}
+                outputNames={nodeOutputNames}
                 disabled={data.disabled}
                 isTrigger={isTrigger}
                 hoveredOutput={hoveredOutput}
@@ -448,8 +485,17 @@ export function BaseNodeWrapper({
                 onOutputMouseLeave={() => setHoveredOutput(null)}
                 onOutputClick={handleOutputClick}
                 readOnly={isReadOnly}
+                showInputLabels={showInputLabels}
                 showOutputLabels={showOutputLabels}
               />
+
+              {/* Service Handles (Bottom-Right) */}
+              {nodeConfig?.serviceInputs && (
+                <ServiceHandles
+                  serviceInputs={nodeConfig.serviceInputs}
+                  disabled={data.disabled}
+                />
+              )}
 
               {/* Node Toolbar - Always show like CustomNode */}
               <NodeToolbarContent
@@ -535,6 +581,7 @@ export function BaseNodeWrapper({
           onDuplicate={handleDuplicate}
           onDelete={handleDelete}
           onToggleLock={handleToggleLock}
+          onToggleCompact={handleToggleCompact}
           onCopy={copy || undefined}
           onCut={cut || undefined}
           onPaste={paste || undefined}
@@ -542,6 +589,7 @@ export function BaseNodeWrapper({
           onGroup={canGroup ? handleGroup : undefined}
           onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
           isLocked={!!data.locked}
+          isCompact={nodeCompactMode}
           readOnly={isReadOnly}
           canCopy={canCopy}
           canPaste={canPaste}
@@ -572,6 +620,8 @@ export function BaseNodeWrapper({
             <NodeHandles
               inputs={nodeInputs}
               outputs={nodeOutputs}
+              inputNames={nodeInputNames}
+              outputNames={nodeOutputNames}
               disabled={data.disabled}
               isTrigger={isTrigger}
               hoveredOutput={hoveredOutput}
@@ -579,8 +629,17 @@ export function BaseNodeWrapper({
               onOutputMouseLeave={() => setHoveredOutput(null)}
               onOutputClick={handleOutputClick}
               readOnly={isReadOnly}
+              showInputLabels={showInputLabels}
               showOutputLabels={showOutputLabels}
             />
+
+            {/* Service Handles (Bottom-Right) */}
+            {nodeConfig?.serviceInputs && (
+              <ServiceHandles
+                serviceInputs={nodeConfig.serviceInputs}
+                disabled={data.disabled}
+              />
+            )}
 
             {/* Node Toolbar - Always show like CustomNode */}
             <NodeToolbarContent
@@ -622,6 +681,7 @@ export function BaseNodeWrapper({
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         onToggleLock={handleToggleLock}
+        onToggleCompact={handleToggleCompact}
         onCopy={copy || undefined}
         onCut={cut || undefined}
         onPaste={paste || undefined}
@@ -629,6 +689,7 @@ export function BaseNodeWrapper({
         onGroup={canGroup ? handleGroup : undefined}
         onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
         isLocked={!!data.locked}
+        isCompact={nodeCompactMode}
         readOnly={isReadOnly}
         canCopy={canCopy}
         canPaste={canPaste}

@@ -36,7 +36,7 @@ import { TemplateVariableDialog } from './TemplateVariableDialog'
 import { CustomNode } from './CustomNode'
 import { ExecutionPanel } from './ExecutionPanel'
 import { NodeConfigDialog } from './NodeConfigDialog'
-import { AnnotationNode, ChatInterfaceNode, DataPreviewNode, FormGeneratorNode, GroupNode, ImagePreviewNode } from './nodes'
+import { AnnotationNode, ChatInterfaceNode, DataPreviewNode, FormGeneratorNode, GroupNode, ImagePreviewNode, AIAgentNode } from './nodes'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary'
 import {
@@ -91,6 +91,7 @@ export function WorkflowEditor({
             'form-generator': FormGeneratorNode,
             group: GroupNode,
             annotation: AnnotationNode,
+            'ai-agent': CustomNode,
         } as NodeTypes
 
         // For dynamically uploaded nodes, they all use the CustomNode component

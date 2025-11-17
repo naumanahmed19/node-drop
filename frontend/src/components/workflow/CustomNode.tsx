@@ -22,6 +22,12 @@ interface CustomNodeData extends Record<string, unknown> {
   // Node definition properties
   inputs?: string[]
   outputs?: string[]
+  serviceInputs?: Array<{
+    name: string
+    displayName: string
+    required?: boolean
+    description?: string
+  }>
   nodeTypeDefinition?: NodeType  // Add full node type definition
   executionCapability?: 'trigger' | 'action' | 'transform' | 'condition'  // Add capability
   // Position and style properties
@@ -115,10 +121,11 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     isTrigger,
     inputs: data.inputs,
     outputs: computedOutputs,
+    serviceInputs: data.serviceInputs,  // Pass service inputs for AI Agent node
     imageUrl: data.parameters?.imageUrl as string,
     nodeType: data.nodeType,  // Pass nodeType for file: icon resolution
     dynamicHeight,  // Pass dynamic height to node config
-  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
+  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, data.serviceInputs, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
 
   // Render node enhancements (badges, overlays, etc.) using the registry
   const nodeEnhancements = useMemo(() => {

@@ -60,6 +60,19 @@ export function useNodeActions(nodeId: string) {
     toggleNodeLock(nodeId);
   };
 
+  const handleToggleCompact = () => {
+    const node = workflow?.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      const currentCompact = node.settings?.compact || false;
+      updateNode(nodeId, {
+        settings: {
+          ...node.settings,
+          compact: !currentCompact,
+        },
+      });
+    }
+  };
+
   const handleUngroup = () => {
     detachNodes([nodeId], undefined);
   };
@@ -193,6 +206,7 @@ export function useNodeActions(nodeId: string) {
     handleDuplicate,
     handleDelete,
     handleToggleLock,
+    handleToggleCompact,
     handleUngroup,
     handleGroup,
     handleOutputClick,

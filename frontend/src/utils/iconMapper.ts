@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Archive,
   ArrowLeftRight,
+  Bot,
   Calendar,
   CheckCircle,
   Clock,
@@ -122,6 +123,10 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   upload: Upload,
   wand2: Wand2,
   magic: Wand2,
+  
+  // AI/Agent icons
+  bot: Bot,
+  robot: Bot,
 };
 
 /**

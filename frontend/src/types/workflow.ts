@@ -157,6 +157,12 @@ export interface NodeType {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  serviceInputs?: Array<{
+    name: string;
+    displayName: string;
+    required?: boolean;
+    description?: string;
+  }>;
   icon?: string;
   color?: string;
   outputComponent?: string; // Optional custom output component identifier

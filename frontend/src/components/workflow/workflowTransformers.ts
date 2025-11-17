@@ -103,6 +103,21 @@ function getNodeInputs(
 }
 
 /**
+ * Gets the service inputs for a node (for AI Agent and similar nodes)
+ */
+function getNodeServiceInputs(
+  node: WorkflowNode,
+  nodeTypeDefinition: NodeType | undefined
+): Array<{
+  name: string;
+  displayName: string;
+  required?: boolean;
+  description?: string;
+}> | undefined {
+  return (nodeTypeDefinition as any)?.serviceInputs;
+}
+
+/**
  * Gets the custom style configuration for a node
  */
 function getNodeCustomStyle(
@@ -197,6 +212,7 @@ export function transformWorkflowNodesToReactFlow(
         status: nodeStatus,
         inputs: getNodeInputs(node, nodeTypeDefinition),
         outputs: getNodeOutputs(node, nodeTypeDefinition),
+        serviceInputs: getNodeServiceInputs(node, nodeTypeDefinition),
         position: node.position,
         dimensions: { width: 64, height: 64 },
         customStyle: getNodeCustomStyle(node, nodeTypeDefinition),

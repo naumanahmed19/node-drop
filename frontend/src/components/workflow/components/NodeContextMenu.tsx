@@ -3,7 +3,7 @@ import {
     ContextMenuItem,
     ContextMenuSeparator,
 } from '@/components/ui/context-menu'
-import { Box, Clipboard, Copy, Lock, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { Box, Clipboard, Copy, Lock, Maximize2, Minimize2, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
 
 interface NodeContextMenuProps {
   onOpenProperties: () => void
@@ -11,6 +11,7 @@ interface NodeContextMenuProps {
   onDuplicate: () => void
   onDelete: () => void
   onToggleLock: () => void
+  onToggleCompact?: () => void
   onCopy?: () => void
   onCut?: () => void
   onPaste?: () => void
@@ -18,6 +19,7 @@ interface NodeContextMenuProps {
   onGroup?: () => void
   onCreateTemplate?: () => void
   isLocked: boolean
+  isCompact?: boolean
   readOnly?: boolean
   canCopy?: boolean
   canPaste?: boolean
@@ -32,6 +34,7 @@ export function NodeContextMenu({
   onDuplicate,
   onDelete,
   onToggleLock,
+  onToggleCompact,
   onCopy,
   onCut,
   onPaste,
@@ -39,6 +42,7 @@ export function NodeContextMenu({
   onGroup,
   onCreateTemplate,
   isLocked,
+  isCompact = false,
   readOnly = false,
   canCopy = false,
   canPaste = false,
@@ -84,6 +88,26 @@ export function NodeContextMenu({
           </>
         )}
       </ContextMenuItem>
+
+      {onToggleCompact && (
+        <ContextMenuItem
+          onClick={onToggleCompact}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          {isCompact ? (
+            <>
+              <Maximize2 className="mr-2 h-4 w-4" />
+              Expand Node
+            </>
+          ) : (
+            <>
+              <Minimize2 className="mr-2 h-4 w-4" />
+              Compact Node
+            </>
+          )}
+        </ContextMenuItem>
+      )}
 
       {/* Ungroup option - only show if node is in a group */}
       {isInGroup && onUngroup && (

@@ -20,7 +20,14 @@ export interface NodeDefinition {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  inputNames?: string[]; // Optional names for each input
   outputNames?: string[]; // Optional names for each output
+  serviceInputs?: Array<{
+    name: string;
+    displayName: string;
+    required?: boolean;
+    description?: string;
+  }>; // Service connections (rendered at bottom-right with labels)
   credentials?: CredentialDefinition[];
   credentialSelector?: CredentialSelectorConfig;
   properties: NodeProperty[] | (() => NodeProperty[]); // Support both static and dynamic properties

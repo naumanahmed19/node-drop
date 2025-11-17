@@ -234,6 +234,7 @@ model NodeType {
   defaults           Json     @default("{}")
   inputs             String[]
   outputs            String[]
+  serviceInputs      Json?    // Service inputs for special connection types (e.g., AI Agent model/memory/tools)
   properties         Json     @default("[]")
   credentials        Json?    // Credential type definitions
   credentialSelector Json?    // Unified credential selector configuration
