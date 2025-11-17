@@ -186,8 +186,19 @@ export function registerNodeType(
 
 /**
  * Check if execute button should be visible for a node
+ * Execute button should be hidden for service/tool nodes
  */
 export function shouldShowExecuteButton(nodeType: string): boolean {
+  // First check if it's a service or tool node (not executable)
+  const nodeData = getNodeTypeData(nodeType);
+  if (nodeData) {
+    const nodeCategory = (nodeData as any).nodeCategory;
+    if (nodeCategory === 'service' || nodeCategory === 'tool') {
+      return false;
+    }
+  }
+  
+  // Then check if it can execute individually
   return canNodeExecuteIndividually(nodeType);
 }
 

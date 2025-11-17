@@ -25,6 +25,7 @@ import {
 import { useWorkflowStore } from '@/stores'
 import { WorkflowNode } from '@/types'
 import { getNodeExecutionCapability } from '@/utils/nodeTypeClassification'
+import { isNodeExecutable } from '@/utils/nodeTypeUtils'
 import {
   ArrowLeft,
   ChevronDown,
@@ -212,26 +213,29 @@ function UnifiedTreeNode({
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onExecuteNode(inputNode.id)
-                      }}
-                    >
-                      <Play className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Execute {inputNode.name}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              {/* Only show execute button for executable nodes */}
+              {nodeTypeDefinition && isNodeExecutable(nodeTypeDefinition) && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onExecuteNode(inputNode.id)
+                        }}
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Execute {inputNode.name}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
               {nodeExecutionResult && (
                 <div>

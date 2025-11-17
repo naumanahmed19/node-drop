@@ -1,10 +1,10 @@
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore } from '@/stores'
+import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
 import { NodeExecutionStatus } from '@/types/execution'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronDown, LucideIcon } from 'lucide-react'
-import React, { ReactNode, useCallback } from 'react'
+import React, { ReactNode, useCallback, useMemo } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
 import { NodeHandles } from '../components/NodeHandles'
 import { NodeHeader } from '../components/NodeHeader'
@@ -208,6 +208,13 @@ export function BaseNodeWrapper({
 
   // Get copy/paste functions from store
   const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
+
+  // Get node type definition for context menu
+  const { nodeTypes } = useNodeTypes()
+  const nodeTypeDefinition = useMemo(() => 
+    nodeTypes.find(nt => nt.type === data.nodeType),
+    [nodeTypes, data.nodeType]
+  )
 
   // Import useReactFlow to check if node is in a group
   const { getNode, getNodes } = useReactFlow()
@@ -449,6 +456,7 @@ export function BaseNodeWrapper({
                   isInGroup={isInGroup}
                   canGroup={canGroup}
                   canCreateTemplate={canCreateTemplate}
+                  nodeType={nodeTypeDefinition}
                 />
               </ContextMenu>
             </div>
@@ -598,6 +606,7 @@ export function BaseNodeWrapper({
           isInGroup={isInGroup}
           canGroup={canGroup}
           canCreateTemplate={canCreateTemplate}
+          nodeType={nodeTypeDefinition}
         />
       </ContextMenu>
     )
@@ -694,6 +703,7 @@ export function BaseNodeWrapper({
         isInGroup={isInGroup}
         canGroup={canGroup}
         canCreateTemplate={canCreateTemplate}
+        nodeType={nodeTypeDefinition}
       />
     </ContextMenu>
   )

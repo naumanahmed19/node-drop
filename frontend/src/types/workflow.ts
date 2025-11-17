@@ -178,6 +178,8 @@ export interface NodeType {
   id?: string; // Optional database ID for custom nodes
   createdAt?: string; // Optional timestamp for custom nodes
   updatedAt?: string; // Optional timestamp for custom nodes
+  // Node category for execution control
+  nodeCategory?: 'service' | 'tool'; // Service/tool nodes are not directly executable
   // Execution metadata from backend
   executionCapability?: "trigger" | "action" | "transform" | "condition";
   canExecuteIndividually?: boolean;

@@ -211,6 +211,9 @@ This implementation plan breaks down the AI Agent nodes feature into discrete, m
 
 
 
+
+
+
     - Initialize agent state with iteration counter
     - Load conversation history from Memory node if present
     - Add system prompt to messages if first message

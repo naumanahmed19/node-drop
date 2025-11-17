@@ -4,6 +4,8 @@ import {
     ContextMenuSeparator,
 } from '@/components/ui/context-menu'
 import { Box, Clipboard, Copy, Lock, Maximize2, Minimize2, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { isNodeExecutable } from '@/utils/nodeTypeUtils'
+import { NodeType } from '@/types'
 
 interface NodeContextMenuProps {
   onOpenProperties: () => void
@@ -26,6 +28,7 @@ interface NodeContextMenuProps {
   isInGroup?: boolean
   canGroup?: boolean
   canCreateTemplate?: boolean
+  nodeType?: NodeType // Optional node type to check if executable
 }
 
 export function NodeContextMenu({
@@ -49,7 +52,11 @@ export function NodeContextMenu({
   isInGroup = false,
   canGroup = false,
   canCreateTemplate = false,
+  nodeType,
 }: NodeContextMenuProps) {
+  // Check if node is executable (not service or tool type)
+  const canExecute = nodeType ? isNodeExecutable(nodeType) : true
+
   return (
     <ContextMenuContent className="w-48">
       <ContextMenuItem
@@ -60,14 +67,17 @@ export function NodeContextMenu({
         Properties
       </ContextMenuItem>
 
-      <ContextMenuItem
-        onClick={onExecute}
-        disabled={readOnly}
-        className="cursor-pointer"
-      >
-        <Play className="mr-2 h-4 w-4" />
-        Execute Node
-      </ContextMenuItem>
+      {/* Only show execute option for executable nodes */}
+      {canExecute && (
+        <ContextMenuItem
+          onClick={onExecute}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          <Play className="mr-2 h-4 w-4" />
+          Execute Node
+        </ContextMenuItem>
+      )}
 
       <ContextMenuSeparator />
 

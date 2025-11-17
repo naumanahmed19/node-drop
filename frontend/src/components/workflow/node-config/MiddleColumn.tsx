@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useNodeConfigDialogStore, useWorkflowStore } from '@/stores'
 import { NodeType, WorkflowNode } from '@/types'
 import { NodeValidator } from '@/utils/nodeValidation'
+import { isNodeExecutable } from '@/utils/nodeTypeUtils'
 import {
   AlertCircle,
   CheckCircle,
@@ -139,8 +140,8 @@ export function MiddleColumn({ node, nodeType, onDelete, onExecute, readOnly = f
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {/* Execute Node Button - Hidden in read-only mode */}
-            {!readOnly && (
+            {/* Execute Node Button - Hidden in read-only mode and for service/tool nodes */}
+            {!readOnly && isNodeExecutable(nodeType) && (
               <div className="relative">
                 <Button
                   onClick={onExecute}
