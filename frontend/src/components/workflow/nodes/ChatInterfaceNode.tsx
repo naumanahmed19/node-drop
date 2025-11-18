@@ -408,6 +408,7 @@ export const ChatInterfaceNode = memo(function ChatInterfaceNode({ data, selecte
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
+              onContextMenu={(e) => e.stopPropagation()}
               disabled={isTyping || isExecuting}
               className="h-10 text-sm pr-10"
             />

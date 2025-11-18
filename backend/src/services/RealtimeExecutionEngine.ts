@@ -310,13 +310,21 @@ export class RealtimeExecutionEngine extends EventEmitter {
     /**
      * Check if a node is a service node (has no inputs)
      * Service nodes include model, memory, and tool nodes
+     * Excludes trigger nodes (like chat, webhook) which have no inputs but should execute
      */
+    // TODO: We want change types, (dont do it automatically)
     private async isServiceNode(nodeType: string): Promise<boolean> {
         try {
             const allNodeTypes = await this.nodeService.getNodeTypes();
             const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === nodeType);
             
             if (!nodeTypeInfo) {
+                return false;
+            }
+            
+            // Trigger nodes (executionCapability: "trigger") should not be treated as service nodes
+            // even if they have no inputs
+            if (nodeTypeInfo.executionCapability === "trigger") {
                 return false;
             }
             

@@ -39,12 +39,23 @@ export function useCopyPaste() {
 
   // Initialize the copy/paste hook
   // 1. Track mouse position for paste location
-  // 2. Prevent default browser copy/paste within React Flow
+  // 2. Prevent default browser copy/paste within React Flow (except for input fields)
   useEffect(() => {
     const events = ["cut", "copy", "paste"];
 
     if (rfDomNode) {
-      const preventDefault = (e: Event) => e.preventDefault();
+      const preventDefault = (e: Event) => {
+        // Allow default behavior for input fields, textareas, and contenteditable elements
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+        e.preventDefault();
+      };
 
       const onMouseMove = (event: MouseEvent) => {
         mousePosRef.current = {
