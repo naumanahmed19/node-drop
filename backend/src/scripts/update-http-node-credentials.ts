@@ -10,7 +10,7 @@ async function updateHttpNodeCredentials() {
     // Update the HTTP Request node type in the database
     const updated = await prisma.nodeType.update({
       where: {
-        type: HttpRequestNode.type,
+        identifier: HttpRequestNode.identifier,
       },
       data: {
         credentials: HttpRequestNode.credentials as any,

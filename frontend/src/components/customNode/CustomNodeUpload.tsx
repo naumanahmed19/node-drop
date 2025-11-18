@@ -63,9 +63,9 @@ export const CustomNodeUpload: React.FC<{ onUploadSuccess?: () => void }> = ({ o
       return;
     }
 
-    setProcessingNode(nodeType.type);
+    setProcessingNode(nodeType.identifier);
     try {
-      await nodeTypeService.deleteNodeType(nodeType.type);
+      await nodeTypeService.deleteNodeType(nodeType.identifier);
       
       globalToastManager.showSuccess(
         'Node Uninstalled',
@@ -95,10 +95,10 @@ export const CustomNodeUpload: React.FC<{ onUploadSuccess?: () => void }> = ({ o
   // Toggle node active status
   /* const handleToggleNodeStatus = async (nodeType: NodeType) => {
     const newStatus = !nodeType.active;
-    setProcessingNode(nodeType.type);
+    setProcessingNode(nodeType.identifier);
     
     try {
-      await nodeTypeService.updateNodeTypeStatus(nodeType.type, newStatus);
+      await nodeTypeService.updateNodeTypeStatus(nodeType.identifier, newStatus);
       
       globalToastManager.showSuccess(
         `Node ${newStatus ? 'Enabled' : 'Disabled'}`,

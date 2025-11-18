@@ -225,7 +225,7 @@ enum VariableScope {
 
 model NodeType {
   id                 String   @id @default(cuid())
-  type               String   @unique
+  identifier         String   @unique // Unique identifier for the node type (was 'type')
   displayName        String
   name               String
   group              String[]
@@ -244,6 +244,7 @@ model NodeType {
   active             Boolean  @default(true)
   isTemplate         Boolean  @default(false) // Flag to identify template nodes
   templateData       Json?    // Template structure (nodes and connections)
+  nodeCategory       String?  // Category for execution control: 'service' or 'tool'
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

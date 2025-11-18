@@ -947,7 +947,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       },
 
       initializeFlowExecution: (executionId: string, nodeIds: string[]) => {
-        const { progressTracker, workflow, executionManager } = get();
+        const { progressTracker, workflow } = get();
 
         if (!workflow) return;
 
@@ -1587,7 +1587,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             try {
               const nodeTypes = await workflowService.getNodeTypes();
               nodeTypeDefinition = nodeTypes.find(
-                (nt) => nt.type === node.type
+                (nt) => nt.identifier === node.type
               );
 
               if (nodeTypeDefinition && nodeTypeDefinition.properties) {

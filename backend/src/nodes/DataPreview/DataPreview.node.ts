@@ -11,7 +11,7 @@ import {
  * Perfect for testing loops, counters, and debugging data transformations.
  */
 export const DataPreviewNode: NodeDefinition = {
-    type: "data-preview",
+    identifier: "data-preview",
     displayName: "Data Preview",
     name: "dataPreview",
     group: ["transform"],

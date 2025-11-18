@@ -11,7 +11,8 @@ export interface CredentialSelectorConfig {
 }
 
 export interface NodeDefinition {
-  type: string;
+  identifier: string; // Unique identifier for the node type (was 'type')
+  nodeCategory?: 'service' | 'tool'; // Category for execution control (service/tool nodes are not directly executable)
   displayName: string;
   name: string;
   group: string[];
@@ -141,6 +142,7 @@ export interface NodeExecutionContext {
   helpers: NodeHelpers;
   logger: NodeLogger;
   settings?: NodeSettingsConfig; // Node settings from Settings tab
+  userId?: string; // User ID for service nodes that need to fetch credentials
   // Utility functions for common node operations
   resolveValue: (value: string | any, item: any) => any;
   resolvePath: (obj: any, path: string) => any;
@@ -163,6 +165,7 @@ export interface NodeHelpers {
 }
 
 export interface NodeLogger {
+  executionId?: string; // Execution ID for service node event emission
   debug: (message: string, extra?: any) => void;
   info: (message: string, extra?: any) => void;
   warn: (message: string, extra?: any) => void;
@@ -197,7 +200,8 @@ export interface NodeValidationError {
 }
 
 export interface NodeSchema {
-  type: string;
+  identifier: string; // Unique identifier for the node type (was 'type')
+  nodeCategory?: 'service' | 'tool'; // Category for execution control
   displayName: string;
   name: string;
   group: string[];
@@ -215,7 +219,7 @@ export interface NodeSchema {
 
 export interface NodeRegistrationResult {
   success: boolean;
-  nodeType?: string;
+  identifier?: string;
   errors?: string[];
 }
 
@@ -246,7 +250,7 @@ export enum BuiltInNodeTypes {
 }
 
 export interface NodeTypeInfo {
-  type: string;
+  identifier: string; // Unique identifier for the node type (was 'type')
   displayName: string;
   name: string;
   description: string;
@@ -255,6 +259,14 @@ export interface NodeTypeInfo {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  inputNames?: string[]; // Optional labeled input names
+  outputNames?: string[]; // Optional labeled output names
+  serviceInputs?: Array<{
+    name: string;
+    displayName: string;
+    required?: boolean;
+    description?: string;
+  }>; // Optional service inputs for AI Agent nodes
   properties: NodeProperty[];
   credentials?: CredentialDefinition[]; // Include credentials
   credentialSelector?: CredentialSelectorConfig; // Include unified credential selector

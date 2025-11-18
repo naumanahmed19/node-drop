@@ -229,7 +229,7 @@ export class NodeDiscovery {
     return (
       obj &&
       typeof obj === "object" &&
-      typeof obj.type === "string" &&
+      typeof obj.identifier === "string" &&
       typeof obj.displayName === "string" &&
       typeof obj.name === "string" &&
       Array.isArray(obj.inputs) &&
@@ -301,7 +301,7 @@ export class NodeDiscovery {
                     path: nodeFile,
                     definition,
                   });
-                  console.log(`📝 Added node definition: ${definition.type} (${definition.displayName})`);
+                  console.log(`📝 Added node definition: ${definition.identifier} (${definition.displayName})`);
                 }
               } else {
                 console.warn(`⚠️ No module loaded from ${nodeFile}`);

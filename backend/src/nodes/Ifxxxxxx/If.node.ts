@@ -1,4 +1,4 @@
-﻿import {
+import {
   BuiltInNodeTypes,
   NodeDefinition,
   NodeInputData,
@@ -6,7 +6,7 @@
 } from "../../types/node.types";
 
 export const IfNode: NodeDefinition = {
-  type: BuiltInNodeTypes.IF,
+  identifier: BuiltInNodeTypes.IF,
   displayName: "IF",
   name: "if",
   group: ["transform"],

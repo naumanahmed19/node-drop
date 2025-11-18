@@ -212,7 +212,7 @@ export function BaseNodeWrapper({
   // Get node type definition for context menu
   const { nodeTypes } = useNodeTypes()
   const nodeTypeDefinition = useMemo(() => 
-    nodeTypes.find(nt => nt.type === data.nodeType),
+    nodeTypes.find(nt => nt.identifier === data.nodeType),
     [nodeTypes, data.nodeType]
   )
 

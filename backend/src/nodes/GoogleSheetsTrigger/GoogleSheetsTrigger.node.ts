@@ -5,7 +5,7 @@ import {
 } from "../../types/node.types";
 
 export const GoogleSheetsTriggerNode: NodeDefinition = {
-  type: "google-sheets-trigger",
+  identifier: "google-sheets-trigger",
   displayName: "Google Sheets Trigger",
   name: "googleSheetsTrigger",
   group: ["trigger"],

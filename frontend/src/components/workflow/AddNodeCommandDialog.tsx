@@ -73,7 +73,7 @@ export function AddNodeCommandDialog({
   const nodeSearchGetter = useCallback((node: NodeType) => [
     node.displayName,
     node.description,
-    node.type,
+    node.identifier,
     ...node.group
   ], [])
 
@@ -413,7 +413,7 @@ export function AddNodeCommandDialog({
 
     const newNode: WorkflowNode = {
       id: `node-${Date.now()}`,
-      type: nodeType.type,
+      type: nodeType.identifier,
       name: nodeType.displayName,
       parameters,
       position: nodePosition,
@@ -554,21 +554,21 @@ export function AddNodeCommandDialog({
               <CommandGroup>
                 {group.nodes.map((node) => {
                   // Skip if this node has already been rendered in a previous group
-                  if (renderedNodeTypes.has(node.type)) {
+                  if (renderedNodeTypes.has(node.identifier)) {
                     return null
                   }
-                  renderedNodeTypes.add(node.type)
+                  renderedNodeTypes.add(node.identifier)
 
                   return (
                     <CommandItem
-                      key={node.type}
+                      key={node.identifier}
                       value={`${node.displayName} ${node.description} ${node.group.join(' ')}`}
                       onSelect={() => handleSelectNode(node)}
                       className="flex items-center gap-3 p-3"
                     >
                       <NodeIconRenderer
                         icon={node.icon}
-                        nodeType={node.type}
+                        nodeType={node.identifier}
                         nodeGroup={node.group}
                         displayName={node.displayName}
                         backgroundColor={node.color || '#6b7280'}

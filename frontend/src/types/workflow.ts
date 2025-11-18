@@ -148,7 +148,7 @@ export interface WorkflowImportExport {
 }
 
 export interface NodeType {
-  type: string;
+  identifier: string; // Unique identifier for the node type (was 'type')
   displayName: string;
   name: string;
   group: string[];

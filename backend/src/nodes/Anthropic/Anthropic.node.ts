@@ -8,7 +8,7 @@ import {
 import { MemoryManager } from "../../utils/ai/MemoryManager";
 
 export const AnthropicNode: NodeDefinition = {
-  type: "anthropic",
+  identifier: "anthropic",
   displayName: "Anthropic (Claude)",
   name: "anthropic",
   group: ["ai", "transform"],

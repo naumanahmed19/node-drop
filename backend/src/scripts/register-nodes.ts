@@ -27,7 +27,7 @@ async function registerAllDiscoveredNodes() {
 
     // List discovered nodes
     nodeDefinitions.forEach((node, index) => {
-      console.log(`   ${index + 1}. ${node.displayName} (${node.type})`);
+      console.log(`   ${index + 1}. ${node.displayName} (${node.identifier})`);
     });
 
     console.log("\n🔄 Registering nodes...\n");
@@ -40,10 +40,10 @@ async function registerAllDiscoveredNodes() {
         const result = await nodeService.registerNode(node);
 
         if (result.success) {
-          console.log(`✅ Registered: ${node.displayName} (${node.type})`);
+          console.log(`✅ Registered: ${node.displayName} (${node.identifier})`);
           registered++;
         } else {
-          console.error(`❌ Failed: ${node.displayName} (${node.type})`);
+          console.error(`❌ Failed: ${node.displayName} (${node.identifier})`);
           result.errors?.forEach((error) => console.error(`   ${error}`));
           failed++;
         }

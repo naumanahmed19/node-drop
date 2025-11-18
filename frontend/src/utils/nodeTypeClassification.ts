@@ -30,7 +30,7 @@ function getNodeTypeData(nodeType: string): NodeType | null {
   return (
     nodeTypesCache.find(
       (nt) =>
-        nt.type === nodeType ||
+        nt.identifier === nodeType ||
         nt.name === nodeType ||
         nt.displayName === nodeType
     ) || null
@@ -49,7 +49,7 @@ export function getNodeTypeMetadata(nodeType: string): NodeTypeMetadata | null {
   }
 
   return {
-    type: nodeData.type,
+    type: nodeData.identifier,
     group: nodeData.group,
     executionCapability:
       nodeData.executionCapability || determineExecutionCapability(nodeData),
@@ -148,7 +148,7 @@ export function isConditionNode(nodeType: string): boolean {
  * Get all registered node types from cache
  */
 export function getAllNodeTypes(): string[] {
-  return nodeTypesCache.map((nt) => nt.type);
+  return nodeTypesCache.map((nt) => nt.identifier);
 }
 
 /**
@@ -159,10 +159,10 @@ export function registerNodeType(
   nodeType: string,
   metadata: NodeTypeMetadata
 ): void {
-  const existingIndex = nodeTypesCache.findIndex((nt) => nt.type === nodeType);
+  const existingIndex = nodeTypesCache.findIndex((nt) => nt.identifier === nodeType);
 
   const nodeData: NodeType = {
-    type: metadata.type,
+    identifier: metadata.type,
     displayName: metadata.type,
     name: metadata.type,
     group: metadata.group,

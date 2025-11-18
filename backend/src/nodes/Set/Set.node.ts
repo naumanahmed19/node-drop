@@ -1,4 +1,4 @@
-﻿import {
+import {
   BuiltInNodeTypes,
   NodeDefinition,
   NodeInputData,
@@ -29,7 +29,7 @@
  *    Output: { "name": "John", "user": { "address": { "city": "New York" }, "age": 30 } }
  */
 export const SetNode: NodeDefinition = {
-  type: BuiltInNodeTypes.SET,
+  identifier: BuiltInNodeTypes.SET,
   displayName: "Set",
   name: "set",
   group: ["transform"],
@@ -62,7 +62,7 @@ export const SetNode: NodeDefinition = {
           {
             displayName: "Key Value",
             name: "keyValue",
-            type: "keyValueRow",
+            identifier: "keyValueRow",
             required: true,
             default: {
               key: "",

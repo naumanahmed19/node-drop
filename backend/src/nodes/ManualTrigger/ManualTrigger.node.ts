@@ -1,4 +1,4 @@
-﻿import {
+import {
   NodeDefinition,
   NodeInputData,
   NodeOutputData,
@@ -32,14 +32,14 @@ interface TriggerOutput {
 }
 
 export const ManualTriggerNode: NodeDefinition = {
-  type: "manual-trigger",
+  identifier: "manual-trigger",
   displayName: "Manual Trigger",
   name: "manualTrigger",
   group: ["trigger"],
   version: 1,
   description:
     "Triggers workflow execution manually when requested by the user",
-  icon: "⚡",
+  icon: "?",
   color: "#4CAF50",
   defaults: {
     description: "",

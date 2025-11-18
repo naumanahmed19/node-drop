@@ -1,7 +1,7 @@
 import { NodeDefinition, NodeInputData, NodeOutputData, NodeExecutionContext } from "../../types/node.types";
 
 export const TestUploadNode: NodeDefinition = {
-  type: "test-upload",
+  identifier: "test-upload",
   displayName: "Test Upload Node",
   name: "testUpload",
   group: ["Custom"],

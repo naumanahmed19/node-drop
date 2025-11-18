@@ -78,7 +78,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // This is how FlowExecutionEngine does it and is the correct approach
         try {
             const allNodeTypes = await this.nodeService.getNodeTypes();
-            const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === node.type);
+            const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
 
             if (nodeTypeInfo && nodeTypeInfo.properties) {
                 const properties = Array.isArray(nodeTypeInfo.properties)
@@ -314,7 +314,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
     private async isServiceNode(nodeType: string): Promise<boolean> {
         try {
             const allNodeTypes = await this.nodeService.getNodeTypes();
-            const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === nodeType);
+            const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === nodeType);
             
             if (!nodeTypeInfo) {
                 return false;

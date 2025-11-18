@@ -45,7 +45,7 @@ export enum FlowNodeStatus {
 }
 
 export interface NodeExecutionState {
-  nodeId: string;
+  identifier: string;
   status: FlowNodeStatus;
   startTime?: number;
   endTime?: number;
@@ -70,7 +70,7 @@ export interface FlowExecutionResult {
 }
 
 export interface NodeExecutionResult {
-  nodeId: string;
+  identifier: string;
   status: FlowNodeStatus;
   data?: StandardizedNodeOutput; // Changed from NodeOutputData[] to StandardizedNodeOutput
   error?: any;
@@ -484,7 +484,7 @@ export class FlowExecutionEngine extends EventEmitter {
       });
 
       const nodeState: NodeExecutionState = {
-        nodeId: node.id,
+        identifier: node.id,
         status: FlowNodeStatus.IDLE,
         dependencies: reachableDependencies, // Use filtered dependencies
         dependents,
@@ -575,7 +575,7 @@ export class FlowExecutionEngine extends EventEmitter {
 
           // Mark node as failed instead of continuing to retry
           const failedResult: NodeExecutionResult = {
-            nodeId,
+            identifier: nodeId,
             status: FlowNodeStatus.FAILED,
             error: new Error(
               `Node dependencies could not be satisfied after ${maxRetries} attempts. This may indicate a configuration issue with multiple triggers connecting to the same node.`
@@ -697,7 +697,7 @@ export class FlowExecutionEngine extends EventEmitter {
         failedNodes.push(nodeId);
 
         const result: NodeExecutionResult = {
-          nodeId,
+          identifier: nodeId,
           status: FlowNodeStatus.FAILED,
           error,
           duration: 0,
@@ -780,7 +780,7 @@ export class FlowExecutionEngine extends EventEmitter {
 
       // Get all node types and find the one we need
       const allNodeTypes = await this.nodeService.getNodeTypes();
-      const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === node.type);
+      const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
 
       if (nodeTypeInfo && nodeTypeInfo.properties) {
         credentialsMapping = {};
@@ -827,7 +827,7 @@ export class FlowExecutionEngine extends EventEmitter {
       const outputData = nodeResult.data; // StandardizedNodeOutput | undefined
 
       const result: NodeExecutionResult = {
-        nodeId,
+        identifier: nodeId,
         status: FlowNodeStatus.COMPLETED,
         data: outputData,
         duration: Date.now() - nodeState.startTime!,
@@ -836,7 +836,7 @@ export class FlowExecutionEngine extends EventEmitter {
       return result;
     } catch (error) {
       const result: NodeExecutionResult = {
-        nodeId,
+        identifier: nodeId,
         status: FlowNodeStatus.FAILED,
         error,
         duration: Date.now() - nodeState.startTime!,

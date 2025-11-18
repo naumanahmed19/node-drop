@@ -180,7 +180,7 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
         <h4 className="font-medium mb-2">Basic Configuration</h4>
         <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
 {JSON.stringify({
-  type: nodeType.type,
+  type: nodeType.identifier,
   name: nodeType.displayName,
   parameters: nodeType.defaults
 }, null, 2)}

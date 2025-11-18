@@ -36,7 +36,7 @@ import { TemplateVariableDialog } from './TemplateVariableDialog'
 import { CustomNode } from './CustomNode'
 import { ExecutionPanel } from './ExecutionPanel'
 import { NodeConfigDialog } from './NodeConfigDialog'
-import { AnnotationNode, ChatInterfaceNode, DataPreviewNode, FormGeneratorNode, GroupNode, ImagePreviewNode, AIAgentNode } from './nodes'
+import { AnnotationNode, ChatInterfaceNode, DataPreviewNode, FormGeneratorNode, GroupNode, ImagePreviewNode } from './nodes'
 import { WorkflowCanvas } from './WorkflowCanvas'
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary'
 import {
@@ -97,8 +97,8 @@ export function WorkflowEditor({
         // For dynamically uploaded nodes, they all use the CustomNode component
         // The CustomNode component handles different node types based on the data.nodeType
         storeNodeTypes.forEach(nodeType => {
-            if (!baseNodeTypes[nodeType.type]) {
-                baseNodeTypes[nodeType.type] = CustomNode
+            if (!baseNodeTypes[nodeType.identifier]) {
+                baseNodeTypes[nodeType.identifier] = CustomNode
             }
         })
 
@@ -390,7 +390,7 @@ export function WorkflowEditor({
 
     // Memoize node type map for O(1) lookups
     const nodeTypeMap = useMemo(() => {
-        return new Map(availableNodeTypes.map(nt => [nt.type, nt]))
+        return new Map(availableNodeTypes.map(nt => [nt.identifier, nt]))
     }, [availableNodeTypes])
 
     // Memoize workflow nodes map for O(1) lookups

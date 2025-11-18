@@ -60,7 +60,7 @@ export function getNodeExecutionStatus(
  * Creates a Map for faster node type lookups (O(1) instead of O(n))
  */
 function createNodeTypeMap(nodeTypes: NodeType[]): Map<string, NodeType> {
-  return new Map(nodeTypes.map((nt) => [nt.type, nt]));
+  return new Map(nodeTypes.map((nt) => [nt.identifier, nt]));
 }
 
 /**

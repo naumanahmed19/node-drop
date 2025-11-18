@@ -8,7 +8,7 @@ async function checkHttpNode() {
 
     const httpNode = await prisma.nodeType.findUnique({
       where: {
-        type: "http-request",
+        identifier: "http-request",
       },
     });
 
@@ -18,7 +18,7 @@ async function checkHttpNode() {
     }
 
     console.log("\n✅ HTTP Request node found");
-    console.log("\nType:", httpNode.type);
+    console.log("\nIdentifier:", httpNode.identifier);
     console.log("DisplayName:", httpNode.displayName);
     console.log(
       "\nCredentials field exists:",

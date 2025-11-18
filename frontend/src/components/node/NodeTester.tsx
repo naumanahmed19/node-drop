@@ -152,17 +152,17 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
                         <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                                {nodeType.type === 'service' ? 'Service Node' : 'Tool Node'}
+                                {nodeType.identifier === 'service' ? 'Service Node' : 'Tool Node'}
                             </p>
                             <p className="text-sm text-blue-700 dark:text-blue-300">
                                 This node cannot be executed directly. It is designed to be called by other nodes in your workflow.
                             </p>
-                            {nodeType.type === 'service' && (
+                            {nodeType.identifier === 'service' && (
                                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
                                     Service nodes (like AI models) provide functionality to other nodes and are not standalone executables.
                                 </p>
                             )}
-                            {nodeType.type === 'tool' && (
+                            {nodeType.identifier === 'tool' && (
                                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
                                     Tool nodes are called by AI Agent nodes to perform specific tasks.
                                 </p>

@@ -12,7 +12,7 @@ import {
  * Output pins are dynamically created based on configured outputs
  */
 export const SwitchNode: NodeDefinition = {
-  type: "switch",
+  identifier: "switch",
   displayName: "Switch",
   name: "switch",
   group: ["transform"],

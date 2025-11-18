@@ -122,7 +122,7 @@ export class NodeLoader {
         const result = await this.nodeService.registerNode(nodeDefinition);
         registrationResults.push({
           success: result.success,
-          nodeType: result.nodeType,
+          nodeType: result.identifier,
           errors: result.errors,
         });
       }
@@ -181,7 +181,7 @@ export class NodeLoader {
       for (const nodePath of packageInfo.nodes) {
         const nodeDefinition = await this.loadSingleNodeDefinition(nodePath);
         if (nodeDefinition) {
-          await this.nodeService.unregisterNode(nodeDefinition.type);
+          await this.nodeService.unregisterNode(nodeDefinition.identifier);
         }
       }
 

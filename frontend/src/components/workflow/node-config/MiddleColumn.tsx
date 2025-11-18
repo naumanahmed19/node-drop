@@ -79,7 +79,7 @@ export function MiddleColumn({ node, nodeType, onDelete, onExecute, readOnly = f
                 <div className="cursor-pointer">
                   <NodeIconRenderer
                     icon={nodeType.icon}
-                    nodeType={nodeType.type}
+                    nodeType={nodeType.identifier}
                     nodeGroup={nodeType.group}
                     displayName={nodeType.displayName}
                     backgroundColor={nodeType.color}

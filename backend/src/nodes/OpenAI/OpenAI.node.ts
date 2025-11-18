@@ -32,7 +32,7 @@ import { MemoryManager } from "../../utils/ai/MemoryManager";
  * Supports all major GPT models with configurable parameters.
  */
 export const OpenAINode: NodeDefinition = {
-  type: "openai",
+  identifier: "openai",
   displayName: "OpenAI",
   name: "openai",
   group: ["ai", "transform"],

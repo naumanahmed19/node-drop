@@ -1,4 +1,4 @@
-﻿import {
+import {
   NodeDefinition,
   NodeInputData,
   NodeOutputData,
@@ -14,7 +14,7 @@
  * Custom components allow you to pass custom templates/components for complex UI
  */
 export const DynamicPropertiesNode: NodeDefinition = {
-  type: "dynamic-properties-example",
+  identifier: "dynamic-properties-example",
   displayName: "Dynamic Properties Example",
   name: "dynamicPropertiesExample",
   group: ["transform"],
@@ -48,7 +48,7 @@ export const DynamicPropertiesNode: NodeDefinition = {
         template: "json-editor",
         enableCodeCompletion: true,
         defaultSchema: {
-          type: "object",
+          identifier: "object",
           properties: {
             timeout: { type: "number" },
             retries: { type: "number" },

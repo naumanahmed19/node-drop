@@ -32,7 +32,7 @@ import {
  *    Loop (Repeat 10) → HTTP Request (page={{$json.iteration}}) → Process Data
  */
 export const LoopNode: NodeDefinition = {
-    type: "loop",
+    identifier: "loop",
     displayName: "Loop",
     name: "loop",
     group: ["transform"],

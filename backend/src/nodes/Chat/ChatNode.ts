@@ -5,7 +5,7 @@ import {
 } from "../../types/node.types";
 
 export const ChatNode: NodeDefinition = {
-  type: "chat",
+  identifier: "chat",
   displayName: "Chat",
   name: "chat",
   group: ["communication", "ai"],

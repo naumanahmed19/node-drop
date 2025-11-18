@@ -1,11 +1,11 @@
-﻿import {
+import {
   NodeDefinition,
   NodeInputData,
   NodeOutputData,
 } from "../../types/node.types";
 
 export const WebhookTriggerNode: NodeDefinition = {
-  type: "webhook-trigger",
+  identifier: "webhook-trigger",
   displayName: "Webhook Trigger",
   name: "webhookTrigger",
   group: ["trigger"],
@@ -185,7 +185,7 @@ export const WebhookTriggerNode: NodeDefinition = {
         {
           name: "responseHeaders",
           displayName: "Response Headers",
-          type: "fixedCollection",
+          identifier: "fixedCollection",
           typeOptions: {
             multipleValues: true,
           },

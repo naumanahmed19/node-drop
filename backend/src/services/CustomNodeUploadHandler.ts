@@ -973,13 +973,13 @@ export class CustomNodeUploadHandler {
     try {
       // Check if node type already exists
       const existingNode = await this.prisma.nodeType.findUnique({
-        where: { type: nodeDefinition.type },
+        where: { identifier: nodeDefinition.type },
       });
 
       if (existingNode) {
         // Update existing node
         return await this.prisma.nodeType.update({
-          where: { type: nodeDefinition.type },
+          where: { identifier: nodeDefinition.type },
           data: {
             displayName: nodeDefinition.displayName,
             name: nodeDefinition.name,
@@ -1000,7 +1000,7 @@ export class CustomNodeUploadHandler {
         // Create new node
         return await this.prisma.nodeType.create({
           data: {
-            type: nodeDefinition.type,
+            identifier: nodeDefinition.type,
             displayName: nodeDefinition.displayName,
             name: nodeDefinition.name,
             group: nodeDefinition.group,

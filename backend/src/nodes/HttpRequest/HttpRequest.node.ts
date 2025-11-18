@@ -1,4 +1,4 @@
-﻿import {
+import {
   BuiltInNodeTypes,
   NodeDefinition,
   NodeInputData,
@@ -10,7 +10,7 @@ import { ResourceLimitsEnforcer } from "../../utils/security/ResourceLimitsEnfor
 import { UrlSecurityValidator } from "../../utils/security/UrlSecurityValidator";
 
 export const HttpRequestNode: NodeDefinition = {
-  type: BuiltInNodeTypes.HTTP_REQUEST,
+  identifier: BuiltInNodeTypes.HTTP_REQUEST,
   displayName: "HTTP Request",
   name: "httpRequest",
   group: ["transform"],

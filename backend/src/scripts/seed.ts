@@ -322,9 +322,34 @@ async function main() {
 
     for (const nodeData of builtInNodes) {
       await prisma.nodeType.upsert({
-        where: { type: nodeData.type },
-        update: nodeData,
-        create: nodeData,
+        where: { identifier: nodeData.type },
+        update: {
+          displayName: nodeData.displayName,
+          name: nodeData.name,
+          group: nodeData.group,
+          version: nodeData.version,
+          description: nodeData.description,
+          defaults: nodeData.defaults,
+          inputs: nodeData.inputs,
+          outputs: nodeData.outputs,
+          properties: nodeData.properties,
+          icon: nodeData.icon,
+          color: nodeData.color,
+        },
+        create: {
+          identifier: nodeData.type,
+          displayName: nodeData.displayName,
+          name: nodeData.name,
+          group: nodeData.group,
+          version: nodeData.version,
+          description: nodeData.description,
+          defaults: nodeData.defaults,
+          inputs: nodeData.inputs,
+          outputs: nodeData.outputs,
+          properties: nodeData.properties,
+          icon: nodeData.icon,
+          color: nodeData.color,
+        },
       });
     }
 
@@ -375,16 +400,16 @@ async function main() {
         connections: [
           {
             id: "conn-1",
-            sourceNodeId: "webhook-1",
+            sourceidentifier: "webhook-1",
             sourceOutput: "main",
-            targetNodeId: "http-1",
+            targetidentifier: "http-1",
             targetInput: "main",
           },
           {
             id: "conn-2",
-            sourceNodeId: "http-1",
+            sourceidentifier: "http-1",
             sourceOutput: "main",
-            targetNodeId: "json-1",
+            targetidentifier: "json-1",
             targetInput: "main",
           },
         ],
