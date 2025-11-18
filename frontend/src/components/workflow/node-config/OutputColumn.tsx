@@ -8,6 +8,7 @@ import { useNodeConfigDialogStore, useWorkflowStore } from '@/stores'
 import { useNodeTypesStore } from '@/stores/nodeTypes'
 import { WorkflowNode } from '@/types'
 import {
+  AlertCircle,
   Copy,
   Database,
   Edit,
@@ -234,6 +235,17 @@ export function OutputColumn({ node }: OutputColumnProps) {
           /* Main Output Display - Only shown when editor is closed */
           <ScrollArea className="h-full">
             <div className="p-4 h-full flex flex-col space-y-4">
+              {/* Error Message at Top */}
+              {nodeExecutionResult?.status === 'error' && nodeExecutionResult?.error && (
+                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3 flex-shrink-0">
+                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1">Execution Failed</div>
+                    <div className="text-xs whitespace-pre-wrap break-words">{nodeExecutionResult.error}</div>
+                  </div>
+                </div>
+              )}
+
               {/* Pin Message at Top */}
               {isShowingMockData && (
                 <div className="flex items-center justify-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2 flex-shrink-0">

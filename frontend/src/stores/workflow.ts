@@ -2693,6 +2693,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           case "node-failed":
             if (data.nodeId && data.executionId) {
+              const errorMessage = data.error?.message || "Node execution failed";
+              
               console.log('🔴 [Frontend] node-failed event received:', {
                 nodeId: data.nodeId,
                 nodeName,
@@ -2701,10 +2703,19 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 timestamp: data.timestamp,
               });
               
+              // Update node execution result with error message
+              get().updateNodeExecutionResult(data.nodeId, {
+                nodeId: data.nodeId,
+                nodeName,
+                status: "error",
+                endTime: timestamp,
+                error: errorMessage, // Store as string for display
+              });
+              
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.FAILED, {
                 endTime: timestamp,
                 error: data.error,
-                errorMessage: data.error?.message || "Node execution failed",
+                errorMessage: errorMessage,
               });
               
               console.log('✅ [Frontend] Updated node state to FAILED for:', data.nodeId);
@@ -2713,10 +2724,10 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 timestamp: new Date().toISOString(),
                 level: "error",
                 nodeId: data.nodeId,
-                message: `Node execution failed: ${nodeName} - ${data.error?.message || "Unknown error"}`,
+                message: `Node execution failed: ${nodeName} - ${errorMessage}`,
                 data: {
                   error: data.error,
-                  errorMessage: data.error?.message,
+                  errorMessage: errorMessage,
                   errorStack: data.error?.stack,
                   eventData: data.data,
                 },
@@ -3044,13 +3055,18 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                   break;
 
                 case "node-failed":
+                  // Extract error message from error object
+                  const errorMessage = typeof event.error === 'string' 
+                    ? event.error 
+                    : event.error?.message || "Node execution failed";
+                  
                   // Update node execution result
                   get().updateNodeExecutionResult(event.nodeId, {
                     nodeId: event.nodeId,
                     nodeName,
                     status: "error",
                     endTime: new Date(event.timestamp).getTime(),
-                    error: event.error,
+                    error: errorMessage, // Store as string for display
                   });
 
                   // Update flow execution state for visual indicators
@@ -3067,7 +3083,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                     timestamp: new Date(event.timestamp).toISOString(),
                     level: "error",
                     nodeId: event.nodeId,
-                    message: `Node failed: ${nodeName} - ${event.error}`,
+                    message: `Node failed: ${nodeName} - ${errorMessage}`,
                     data: { nodeId: event.nodeId, nodeName, error: event.error },
                   });
                   break;

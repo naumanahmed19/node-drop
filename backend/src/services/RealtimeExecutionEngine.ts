@@ -1107,14 +1107,22 @@ export class RealtimeExecutionEngine extends EventEmitter {
                             credentialsMappingKeys: Object.keys(credentialsMapping),
                         });
                         
-                        // Emit node-started event for service node validation
-                        this.emit('node-started', {
-                            executionId: context.executionId,
-                            nodeId: sourceNode.id,
-                            nodeName: sourceNode.parameters?.name || sourceNode.type,
-                            nodeType: sourceNode.type,
-                            timestamp: new Date(),
-                        });
+                        // FIX: Skip emitting validation events for tool nodes
+                        // Tool nodes should only show execution events when actually used (executeTool() call)
+                        // Not during validation phase (getDefinition() call)
+                        // This prevents UI from showing tool execution when just reading tool schemas
+                        const isToolNode = inputName === 'tools';
+                        
+                        if (!isToolNode) {
+                            // Emit node-started event for service node validation (Model, Memory, etc.)
+                            this.emit('node-started', {
+                                executionId: context.executionId,
+                                nodeId: sourceNode.id,
+                                nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                nodeType: sourceNode.type,
+                                timestamp: new Date(),
+                            });
+                        }
                         
                         // Validate service node based on type
                         const validationResult = this.validateServiceNode(sourceNode, nodeDefinition, inputName);
@@ -1128,27 +1136,35 @@ export class RealtimeExecutionEngine extends EventEmitter {
                                 errors: validationResult.errors,
                             });
                             
-                            // Emit node-failed event for the service node itself
-                            this.emit('node-failed', {
-                                executionId: context.executionId,
-                                nodeId: sourceNode.id,
-                                nodeName: sourceNode.parameters?.name || sourceNode.type,
-                                nodeType: sourceNode.type,
-                                error: {
-                                    message: validationResult.errors.join(', '),
-                                    type: 'validation',
-                                },
-                                timestamp: new Date(),
-                            });
+                            // FIX: Skip emitting validation failure events for tool nodes
+                            // Tool nodes will emit their own failure events if executeTool() fails
+                            if (!isToolNode) {
+                                // Emit node-failed event for the service node itself (Model, Memory, etc.)
+                                this.emit('node-failed', {
+                                    executionId: context.executionId,
+                                    nodeId: sourceNode.id,
+                                    nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                    nodeType: sourceNode.type,
+                                    error: {
+                                        message: validationResult.errors.join(', '),
+                                        type: 'validation',
+                                    },
+                                    timestamp: new Date(),
+                                });
+                            }
                         } else {
-                            // Emit node-completed event for successful validation
-                            this.emit('node-completed', {
-                                executionId: context.executionId,
-                                nodeId: sourceNode.id,
-                                nodeName: sourceNode.parameters?.name || sourceNode.type,
-                                nodeType: sourceNode.type,
-                                timestamp: new Date(),
-                            });
+                            // FIX: Skip emitting validation success events for tool nodes
+                            // Tool nodes will emit their own completion events after executeTool() succeeds
+                            if (!isToolNode) {
+                                // Emit node-completed event for successful validation (Model, Memory, etc.)
+                                this.emit('node-completed', {
+                                    executionId: context.executionId,
+                                    nodeId: sourceNode.id,
+                                    nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                    nodeType: sourceNode.type,
+                                    timestamp: new Date(),
+                                });
+                            }
                             
                             serviceNodes.push({
                                 id: sourceNode.id,
