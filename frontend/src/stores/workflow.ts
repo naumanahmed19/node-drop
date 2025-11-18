@@ -2601,12 +2601,20 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               
               console.log('✅ [Frontend] Updated node state to RUNNING for:', data.nodeId);
               
+              // Get node details for logging
+              const workflow = get().workflow;
+              const node = workflow?.nodes.find(n => n.id === data.nodeId);
+              
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
                 level: "info",
                 nodeId: data.nodeId,
                 message: `Starting execution of node: ${nodeName}`,
-                data: data.data,
+                data: {
+                  nodeType: node?.type,
+                  parameters: node?.parameters,
+                  eventData: data.data,
+                },
               });
             }
             break;
@@ -2674,7 +2682,11 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: "info",
                 nodeId: data.nodeId,
                 message: `Node execution completed: ${nodeName}`,
-                data: data.data,
+                data: {
+                  outputData: actualOutputData,
+                  duration: nodeExecutionResult?.duration,
+                  eventData: data.data,
+                },
               });
             }
             break;
@@ -2702,7 +2714,12 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: "error",
                 nodeId: data.nodeId,
                 message: `Node execution failed: ${nodeName} - ${data.error?.message || "Unknown error"}`,
-                data: data.data,
+                data: {
+                  error: data.error,
+                  errorMessage: data.error?.message,
+                  errorStack: data.error?.stack,
+                  eventData: data.data,
+                },
               });
             }
             break;
@@ -2937,7 +2954,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: logEntry.level,
                 nodeId: logEntry.nodeId,
                 message: logEntry.message,
-                data: logEntry.data,
+                data: logEntry.metadata || logEntry.data, // Backend sends metadata, but keep data as fallback
               });
             });
 

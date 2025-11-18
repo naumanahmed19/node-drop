@@ -615,11 +615,17 @@ export class FlowExecutionEngine extends EventEmitter {
       // Log execution start
       const nodeName =
         workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+      const node = workflow.nodes.find((n) => n.id === nodeId);
+      
       this.executionHistoryService.addExecutionLog(
         context.executionId,
         "info",
         `Starting execution of node: ${nodeName}`,
-        nodeId
+        nodeId,
+        {
+          parameters: node?.parameters,
+          nodeType: node?.type,
+        }
       );
 
       try {
@@ -639,11 +645,18 @@ export class FlowExecutionEngine extends EventEmitter {
           // Log execution completion
           const nodeName =
             workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const nodeState = context.nodeStates.get(nodeId);
+          
           this.executionHistoryService.addExecutionLog(
             context.executionId,
             "info",
             `Node execution completed successfully: ${nodeName}`,
-            nodeId
+            nodeId,
+            {
+              inputData: nodeState?.inputData,
+              outputData: result.data,
+              duration: result.duration,
+            }
           );
 
           await this.queueDependentNodes(nodeId, context, workflow);
@@ -667,6 +680,7 @@ export class FlowExecutionEngine extends EventEmitter {
           // Log execution failure
           const nodeName =
             workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const nodeState = context.nodeStates.get(nodeId);
           const errorMessage =
             result.error instanceof Error
               ? result.error.message
@@ -675,7 +689,12 @@ export class FlowExecutionEngine extends EventEmitter {
             context.executionId,
             "error",
             `Node execution failed: ${nodeName} - ${errorMessage}`,
-            nodeId
+            nodeId,
+            {
+              inputData: nodeState?.inputData,
+              error: result.error,
+              duration: result.duration,
+            }
           );
         }
 
