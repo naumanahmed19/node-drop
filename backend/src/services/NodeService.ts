@@ -364,9 +364,7 @@ export class NodeService {
         a.displayName.localeCompare(b.displayName)
       );
 
-      logger.info(
-        `Returning ${nodeTypesFromRegistry.length} node types from in-memory registry`
-      );
+      // Return from in-memory registry
       return nodeTypesFromRegistry;
     } catch (error) {
       logger.error("Failed to get node types", { error });
@@ -866,7 +864,7 @@ export class NodeService {
     try {
       // Register built-in nodes
       await this.registerBuiltInNodes();
-      logger.info("Built-in nodes initialized");
+      // Built-in nodes initialized silently
     } catch (error) {
       logger.error("Failed to initialize built-in nodes", { error });
 

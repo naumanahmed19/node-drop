@@ -74,7 +74,7 @@ export class ScheduleJobManager {
      */
     async initialize(): Promise<void> {
         try {
-            logger.info('Initializing ScheduleJobManager from database...');
+            // Initializing from database silently
 
             // Clear all existing jobs in Redis (fresh start)
             await this.clearAllRedisJobs();
@@ -118,7 +118,7 @@ export class ScheduleJobManager {
                 jobCount++;
             }
 
-            logger.info(`ScheduleJobManager initialized with ${jobCount} scheduled jobs from database`);
+            // Initialized silently
         } catch (error) {
             logger.error('Error initializing ScheduleJobManager:', error);
             throw error;
@@ -134,7 +134,7 @@ export class ScheduleJobManager {
             for (const job of repeatableJobs) {
                 await this.scheduleQueue.removeRepeatableByKey(job.key);
             }
-            logger.info(`Cleared ${repeatableJobs.length} jobs from Redis`);
+            // Cleared jobs silently
         } catch (error) {
             logger.error('Error clearing Redis jobs:', error);
         }

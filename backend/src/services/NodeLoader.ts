@@ -73,10 +73,7 @@ export class NodeLoader {
       // Load existing custom nodes
       await this.loadAllCustomNodes();
 
-      logger.info("NodeLoader initialized", {
-        customNodesPath: this.customNodesPath,
-        hotReloadEnabled: this.hotReloadEnabled,
-      });
+      // NodeLoader initialized silently
     } catch (error) {
       logger.error("Failed to initialize NodeLoader", { error });
       throw error;
@@ -144,10 +141,7 @@ export class NodeLoader {
         await this.setupHotReload(packagePath, packageInfo.name);
       }
 
-      logger.info("Node package loaded successfully", {
-        packageName: packageInfo.name,
-        nodeCount: nodeDefinitions.length,
-      });
+      // Silently loaded - only log errors
 
       return {
         success: true,
@@ -552,10 +546,7 @@ export class NodeLoader {
       // Register with credential service
       this.credentialService.registerCredentialType(credentialType);
 
-      logger.info("Loaded and registered credential type", {
-        name: credentialType.name,
-        displayName: credentialType.displayName,
-      });
+      // Silently loaded - only log errors
     } catch (error) {
       logger.error("Failed to load credential type", { error, credentialPath });
       throw error;
@@ -655,10 +646,7 @@ export class NodeLoader {
       // Store watcher
       this.watchers.set(packageName, watcher);
 
-      logger.info("Hot reload set up for package", {
-        packageName,
-        packagePath,
-      });
+      // Hot reload enabled silently
     } catch (error) {
       logger.error("Failed to set up hot reload", {
         error,
@@ -701,10 +689,7 @@ export class NodeLoader {
         }
       }
 
-      logger.info("Custom nodes auto-load completed", {
-        packagesFound: packageDirs.length,
-        packagesLoaded: this.loadedPackages.size,
-      });
+      // Custom nodes loaded silently
     } catch (error) {
       logger.error("Failed to load custom nodes", { error });
     }

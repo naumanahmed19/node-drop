@@ -238,26 +238,23 @@ async function initializeNodeSystems() {
 
     // Check if nodes were successfully registered
     const nodeTypes = await nodeService.getNodeTypes();
-    console.log(`📦 Found ${nodeTypes.length} registered node types`);
 
     if (nodeTypes.length === 0) {
-      console.log("🔄 No nodes found, attempting to register discovered nodes...");
       try {
         await nodeService.registerDiscoveredNodes();
         const newNodeTypes = await nodeService.getNodeTypes();
-        console.log(`✅ Successfully registered ${newNodeTypes.length} node types`);
+        console.log(`✅ Registered ${newNodeTypes.length} nodes`);
       } catch (registrationError) {
-        console.error("❌ Failed to register nodes:", registrationError);
+        console.error("Failed to register nodes:", registrationError);
       }
     } else {
-      console.log(`✅ Node types already registered: ${nodeTypes.length}`);
+      // Nodes already registered
 
       // Even if some nodes were found, try to register any missing ones
       try {
         // Import and use node discovery directly
         const { nodeDiscovery } = await import("./utils/NodeDiscovery");
         const allNodeDefinitions = await nodeDiscovery.getAllNodeDefinitions();
-        console.log(`🔍 Discovered ${allNodeDefinitions.length} node definitions`);
 
         let newRegistrations = 0;
         for (const nodeDefinition of allNodeDefinitions) {
@@ -272,16 +269,19 @@ async function initializeNodeSystems() {
         }
 
         if (newRegistrations > 0) {
-          console.log(`✅ Registered ${newRegistrations} additional nodes`);
+          console.log(`✅ Registered ${newRegistrations} nodes`);
         }
       } catch (registrationError) {
-        console.warn("⚠️ Failed to check for additional nodes:", registrationError);
+        console.warn("Failed to register additional nodes");
       }
     }
 
     // Then, load custom nodes
     await nodeLoader.initialize();
-    console.log("🔌 Custom node loader initialized");
+    
+    // Show total nodes loaded
+    const totalNodes = await nodeService.getNodeTypes();
+    console.log(`✅ Loaded ${totalNodes.length} nodes`);
   } catch (error) {
     console.error("❌ Failed to initialize node systems:", error);
     // Don't throw the error - allow the application to start
@@ -487,7 +487,6 @@ httpServer.listen(PORT, async () => {
 
   // Initialize TriggerService singleton to load active triggers
   try {
-    console.log(`⏰ Initializing TriggerService...`);
     await initializeTriggerService(
       prisma,
       workflowService,
@@ -497,16 +496,15 @@ httpServer.listen(PORT, async () => {
       executionHistoryService,
       credentialService
     );
-    console.log(`✅ TriggerService initialized - active triggers loaded`);
+    console.log(`✅ Initialized triggers & webhooks`);
   } catch (error) {
-    console.error(`❌ Failed to initialize TriggerService:`, error);
+    console.error(`Failed to initialize TriggerService:`, error);
   }
 
   // Initialize ScheduleJobManager for persistent schedule jobs
   try {
-    console.log(`📅 Initializing ScheduleJobManager...`);
     await scheduleJobManager.initialize();
-    console.log(`✅ ScheduleJobManager initialized - schedule jobs loaded from Redis`);
+    console.log(`✅ Initialized schedule jobs`);
   } catch (error) {
     console.error(`❌ Failed to initialize ScheduleJobManager:`, error);
   }
@@ -518,7 +516,7 @@ setInterval(() => {
   const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
   const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
   
-  console.log(`📊 Memory: ${heapUsedMB}MB / ${heapTotalMB}MB (RSS: ${Math.round(usage.rss / 1024 / 1024)}MB)`);
+  // Memory monitoring (silent)
   
   // Alert if memory usage is high
   if (heapUsedMB > 1024) { // 1GB threshold

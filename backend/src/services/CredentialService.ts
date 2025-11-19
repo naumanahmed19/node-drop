@@ -91,7 +91,7 @@ export class CredentialService {
       }
 
       this.coreCredentialsRegistered = true;
-      logger.info(`✅ Registered ${CoreCredentials.length} core credential types`);
+      // Core credentials registered silently
     } catch (error) {
       logger.error("Failed to register core credentials:", error);
       throw error;
@@ -103,10 +103,7 @@ export class CredentialService {
    */
   registerCredentialType(credentialType: CredentialType): void {
     this.credentialTypeRegistry.set(credentialType.name, credentialType);
-    logger.info("Registered credential type", {
-      name: credentialType.name,
-      displayName: credentialType.displayName,
-    });
+    // Silently registered - only log errors
   }
 
   /**
@@ -114,7 +111,7 @@ export class CredentialService {
    */
   unregisterCredentialType(credentialTypeName: string): void {
     this.credentialTypeRegistry.delete(credentialTypeName);
-    logger.info("Unregistered credential type", { name: credentialTypeName });
+    // Silently unregistered
   }
 
   /**

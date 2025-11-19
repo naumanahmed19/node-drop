@@ -257,12 +257,9 @@ export class NodeDiscovery {
     const nodeInfos: NodeInfo[] = [];
     const customNodesDir = path.join(process.cwd(), "custom-nodes");
 
-    console.log(`🔍 Loading custom nodes from: ${customNodesDir}`);
-
     try {
       // Check if custom-nodes directory exists
       if (!fs.existsSync(customNodesDir)) {
-        console.log("📁 Custom nodes directory does not exist");
         return nodeInfos;
       }
 
@@ -270,30 +267,23 @@ export class NodeDiscovery {
         withFileTypes: true,
       });
 
-      console.log(`📦 Found ${packageDirs.length} items in custom-nodes directory`);
-
       for (const packageDir of packageDirs) {
         if (!packageDir.isDirectory()) {
-          console.log(`⏭️ Skipping non-directory: ${packageDir.name}`);
           continue;
         }
 
         const packagePath = path.join(customNodesDir, packageDir.name);
-        console.log(`🔍 Processing package: ${packageDir.name} at ${packagePath}`);
         
         try {
           // Look for node files in the package directory
           const nodeFiles = await this.findNodeFilesInPackage(packagePath);
-          console.log(`📄 Found ${nodeFiles.length} node files in ${packageDir.name}:`, nodeFiles.map(f => path.basename(f)));
           
           for (const nodeFile of nodeFiles) {
             try {
-              console.log(`🔄 Loading node file: ${nodeFile}`);
               const nodeModule = await this.loadNodeFromFile(nodeFile);
               
               if (nodeModule) {
                 const nodeDefinitions = this.extractNodeDefinitions(nodeModule);
-                console.log(`✅ Extracted ${nodeDefinitions.length} node definitions from ${path.basename(nodeFile)}`);
                 
                 for (const definition of nodeDefinitions) {
                   nodeInfos.push({
@@ -301,24 +291,23 @@ export class NodeDiscovery {
                     path: nodeFile,
                     definition,
                   });
-                  console.log(`📝 Added node definition: ${definition.identifier} (${definition.displayName})`);
                 }
-              } else {
-                console.warn(`⚠️ No module loaded from ${nodeFile}`);
               }
             } catch (error) {
-              console.warn(`❌ Failed to load node from file ${nodeFile}:`, error);
+              console.warn(`Failed to load node from ${packageDir.name}/${path.basename(nodeFile)}`);
             }
           }
         } catch (error) {
-          console.warn(`❌ Failed to load custom node package ${packageDir.name}:`, error);
+          console.warn(`Failed to load custom node package ${packageDir.name}`);
         }
       }
     } catch (error) {
-      console.warn("❌ Failed to load custom nodes:", error);
+      console.warn("Failed to load custom nodes:", error);
     }
 
-    console.log(`🎉 Total custom nodes loaded: ${nodeInfos.length}`);
+    if (nodeInfos.length > 0) {
+      console.log(`✅ Loaded ${nodeInfos.length} custom nodes`);
+    }
     return nodeInfos;
   }
 

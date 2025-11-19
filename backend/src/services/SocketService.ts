@@ -92,7 +92,7 @@ export class SocketService {
           email: decoded.email,
         };
 
-        logger.info(`Socket authenticated for user ${decoded.id}`);
+        // Socket authenticated silently
         next();
       } catch (error) {
         logger.error("Socket authentication failed:", error);
@@ -107,7 +107,7 @@ export class SocketService {
   private setupConnectionHandlers(): void {
     this.io.on("connection", (socket: Socket) => {
       const authSocket = socket as AuthenticatedSocket;
-      logger.info(`User ${authSocket.userId} connected via Socket.io`);
+      // User connected silently
 
       // Store authenticated socket
       this.authenticatedSockets.set(authSocket.userId, authSocket);
@@ -151,9 +151,7 @@ export class SocketService {
 
       // Handle disconnect
       socket.on("disconnect", () => {
-        console.log(`🔌 User ${authSocket.userId} DISCONNECTED from Socket.io - Socket ID: ${socket.id}`);
-        const rooms = Array.from(socket.rooms);
-        console.log(`🔌 Socket was in rooms:`, rooms);
+        // User disconnected silently
         logger.info(`User ${authSocket.userId} disconnected from Socket.io`);
         this.authenticatedSockets.delete(authSocket.userId);
       });
@@ -269,23 +267,14 @@ export class SocketService {
     socket: AuthenticatedSocket,
     workflowId: string
   ): void {
-    console.log(`📡 User ${socket.userId} subscribing to workflow:${workflowId}`);
-    logger.debug(`User ${socket.userId} subscribing to workflow ${workflowId}`);
-
     // Join workflow-specific room
     socket.join(`workflow:${workflowId}`);
-    
-    // Log the rooms this socket is in
-    const rooms = Array.from(socket.rooms);
-    console.log(`📡 Socket ${socket.id} is now in rooms:`, rooms);
 
     // Confirm subscription
     socket.emit("workflow-subscribed", {
       workflowId,
       timestamp: new Date().toISOString(),
     });
-    
-    console.log(`✅ Workflow subscription confirmed for workflow:${workflowId}`);
   }
 
   /**

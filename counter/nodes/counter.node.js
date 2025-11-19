@@ -6,7 +6,7 @@ const { config } = require("dotenv");
 const globalCounterState = new Map();
 
 const CounterNode = {
-  type: "counter",
+  identifier: "counter",
   displayName: "Counter",
   name: "counter",
   group: ["transform"],
