@@ -187,6 +187,7 @@ export class NodeService {
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category
           // Don't update active status on update - preserve user's choice
         },
         create: {
@@ -204,6 +205,7 @@ export class NodeService {
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category
           active: true,
         },
       });
@@ -300,11 +302,13 @@ export class NodeService {
           inputNames: nodeDefinition.inputNames, // Include input names for labeled inputs
           outputNames: nodeDefinition.outputNames, // Include output names for labeled outputs
           serviceInputs: nodeDefinition.serviceInputs, // Include service inputs for AI Agent and similar nodes
+          inputsConfig: nodeDefinition.inputsConfig, // Include input configuration for service inputs
           properties: this.resolveProperties(nodeDefinition.properties || []),
           credentials: nodeDefinition.credentials, // Include credentials
           credentialSelector: nodeDefinition.credentialSelector, // Include unified credential selector
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category for service/tool nodes
           // Add execution metadata - use provided values or compute from group
           executionCapability:
             nodeDefinition.executionCapability ||
@@ -422,6 +426,8 @@ export class NodeService {
           credentialSelector: nodeDefinition.credentialSelector, // Include unified credential selector
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category for service/tool nodes
+          inputsConfig: nodeDefinition.inputsConfig, // Include input configuration
         };
       }
 

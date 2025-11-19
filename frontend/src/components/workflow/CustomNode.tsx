@@ -1,4 +1,5 @@
 import { useWorkflowStore } from '@/stores'
+import { useReactFlowUIStore } from '@/stores/reactFlowUI'
 import type { NodeType } from '@/types'
 import { Node, NodeProps } from '@xyflow/react'
 import { memo, useMemo } from 'react'
@@ -47,8 +48,17 @@ type CustomNodeType = Node<CustomNodeData>
 
 export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeProps<CustomNodeType>) {
   // OPTIMIZATION: Use Zustand selector to prevent unnecessary re-renders
-  // Get read-only state from store (only true when viewing past execution)
+  // Get read-only state and workflow from store
   const readOnly = useWorkflowStore(state => state.readOnly)
+  const workflow = useWorkflowStore(state => state.workflow)
+  const globalCompactMode = useReactFlowUIStore(state => state.compactMode)
+  
+  // Get per-node compact mode setting (same pattern as BaseNodeWrapper)
+  const workflowNode = workflow?.nodes.find(n => n.id === id)
+  const nodeCompactMode = workflowNode?.settings?.compact || false
+  
+  // Use node-specific compact mode if set, otherwise use global
+  const compactMode = nodeCompactMode || globalCompactMode
 
   // Use custom hooks for node visual state
   const { nodeVisualState, nodeExecutionState } = useNodeExecution(id, data.nodeType)
@@ -71,6 +81,23 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     data.executionCapability === 'trigger',
     [data.executionCapability]
   )
+
+  // Check if this is a service node (tool, memory, model) - hide labels in compact mode
+  const isServiceNode = useMemo(() => {
+    const nodeCategory = (data.nodeTypeDefinition as any)?.nodeCategory
+    const isService = nodeCategory === 'service' || nodeCategory === 'tool'
+    
+    // Debug logging to verify nodeCategory is received
+    if (data.nodeType === 'openai-model' || data.nodeType === 'http-request-tool' || data.nodeType === 'slack-tool') {
+      console.log(`[CustomNode] ${data.nodeType} detection:`, {
+        nodeCategory,
+        isService,
+        nodeTypeDefinition: data.nodeTypeDefinition,
+      });
+    }
+    
+    return isService
+  }, [data.nodeTypeDefinition, data.nodeType])
 
   // Get icon and color from node type definition using the same utility as NodeTypesList
   // This will handle file: icons, fa: icons, lucide: icons, and emoji automatically
@@ -106,17 +133,32 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     return data.outputs
   }, [data.nodeType, data.parameters?.outputs, data.outputs])
 
-  // Calculate dynamic height based on number of outputs
+  // Calculate dynamic height based on number of outputs and service inputs
   // Each handle needs ~30px of space, with a minimum of 60px for the node
+  // Service inputs (bottom) need extra space for labels (unless in compact mode)
   const dynamicHeight = useMemo(() => {
     const outputCount = computedOutputs?.length || 1
-    if (outputCount <= 3) {
-      return undefined // Use default height
+    
+    // Check if node has bottom service inputs (model, memory, tools)
+    const inputsConfig = (data as any).inputsConfig
+    const hasBottomInputs = inputsConfig && Object.values(inputsConfig).some(
+      (config: any) => config.position === 'bottom'
+    )
+    
+    // Base height calculation for outputs
+    let minHeight = 60
+    if (outputCount > 3) {
+      minHeight = Math.max(60, outputCount * 20)
     }
-    // Calculate height: base height (60px) + additional space for extra outputs
-    const minHeight = Math.max(60, outputCount * 20)
-    return `${minHeight}px`
-  }, [computedOutputs?.length])
+    
+    // Add extra height for bottom service inputs (for labels and spacing)
+    // In compact mode, keep normal height and show labels via tooltip
+    if (hasBottomInputs && !compactMode) {
+      minHeight = Math.max(minHeight, 80) // Minimum 80px for nodes with service inputs
+    }
+    
+    return minHeight > 60 ? `${minHeight}px` : undefined
+  }, [computedOutputs?.length, (data as any).inputsConfig, compactMode])
 
   // Memoize nodeConfig object to prevent recreation
   const nodeConfig = useMemo(() => ({
@@ -129,7 +171,9 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     imageUrl: data.parameters?.imageUrl as string,
     nodeType: data.nodeType,  // Pass nodeType for file: icon resolution
     dynamicHeight,  // Pass dynamic height to node config
-  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, (data as any).inputsConfig, data.parameters?.imageUrl, data.nodeType, dynamicHeight])
+    compactMode,  // Pass compact mode to handle rendering
+    isServiceNode,  // Pass service node flag to hide labels in compact mode
+  }), [nodeIcon, nodeColor, isTrigger, data.inputs, computedOutputs, (data as any).inputsConfig, data.parameters?.imageUrl, data.nodeType, dynamicHeight, compactMode, isServiceNode])
 
   // Render node enhancements (badges, overlays, etc.) using the registry
   const nodeEnhancements = useMemo(() => {
@@ -183,6 +227,14 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
     return outputCount > 1
   }, [computedOutputs?.length])
 
+  // Calculate node width - service nodes are smaller
+  const nodeWidth = useMemo(() => {
+    if (isServiceNode) {
+      return '100px' // Smaller width for service nodes (tools, memory, model)
+    }
+    return '180px' // Default width for regular nodes
+  }, [isServiceNode])
+
   return (
     <BaseNodeWrapper
       id={id}
@@ -197,6 +249,8 @@ export const CustomNode = memo(function CustomNode({ data, selected, id }: NodeP
       toolbar={toolbarConfig}
       nodeEnhancements={nodeEnhancements}
       showOutputLabels={shouldShowOutputLabels}
+      collapsedWidth={nodeWidth}
+      small={isServiceNode}
     />
   )
 })

@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { memo, useMemo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { calculateHandlePosition } from '../utils/handlePositioning'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface NodeHandlesProps {
   inputs?: string[]
@@ -24,6 +25,7 @@ interface NodeHandlesProps {
   readOnly?: boolean
   showInputLabels?: boolean
   showOutputLabels?: boolean
+  compactMode?: boolean
 }
 
 export const NodeHandles = memo(function NodeHandles({
@@ -41,7 +43,8 @@ export const NodeHandles = memo(function NodeHandles({
   onServiceInputClick,
   readOnly = false,
   showInputLabels = false,
-  showOutputLabels = false
+  showOutputLabels = false,
+  compactMode = false
 }: NodeHandlesProps) {
   // Separate inputs by position - memoized to prevent recalculation
   const { leftInputs, bottomInputs } = useMemo(() => {
@@ -118,68 +121,81 @@ export const NodeHandles = memo(function NodeHandles({
 
             return (
               <>
-                {/* Label inside node, above the handle */}
-                <div
-                  key={`input-bottom-label-${input}-${index}`}
-                  className="absolute flex items-center justify-center"
-                  style={{
-                    bottom: '4px',
-                    left,
-                    transform: 'translateX(-50%)',
-                  }}
-                >
-                  <span className="text-[6px] font-medium text-muted-foreground whitespace-nowrap pointer-events-none select-none">
-                    {inputLabel}
-                    {isRequired && <span className="text-destructive ml-0.5">*</span>}
-                  </span>
-                </div>
+                {/* Label inside node, above the handle - hidden in compact mode */}
+                {!compactMode && (
+                  <div
+                    key={`input-bottom-label-${input}-${index}`}
+                    className="absolute flex items-center justify-center"
+                    style={{
+                      bottom: '12px',
+                      left,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <span className="text-[8px] font-medium text-muted-foreground whitespace-nowrap pointer-events-none select-none">
+                      {inputLabel}
+                      {isRequired && <span className="text-destructive ml-0.5">*</span>}
+                    </span>
+                  </div>
+                )}
 
                 {/* Handle at bottom edge with interactive behavior */}
-                <div
-                  key={`input-bottom-${input}-${index}`}
-                  className="absolute"
-                  style={{
-                    bottom: '-6px',
-                    left,
-                    transform: 'translateX(-50%)',
-                  }}
-                  onMouseEnter={() => onOutputMouseEnter(input)}
-                  onMouseLeave={onOutputMouseLeave}
-                >
-                  <div className="relative">
-                    <Handle
-                      id={input}
-                      type="target"
-                      position={Position.Bottom}
-                      style={{
-                        position: 'relative',
-                        top: 0,
-                        left: 0,
-                        right: 'auto',
-                        bottom: 'auto',
-                        transform: 'none',
-                      }}
-                      className={clsx(
-                        "w-3 h-3 border-2 border-white dark:border-background rounded-full cursor-pointer transition-all duration-200",
-                        disabled ? "!bg-muted" : "!bg-muted-foreground hover:!bg-primary hover:scale-125",
-                        isRequired && "ring-2 ring-muted-foreground/30"
-                      )}
-                      onClick={(e) => onServiceInputClick ? onServiceInputClick(e, input) : onOutputClick(e, input)}
-                    />
-
-                    {/* Plus icon on hover */}
-                    {isHovered && !disabled && !readOnly && (
+                <TooltipProvider key={`input-bottom-${input}-${index}`} delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <div
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                        style={{ zIndex: 10 }}
+                        className="absolute"
+                        style={{
+                          bottom: '-6px',
+                          left,
+                          transform: 'translateX(-50%)',
+                        }}
+                        onMouseEnter={() => onOutputMouseEnter(input)}
+                        onMouseLeave={onOutputMouseLeave}
                       >
-                        <div className="bg-primary rounded-full p-0.5 shadow-lg animate-in fade-in zoom-in duration-150">
-                          <Plus className="w-3 h-3 text-primary-foreground" strokeWidth={3} />
+                        <div className="relative">
+                          <Handle
+                            id={input}
+                            type="target"
+                            position={Position.Bottom}
+                            style={{
+                              position: 'relative',
+                              top: 0,
+                              left: 0,
+                              right: 'auto',
+                              bottom: 'auto',
+                              transform: 'none',
+                            }}
+                            className={clsx(
+                              "w-3 h-3 border-2 border-white dark:border-background rounded-full cursor-pointer transition-all duration-200",
+                              disabled ? "!bg-muted" : "!bg-muted-foreground hover:!bg-primary hover:scale-125",
+                              isRequired && "ring-2 ring-muted-foreground/30"
+                            )}
+                            onClick={(e) => onServiceInputClick ? onServiceInputClick(e, input) : onOutputClick(e, input)}
+                          />
+
+                          {/* Plus icon on hover */}
+                          {isHovered && !disabled && !readOnly && (
+                            <div
+                              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                              style={{ zIndex: 10 }}
+                            >
+                              <div className="bg-primary rounded-full p-0.5 shadow-lg animate-in fade-in zoom-in duration-150">
+                                <Plus className="w-3 h-3 text-primary-foreground" strokeWidth={3} />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
+                    </TooltipTrigger>
+                    {compactMode && (
+                      <TooltipContent side="top" className="text-xs">
+                        {inputLabel}
+                        {isRequired && <span className="text-destructive ml-1">*</span>}
+                      </TooltipContent>
                     )}
-                  </div>
-                </div>
+                  </Tooltip>
+                </TooltipProvider>
               </>
             )
           })}
