@@ -91,7 +91,7 @@ export function WorkflowEditor({
             'form-generator': FormGeneratorNode,
             group: GroupNode,
             annotation: AnnotationNode,
-            'ai-agent': CustomNode,
+          //  'ai-agent': AIAgentNode,
         } as NodeTypes
 
         // For dynamically uploaded nodes, they all use the CustomNode component

@@ -74,7 +74,7 @@ export const NodeHeader = memo(function NodeHeader({
   }
   
   return (
-    <div className={`flex items-center ${compactMode && !isExpanded && (!canExpand || !onToggleExpand) ? 'justify-center' : 'justify-between'} ${compactMode && !isExpanded ? 'p-2' : 'p-3'} ${showBorder ? 'border-b border-border' : ''}`}>
+    <div className={`flex items-center ${compactMode && !isExpanded && (!canExpand || !onToggleExpand) ? 'justify-center' : 'justify-between'} ${compactMode && !isExpanded ? 'p-2' : isExpanded ? 'p-3' : 'p-2'} ${showBorder ? 'border-b border-border' : ''}`}>
       <div className={`flex items-center ${compactMode && !isExpanded ? 'gap-0' : 'gap-2'} ${!compactMode || isExpanded ? 'flex-1' : ''} min-w-0`}>
         {/* Icon Component */}
         {icon && (
