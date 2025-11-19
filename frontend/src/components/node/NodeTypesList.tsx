@@ -59,11 +59,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
   const [processingNode, setProcessingNode] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [nodeToDelete, setNodeToDelete] = useState<NodeType | null>(null)
-  // Marketplace filter state
-  const [marketplaceSortBy, setMarketplaceSortBy] = useState<'downloads' | 'rating' | 'updated' | 'relevance'>('downloads')
-  const [marketplaceSortOrder, setMarketplaceSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [marketplaceSelectedCategory, setMarketplaceSelectedCategory] = useState<string>('all')
-  const [marketplaceCategories, setMarketplaceCategories] = useState<string[]>([])
 
   // Initialize store on mount
   useEffect(() => {
@@ -176,15 +171,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         setSearchTerm={setSearchTerm}
         onRefresh={refetchNodeTypes}
         isRefreshing={isLoading}
-        sortBy={marketplaceSortBy}
-        sortOrder={marketplaceSortOrder}
-        selectedCategory={marketplaceSelectedCategory}
-        categories={marketplaceCategories}
-        onSortChange={(sortBy, sortOrder) => {
-          setMarketplaceSortBy(sortBy as any)
-          setMarketplaceSortOrder(sortOrder as any)
-        }}
-        onCategoryChange={setMarketplaceSelectedCategory}
       />
     )
 
@@ -519,10 +505,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         <TabsContent value="marketplace" className="mt-0 p-0">
           <NodeMarketplace
             searchTerm={searchTerm}
-            sortBy={marketplaceSortBy}
-            sortOrder={marketplaceSortOrder}
-            selectedCategory={marketplaceSelectedCategory}
-            onCategoriesChange={setMarketplaceCategories}
             onRefreshNodes={refetchNodeTypes}
           />
         </TabsContent>

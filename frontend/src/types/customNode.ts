@@ -59,6 +59,7 @@ export interface NodePackageMetadata {
   description: string;
   author: string;
   keywords: string[];
+  nodeCategory?: string;
   downloadUrl: string;
   icon?: string;
   iconUrl?: string;
@@ -89,9 +90,8 @@ export interface NodeSearchFilters {
   category?: string;
   author?: string;
   verified?: boolean;
-  minRating?: number;
   tags?: string[];
-  sortBy?: "relevance" | "downloads" | "rating" | "updated" | "created";
+  sortBy?: "relevance" | "downloads" | "created";
   sortOrder?: "asc" | "desc";
   limit?: number;
   offset?: number;

@@ -14,19 +14,11 @@ import { useEffect, useMemo, useState } from 'react'
 
 interface NodeMarketplaceProps {
   searchTerm?: string
-  sortBy?: 'downloads' | 'rating' | 'updated' | 'relevance'
-  sortOrder?: 'asc' | 'desc'
-  selectedCategory?: string
-  onCategoriesChange?: (categories: string[]) => void
   onRefreshNodes?: () => Promise<void>
 }
 
 export function NodeMarketplace({
   searchTerm = "",
-  sortBy = 'downloads',
-  sortOrder = 'desc',
-  selectedCategory = 'all',
-  onCategoriesChange,
   onRefreshNodes
 }: NodeMarketplaceProps) {
   const {
@@ -50,10 +42,7 @@ export function NodeMarketplace({
       try {
         await searchMarketplace({
           query: searchTerm || undefined,
-          category: selectedCategory !== 'all' ? selectedCategory : undefined,
-          sortBy,
-          sortOrder,
-          limit: 20 // Default to 20 nodes
+          limit: 50 // Show more nodes without pagination
         })
         setHasSearched(true)
       } catch (error) {
@@ -62,26 +51,7 @@ export function NodeMarketplace({
     }
 
     loadMarketplace()
-  }, [searchTerm, selectedCategory, sortBy, sortOrder, searchMarketplace])
-
-
-
-  // Get unique categories from search results
-  const categories = useMemo(() => {
-    if (!searchResults?.packages) return []
-    const cats = [...new Set(searchResults.packages.map(pkg => {
-      // Extract category from keywords or use first keyword
-      return pkg.keywords?.[0] || 'Other'
-    }))]
-    return cats.sort()
-  }, [searchResults])
-
-  // Update parent with categories when they change
-  useEffect(() => {
-    if (onCategoriesChange) {
-      onCategoriesChange(categories)
-    }
-  }, [categories, onCategoriesChange])
+  }, [searchTerm, searchMarketplace])
 
 
 
@@ -109,10 +79,7 @@ export function NodeMarketplace({
         // can properly check which nodes are installed
         await searchMarketplace({
           query: searchTerm || undefined,
-          category: selectedCategory !== 'all' ? selectedCategory : undefined,
-          sortBy,
-          sortOrder,
-          limit: 20
+          limit: 50
         })
       }
     } catch (error) {
@@ -148,10 +115,7 @@ export function NodeMarketplace({
         // Then refresh marketplace to update installation status
         await searchMarketplace({
           query: searchTerm || undefined,
-          category: selectedCategory !== 'all' ? selectedCategory : undefined,
-          sortBy,
-          sortOrder,
-          limit: 20
+          limit: 50
         })
       }
     } catch (error) {
@@ -225,32 +189,15 @@ export function NodeMarketplace({
   // Render marketplace nodes in sidebar-style layout
   return (
     <div className="p-0">
-
-
-      {/* Search Results Summary */}
-
-      {searchTerm && hasSearched && searchResults?.packages && searchResults.packages.length > 0 && (
-        <div className="px-4 py-2 border-b bg-muted/20">
-          <div className="text-xs text-muted-foreground">
-            {searchTerm && (
-              <>Showing {searchResults.packages.length} of {searchResults.total} results for "{searchTerm}"</>
-            )}
-            {selectedCategory !== 'all' && (
-              <> in {selectedCategory}</>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Results in flat list */}
-      <div className="p-3 space-y-0">
+      <div className="p-3 space-y-2">
         {searchResults?.packages?.map((pkg) => {
           const isInstalling = installingNodes.has(pkg.id)
 
           return (
             <div
               key={pkg.id}
-              className="bg-card hover:bg-sidebar-accent hover:text-sidebar-accent-foreground p-3 text-sm leading-tight border border-border rounded-md mb-2 cursor-pointer group min-h-16 transition-colors"
+              className="bg-card hover:bg-sidebar-accent hover:text-sidebar-accent-foreground p-3 text-sm leading-tight border border-border rounded-md cursor-pointer group min-h-16 transition-colors"
             >
               <div className="flex items-start gap-3 mb-2">
                 {pkg.iconUrl ? (

@@ -39,8 +39,7 @@ export function WorkflowLandingPage() {
       icon: <FileText className="w-5 h-5" />,
       title: "Create New Workflow",
       description: "Start from scratch",
-      action: () => navigate('/workflows/new'),
-      color: "bg-blue-500 hover:bg-blue-600"
+      action: () => navigate('/workflows/new')
     },
     {
       icon: <Workflow className="w-5 h-5" />,
@@ -55,15 +54,13 @@ export function WorkflowLandingPage() {
           isActive: true,
         })
         setOpen(true)
-      },
-      color: "bg-purple-500 hover:bg-purple-600"
+      }
     },
     {
       icon: <Settings className="w-5 h-5" />,
       title: "View Documentation",
       description: "Learn how to use workflows",
-      action: () => window.open('/docs', '_blank'),
-      color: "bg-green-500 hover:bg-green-600"
+      action: () => window.open('https://nodedrop.app', '_blank')
     }
   ]
 
@@ -76,7 +73,7 @@ export function WorkflowLandingPage() {
             <Workflow className="w-10 h-10 text-primary-foreground" />
           </div>
           <h1 className="text-4xl font-bold text-foreground mb-4">
-            Welcome to Workflow Automation
+            Welcome to NodeDrop
           </h1>
           <p className="text-xl text-muted-foreground mb-8">
             Build, automate, and scale your workflows with ease
@@ -91,20 +88,20 @@ export function WorkflowLandingPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-12">
           {quickActions.map((action, index) => (
             <button
               key={index}
               onClick={action.action}
-              className="flex flex-col items-center p-6 bg-card border border-border rounded-lg hover:bg-accent transition-colors"
+              className="flex flex-col items-start p-4 border border-border rounded-lg hover:border-foreground/20 hover:bg-accent/50 transition-all group"
             >
-              <div className={`p-3 rounded-lg ${action.color} text-white mb-3 transition-colors`}>
+              <div className="text-muted-foreground group-hover:text-foreground transition-colors mb-3">
                 {action.icon}
               </div>
-              <h3 className="text-lg font-semibold text-card-foreground mb-1">
+              <h3 className="text-sm font-medium text-foreground mb-1">
                 {action.title}
               </h3>
-              <p className="text-sm text-muted-foreground text-center">
+              <p className="text-xs text-muted-foreground">
                 {action.description}
               </p>
             </button>
