@@ -40,6 +40,8 @@ export function useNodeSize({
       iconSize: config.iconSize,
       labelClass: config.labelClass,
       containerClasses,
+      collapsedWidth: config.width.collapsed,
+      expandedWidth: config.width.expanded,
       config
     }
   }, [small, dynamicHeight, compactMode, isServiceNode])

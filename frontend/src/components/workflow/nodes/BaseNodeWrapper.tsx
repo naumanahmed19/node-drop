@@ -15,6 +15,7 @@ import '../node-animations.css'
 import { getNodeStatusClasses } from '../utils/nodeStyleUtils'
 import { useNodeSize } from './useNodeSize'
 import { CollapsedNodeContent } from './CollapsedNodeContent'
+import { NODE_SIZE_CONFIG } from './nodeSizeConfig'
 
 export interface BaseNodeWrapperProps {
   /** Node ID */
@@ -181,8 +182,8 @@ export function BaseNodeWrapper({
   onToggleExpand,
   Icon,
   iconColor = 'bg-blue-500',
-  collapsedWidth = '180px',
-  expandedWidth = '320px',
+  collapsedWidth = NODE_SIZE_CONFIG.medium.width.collapsed,
+  expandedWidth = NODE_SIZE_CONFIG.medium.width.expanded,
   collapsedContent,
   expandedContent,
   headerInfo,
