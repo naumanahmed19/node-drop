@@ -26,6 +26,13 @@ export function useNodeActions(nodeId: string) {
     updateNode(nodeId, { disabled });
   };
 
+  const handleToggleDisabledFromContext = () => {
+    const node = workflow?.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      updateNode(nodeId, { disabled: !node.disabled });
+    }
+  };
+
   const handleOpenProperties = () => {
     // Open regular properties panel for all nodes (including chat)
     openNodeProperties(nodeId);
@@ -224,6 +231,7 @@ export function useNodeActions(nodeId: string) {
 
   return {
     handleToggleDisabled,
+    handleToggleDisabledFromContext,
     handleOpenProperties,
     handleExecuteFromContext,
     handleDuplicate,

@@ -110,7 +110,6 @@ export const AIAgentNode = memo(function AIAgentNode({
               workflowExecutionStatus={nodeExecutionState.workflowExecutionStatus}
               onExecute={handleExecuteFromContext}
               onRetry={handleExecuteFromContext}
-              onToggleDisabled={handleToggleDisabled}
             />
 
             {/* Node Header */}

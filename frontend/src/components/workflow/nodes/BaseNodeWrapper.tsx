@@ -211,7 +211,8 @@ export function BaseNodeWrapper({
     handleGroup,
     handleOutputClick,
     handleServiceInputClick,
-    handleToggleDisabled
+    handleToggleDisabled,
+    handleToggleDisabledFromContext
   } = useNodeActions(id)
 
   // Get copy/paste functions from store
@@ -391,6 +392,7 @@ export function BaseNodeWrapper({
         onDelete={handleDelete}
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
+        onToggleDisabled={handleToggleDisabledFromContext}
         onCopy={copy || undefined}
         onCut={cut || undefined}
         onPaste={paste || undefined}
@@ -398,6 +400,7 @@ export function BaseNodeWrapper({
         onGroup={canGroup ? handleGroup : undefined}
         onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
         isLocked={!!data.locked}
+        isDisabled={data.disabled}
         isCompact={nodeCompactMode}
         readOnly={isReadOnly}
         canCopy={canCopy}
@@ -498,7 +501,6 @@ export function BaseNodeWrapper({
               workflowExecutionStatus={executionState.status}
               onExecute={handleExecuteNode}
               onRetry={handleRetryNode}
-              onToggleDisabled={handleToggleDisabled}
             />
 
             {/* Expanded Header */}
@@ -526,6 +528,7 @@ export function BaseNodeWrapper({
         onDelete={handleDelete}
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
+        onToggleDisabled={handleToggleDisabledFromContext}
         onCopy={copy || undefined}
         onCut={cut || undefined}
         onPaste={paste || undefined}
@@ -533,6 +536,7 @@ export function BaseNodeWrapper({
         onGroup={canGroup ? handleGroup : undefined}
         onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
         isLocked={!!data.locked}
+        isDisabled={data.disabled}
         isCompact={nodeCompactMode}
         readOnly={isReadOnly}
         canCopy={canCopy}

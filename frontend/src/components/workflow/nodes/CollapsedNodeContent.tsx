@@ -173,7 +173,6 @@ export function CollapsedNodeContent({
         workflowExecutionStatus={executionStatus}
         onExecute={handleExecuteNode}
         onRetry={handleRetryNode}
-        onToggleDisabled={handleToggleDisabled}
       />
 
       {/* Render custom content or NodeContent with icon, or default header */}

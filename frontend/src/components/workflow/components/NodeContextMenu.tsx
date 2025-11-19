@@ -3,7 +3,7 @@ import {
     ContextMenuItem,
     ContextMenuSeparator,
 } from '@/components/ui/context-menu'
-import { Box, Clipboard, Copy, Lock, Maximize2, Minimize2, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { Box, Clipboard, Copy, Eye, EyeOff, Lock, Maximize2, Minimize2, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
 import { isNodeExecutable } from '@/utils/nodeTypeUtils'
 import { NodeType } from '@/types'
 
@@ -14,6 +14,7 @@ interface NodeContextMenuProps {
   onDelete: () => void
   onToggleLock: () => void
   onToggleCompact?: () => void
+  onToggleDisabled?: () => void
   onCopy?: () => void
   onCut?: () => void
   onPaste?: () => void
@@ -21,6 +22,7 @@ interface NodeContextMenuProps {
   onGroup?: () => void
   onCreateTemplate?: () => void
   isLocked: boolean
+  isDisabled?: boolean
   isCompact?: boolean
   readOnly?: boolean
   canCopy?: boolean
@@ -38,6 +40,7 @@ export function NodeContextMenu({
   onDelete,
   onToggleLock,
   onToggleCompact,
+  onToggleDisabled,
   onCopy,
   onCut,
   onPaste,
@@ -45,6 +48,7 @@ export function NodeContextMenu({
   onGroup,
   onCreateTemplate,
   isLocked,
+  isDisabled = false,
   isCompact = false,
   readOnly = false,
   canCopy = false,
@@ -98,6 +102,26 @@ export function NodeContextMenu({
           </>
         )}
       </ContextMenuItem>
+
+      {onToggleDisabled && (
+        <ContextMenuItem
+          onClick={onToggleDisabled}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          {isDisabled ? (
+            <>
+              <Eye className="mr-2 h-4 w-4" />
+              Enable Node
+            </>
+          ) : (
+            <>
+              <EyeOff className="mr-2 h-4 w-4" />
+              Disable Node
+            </>
+          )}
+        </ContextMenuItem>
+      )}
 
       {onToggleCompact && (
         <ContextMenuItem
