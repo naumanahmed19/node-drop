@@ -4,6 +4,7 @@
  */
 
 import { Request, Response } from 'express';
+import { verifyWebhookSignature, extractSignature } from './hmacVerification';
 
 export interface WebhookOptions {
   allowedOrigins?: string;
@@ -11,6 +12,9 @@ export interface WebhookOptions {
   ipWhitelist?: string;
   ignoreBots?: boolean;
   rateLimitPerIP?: number;
+  hmacSecret?: string;
+  hmacAlgorithm?: 'sha1' | 'sha256' | 'sha512';
+  hmacHeader?: string;
   [key: string]: any;
 }
 
@@ -156,8 +160,28 @@ export function isBot(userAgent: string | undefined): boolean {
  */
 export function validateWebhookRequest(
   req: Request,
-  options: WebhookOptions
+  options: WebhookOptions,
+  body?: any
 ): { allowed: boolean; reason?: string } {
+  // Check HMAC signature first (most important security check)
+  if (options.hmacSecret && options.hmacSecret.trim() !== '') {
+    const headerName = options.hmacHeader || 'X-Webhook-Signature';
+    const signatureHeader = req.get(headerName);
+    
+    // Extract signature (handle different formats)
+    const signature = signatureHeader ? extractSignature(signatureHeader) : undefined;
+    
+    const verification = verifyWebhookSignature(body || req.body, signature, {
+      secret: options.hmacSecret,
+      algorithm: options.hmacAlgorithm || 'sha256',
+      header: headerName,
+    });
+    
+    if (!verification.valid) {
+      return { allowed: false, reason: verification.reason || 'Invalid HMAC signature' };
+    }
+  }
+
   // Check IP whitelist
   if (options.ipWhitelist) {
     const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;

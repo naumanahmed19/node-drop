@@ -52,6 +52,32 @@ export const commonWebhookOptions: WebhookOptionsConfig[] = [
     tooltip: "Ignore requests from bots like link previewers and web crawlers",
     description: "Prevent bot traffic from triggering the workflow (e.g., Googlebot, Slackbot, etc.)",
   },
+  {
+    name: "hmacSecret",
+    displayName: "HMAC Secret",
+    type: "string",
+    default: "",
+    placeholder: "your-secret-key",
+    tooltip: "Secret key for HMAC signature verification",
+    description: "Enable HMAC signature verification to ensure webhook authenticity. The signature should be sent in the X-Webhook-Signature header.",
+  },
+  {
+    name: "hmacAlgorithm",
+    displayName: "HMAC Algorithm",
+    type: "options",
+    default: "sha256",
+    tooltip: "Algorithm used for HMAC signature",
+    description: "Hash algorithm for HMAC signature verification",
+  },
+  {
+    name: "hmacHeader",
+    displayName: "HMAC Header Name",
+    type: "string",
+    default: "X-Webhook-Signature",
+    placeholder: "X-Webhook-Signature",
+    tooltip: "HTTP header containing the HMAC signature",
+    description: "Name of the header that contains the HMAC signature",
+  },
 ];
 
 /**

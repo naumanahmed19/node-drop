@@ -148,6 +148,47 @@ export const WebhookTriggerNode: NodeDefinition = {
           description: "Comma-separated list of allowed IP addresses or CIDR ranges. Leave blank to allow all IPs.",
         },
         {
+          name: "hmacSecret",
+          displayName: "HMAC Secret",
+          type: "string",
+          default: "",
+          placeholder: "your-secret-key",
+          tooltip: "Secret key for HMAC signature verification",
+          description: "Enable HMAC signature verification to ensure webhook authenticity. The signature should be sent in the X-Webhook-Signature header.",
+        },
+        {
+          name: "hmacAlgorithm",
+          displayName: "HMAC Algorithm",
+          type: "options",
+          default: "sha256",
+          tooltip: "Algorithm used for HMAC signature",
+          description: "Hash algorithm for HMAC signature verification",
+          options: [
+            { name: "SHA-256", value: "sha256" },
+            { name: "SHA-1", value: "sha1" },
+            { name: "SHA-512", value: "sha512" },
+          ],
+          displayOptions: {
+            show: {
+              "options.hmacSecret": [{ _cnd: { not: "" } }],
+            },
+          },
+        },
+        {
+          name: "hmacHeader",
+          displayName: "HMAC Header Name",
+          type: "string",
+          default: "X-Webhook-Signature",
+          placeholder: "X-Webhook-Signature",
+          tooltip: "HTTP header containing the HMAC signature",
+          description: "Name of the header that contains the HMAC signature",
+          displayOptions: {
+            show: {
+              "options.hmacSecret": [{ _cnd: { not: "" } }],
+            },
+          },
+        },
+        {
           name: "noResponseBody",
           displayName: "No Response Body",
           type: "boolean",
