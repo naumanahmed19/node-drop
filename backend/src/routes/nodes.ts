@@ -190,7 +190,7 @@ router.post(
     }
 
     const result = await getNodeService().loadNodeOptions(
-      req.params.identifier,
+      req.params.type,
       method,
       parameters,
       credentials

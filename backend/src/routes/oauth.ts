@@ -26,6 +26,9 @@ const GOOGLE_OAUTH_CONFIG = {
       // Core credential - comprehensive scopes for all Google services
       "https://www.googleapis.com/auth/drive",
       "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     googleSheetsOAuth2: [

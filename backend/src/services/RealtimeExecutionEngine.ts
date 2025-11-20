@@ -107,10 +107,10 @@ export class RealtimeExecutionEngine extends EventEmitter {
                                     logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${userId}`);
                                     continue;
                                 }
-                                // Map credential type to ID
-                                // property.allowedTypes[0] is the credential type (e.g., "postgresDb")
-                                credentialsMapping[property.allowedTypes[0]] = credentialId;
-                                logger.info(`[RealtimeExecution] Mapped credential type '${property.allowedTypes[0]}' to ID '${credentialId}' from parameter '${property.name}'`);
+                                // Map the actual credential type from the database to the credential ID
+                                // This ensures the node can request credentials by their actual type
+                                credentialsMapping[cred.type] = credentialId;
+                                logger.info(`[RealtimeExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
                             } else {
                                 logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
                             }
@@ -477,7 +477,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         try {
             // Get input data from connected nodes
-            const inputData = this.getNodeInputData(nodeId, graph, context);
+            const inputData = await this.getNodeInputData(nodeId, graph, context);
 
             // Execute the node
             const startTime = Date.now();
@@ -724,7 +724,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
             try {
                 // Get input data
-                const inputData = this.getNodeInputData(nodeId, graph, context);
+                const inputData = await this.getNodeInputData(nodeId, graph, context);
 
                 // Execute the loop node
                 const startTime = Date.now();
@@ -952,11 +952,11 @@ export class RealtimeExecutionEngine extends EventEmitter {
     /**
      * Get input data for a node from its upstream nodes
      */
-    private getNodeInputData(
+    private async getNodeInputData(
         nodeId: string,
         graph: Map<string, string[]>,
         context: ExecutionContext
-    ): any {
+    ): Promise<any> {
         // Find connections targeting this node
         const incomingConnections = context.connections.filter(
             (conn) => conn.targetNodeId === nodeId
@@ -1065,17 +1065,29 @@ export class RealtimeExecutionEngine extends EventEmitter {
                                     
                                     // Check if this is a valid credential ID (any non-empty string)
                                     if (credentialId && typeof credentialId === 'string' && credentialId.trim().length > 0) {
-                                        // Map the credential type to the credential ID
-                                        // Use the first allowed type as the key
-                                        const credentialType = property.allowedTypes[0];
-                                        credentialsMapping[credentialType] = credentialId;
-                                        
-                                        logger.info(`[RealtimeExecution] ✅ Mapped credential type '${credentialType}' to ID '${credentialId}' from parameter '${property.name}'`, {
-                                            nodeType: sourceNode.type,
-                                            parameterName: property.name,
-                                            credentialType,
-                                            credentialId,
+                                        // Verify credential exists and get its actual type
+                                        const cred = await this.prisma.credential.findUnique({
+                                            where: { id: credentialId },
+                                            select: { type: true, userId: true }
                                         });
+
+                                        if (cred) {
+                                            if (cred.userId !== context.userId) {
+                                                logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${context.userId}`);
+                                            } else {
+                                                // Map the actual credential type from the database to the credential ID
+                                                credentialsMapping[cred.type] = credentialId;
+                                                
+                                                logger.info(`[RealtimeExecution] ✅ Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`, {
+                                                    nodeType: sourceNode.type,
+                                                    parameterName: property.name,
+                                                    credentialType: cred.type,
+                                                    credentialId,
+                                                });
+                                            }
+                                        } else {
+                                            logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
+                                        }
                                     }
                                 }
                             }
