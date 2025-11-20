@@ -1,4 +1,6 @@
-import { Alert, AlertDescription } from '@/components/ui/alert'
+
+ 
+ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FormGenerator } from '@/components/ui/form-generator/FormGenerator'
@@ -57,12 +59,13 @@ export function PublicFormPage() {
 
       try {
         const baseApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-        const apiUrl = baseApiUrl.endsWith('/api') ? baseApiUrl : `${baseApiUrl}/api`
+        // Remove /api suffix if present, forms are now under /webhook/forms
+        const apiUrl = baseApiUrl.replace(/\/api$/, '')
         
         // Add password to query if provided
         const url = providedPassword 
-          ? `${apiUrl}/public/forms/${formId}?password=${encodeURIComponent(providedPassword)}`
-          : `${apiUrl}/public/forms/${formId}`
+          ? `${apiUrl}/webhook/forms/${formId}?password=${encodeURIComponent(providedPassword)}`
+          : `${apiUrl}/webhook/forms/${formId}`
         
         const response = await axios.get<FormResponse>(url)
         
@@ -124,8 +127,8 @@ export function PublicFormPage() {
     
     try {
       const baseApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-      const apiUrl = baseApiUrl.endsWith('/api') ? baseApiUrl : `${baseApiUrl}/api`
-      const url = `${apiUrl}/public/forms/${formId}?password=${encodeURIComponent(password)}`
+      const apiUrl = baseApiUrl.replace(/\/api$/, '')
+      const url = `${apiUrl}/webhook/forms/${formId}?password=${encodeURIComponent(password)}`
       
       const response = await axios.get<FormResponse>(url)
       
@@ -181,7 +184,7 @@ export function PublicFormPage() {
 
     try {
       const baseApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-      const apiUrl = baseApiUrl.endsWith('/api') ? baseApiUrl : `${baseApiUrl}/api`
+      const apiUrl = baseApiUrl.replace(/\/api$/, '')
       
       // Prepare submission data
       const submissionData: any = {
@@ -199,7 +202,7 @@ export function PublicFormPage() {
         submissionData.accessKey = accessKey
       }
       
-      const response = await axios.post(`${apiUrl}/public/forms/${formId}/submit`, submissionData)
+      const response = await axios.post(`${apiUrl}/webhook/forms/${formId}/submit`, submissionData)
 
       if (response.data.success) {
         setSubmitStatus('success')

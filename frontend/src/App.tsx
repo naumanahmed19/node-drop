@@ -11,6 +11,7 @@ import {
     ProfilePage,
     PublicFormPage,
     RegisterPage,
+    WebhookRequestsPage,
     WorkflowEditorPage
 } from '@/pages'
 import { OAuthCallback } from '@/pages/OAuthCallback'
@@ -106,6 +107,7 @@ function App() {
           >
             <Route index element={<Navigate to="/workflows" replace />} />
             <Route path="executions" element={<ExecutionsPage />} />
+            <Route path="webhook-requests" element={<WebhookRequestsPage />} />
             <Route path="custom-nodes" element={<CustomNodesPage />} />
             <Route path="profile" element={<ProfilePage />} />
           

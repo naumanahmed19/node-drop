@@ -184,8 +184,8 @@ export function transformWorkflowNodesToReactFlow(
         ? "image-preview"
         : node.type === "data-preview"
         ? "data-preview"
-        : node.type === "form-generator"
-        ? "form-generator"
+        : node.type === "forms"
+        ? "forms"
         : node.type === "annotation"
         ? "annotation"
         : "custom";

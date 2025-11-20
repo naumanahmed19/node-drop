@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { Request, Response, Router } from "express";
 import rateLimit from "express-rate-limit";
+import cors from "cors";
 import { createServer } from "http";
 import { asyncHandler } from "../middleware/asyncHandler";
 import {
@@ -14,6 +15,22 @@ import { SocketService } from "../services/SocketService";
 import { WorkflowService } from "../services/WorkflowService";
 
 const router = Router();
+
+// Apply dynamic CORS based on chat node settings
+router.use((req, res, next) => {
+  // For now, allow all origins (will be made configurable per chat node)
+  // TODO: Read allowedOrigins from chat node parameters
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  
+  next();
+});
 
 // Rate limiter for chat fetching (GET requests)
 // Allow 30 requests per minute for chat configuration

@@ -354,3 +354,35 @@ model ScheduledJob {
   @@index([active])
   @@map("scheduled_jobs")
 }
+
+model WebhookRequestLog {
+  id           String   @id @default(cuid())
+  type         String   @default("webhook") // 'webhook', 'form', 'chat'
+  webhookId    String   // The webhook/form/chat identifier (path or UUID)
+  workflowId   String   // For filtering by workflow
+  userId       String   // For access control
+  timestamp    DateTime @default(now())
+  method       String   // GET, POST, PUT, DELETE, PATCH
+  path         String   // Full path including query
+  headers      Json     // Sanitized headers (no auth tokens)
+  body         Json?    // Request body (truncated if large)
+  query        Json?    // Query parameters
+  ip           String
+  userAgent    String?
+  status       String   // 'success', 'rejected', 'failed'
+  reason       String?  // Why rejected (e.g., "Authentication failed")
+  executionId  String?  // Link to execution if created
+  responseCode Int      // HTTP response code (200, 401, 500, etc.)
+  responseTime Int      // Response time in milliseconds
+  testMode     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([type, webhookId, timestamp])
+  @@index([type, workflowId, timestamp])
+  @@index([type, userId, timestamp])
+  @@index([webhookId, timestamp])
+  @@index([workflowId, timestamp])
+  @@index([userId, timestamp])
+  @@index([timestamp])
+  @@map("webhook_request_logs")
+}

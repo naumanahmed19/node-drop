@@ -10,6 +10,7 @@ import { ExecutionService } from "./ExecutionService";
 import { NodeService } from "./NodeService";
 import { SocketService } from "./SocketService";
 import { TriggerExecutionRequest, TriggerManager } from "./TriggerManager";
+import { WebhookRequestLogService } from "./WebhookRequestLogService";
 import { WorkflowService } from "./WorkflowService";
 
 export interface TriggerDefinition {
@@ -100,6 +101,7 @@ export class TriggerService {
   private credentialService: CredentialService;
   private nodeService: NodeService;
   private triggerManager: TriggerManager;
+  private webhookLogService: WebhookRequestLogService;
   private scheduledTasks: Map<string, cron.ScheduledTask> = new Map();
   // Map webhook key (path or path/uuid) to trigger definition
   private webhookTriggers: Map<string, TriggerDefinition> = new Map();
@@ -124,6 +126,7 @@ export class TriggerService {
     this.executionHistoryService = executionHistoryService;
     this.credentialService = credentialService;
     this.nodeService = nodeService;
+    this.webhookLogService = new WebhookRequestLogService(prisma);
 
     // Initialize TriggerManager with concurrent execution support
     this.triggerManager = new TriggerManager(
@@ -647,6 +650,24 @@ export class TriggerService {
     return null;
   }
 
+  /**
+   * Helper to conditionally log webhook requests based on saveRequestLogs option
+   */
+  private async logWebhookRequestIfEnabled(
+    logData: any,
+    webhookOptions?: any
+  ): Promise<void> {
+    // Check if logging is enabled (default: false)
+    const saveRequestLogs = webhookOptions?.saveRequestLogs === true;
+    
+    if (saveRequestLogs) {
+      await this.webhookLogService.logRequest(logData)
+        .catch(err => logger.error('Failed to log webhook request:', err));
+    } else {
+      logger.debug('Webhook request logging disabled for this webhook');
+    }
+  }
+
   async handleWebhookTrigger(
     webhookId: string,
     request: WebhookRequest,
@@ -658,11 +679,32 @@ export class TriggerService {
     responseData?: any;
     webhookOptions?: any;
   }> {
+    const startTime = Date.now();
+    
     try {
       // Try to match the webhook path (supports parameters)
       const match = this.matchWebhookPath(webhookId);
       
       if (!match || match.triggers.length === 0) {
+        // Always log "not found" errors regardless of settings
+        await this.webhookLogService.logRequest({
+          webhookId,
+          workflowId: 'unknown',
+          userId: 'unknown',
+          method: request.method,
+          path: request.path,
+          headers: request.headers,
+          body: request.body,
+          query: request.query,
+          ip: request.ip,
+          userAgent: request.userAgent,
+          status: 'rejected',
+          reason: 'Webhook trigger not found',
+          responseCode: 404,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }).catch(err => logger.error('Failed to log webhook request:', err));
+        
         throw new AppError(
           "Webhook trigger not found",
           404,
@@ -679,6 +721,37 @@ export class TriggerService {
         logger.info(`⚠️  Multiple triggers (${match.triggers.length}) matched webhook path. Executing first one: ${trigger.workflowId}`);
       }
 
+      // Fetch workflow early to get userId and webhook options for logging
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { 
+          userId: true,
+          nodes: true,
+          connections: true,
+          settings: true,
+        },
+      });
+
+      if (!workflow) {
+        throw new AppError(
+          "Workflow not found for webhook trigger",
+          404,
+          "WORKFLOW_NOT_FOUND"
+        );
+      }
+
+      // Parse workflow nodes to get webhook trigger node settings early
+      const workflowNodes = typeof workflow.nodes === "string" 
+        ? JSON.parse(workflow.nodes) 
+        : workflow.nodes;
+      
+      const webhookTriggerNode = (workflowNodes as any[])?.find(
+        (node: any) => node.id === trigger.nodeId
+      );
+
+      // Get webhook options from node parameters (needed for logging control)
+      const webhookOptions = webhookTriggerNode?.parameters?.options || {};
+
       // Validate HTTP method matches the configured method
       const configuredMethod = trigger.settings.httpMethod;
       if (configuredMethod && request.method !== configuredMethod) {
@@ -688,6 +761,25 @@ export class TriggerService {
           received: request.method,
           ip: request.ip,
         });
+        
+        // Log rejected webhook request (method mismatch) if logging is enabled
+        await this.logWebhookRequestIfEnabled({
+          webhookId,
+          workflowId: trigger.workflowId,
+          userId: workflow.userId,
+          method: request.method,
+          path: request.path,
+          headers: request.headers,
+          body: request.body,
+          query: request.query,
+          ip: request.ip,
+          userAgent: request.userAgent,
+          status: 'rejected',
+          reason: `Method ${request.method} not allowed. Expected: ${configuredMethod}`,
+          responseCode: 405,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }, webhookOptions);
         
         // Create error with allowed methods info for proper HTTP response
         const error = new AppError(
@@ -805,6 +897,26 @@ export class TriggerService {
             authType: authConfig.type,
             ip: request.ip,
           });
+          
+          // Log rejected webhook request (authentication failed) if logging is enabled
+          await this.logWebhookRequestIfEnabled({
+            webhookId,
+            workflowId: trigger.workflowId,
+            userId: workflow.userId,
+            method: request.method,
+            path: request.path,
+            headers: request.headers,
+            body: request.body,
+            query: request.query,
+            ip: request.ip,
+            userAgent: request.userAgent,
+            status: 'rejected',
+            reason: 'Authentication failed',
+            responseCode: 401,
+            responseTime: Date.now() - startTime,
+            testMode,
+          }, webhookOptions);
+          
           throw new AppError(
             "Webhook authentication failed",
             401,
@@ -813,42 +925,34 @@ export class TriggerService {
         }
       }
 
-      // Fetch workflow to get the owner's userId and nodes for responseMode check
-      const workflow = await this.prisma.workflow.findUnique({
-        where: { id: trigger.workflowId },
-        select: { 
-          userId: true,
-          nodes: true,
-          connections: true,
-          settings: true,
-        },
-      });
-
-      if (!workflow) {
-        throw new AppError(
-          "Workflow not found for webhook trigger",
-          404,
-          "WORKFLOW_NOT_FOUND"
-        );
-      }
-
-      // Parse workflow nodes to get webhook trigger node settings
-      const workflowNodes = typeof workflow.nodes === "string" 
-        ? JSON.parse(workflow.nodes) 
-        : workflow.nodes;
-      
-      const webhookTriggerNode = (workflowNodes as any[])?.find(
-        (node: any) => node.id === trigger.nodeId
-      );
-
       const responseMode = webhookTriggerNode?.parameters?.responseMode || "onReceived";
       const shouldWaitForCompletion = responseMode === "lastNode";
       
-      // Get webhook options from node parameters
-      const webhookOptions = webhookTriggerNode?.parameters?.options || {};
-      
       // Validate webhook options
-      await this.validateWebhookOptions(webhookOptions, request);
+      try {
+        await this.validateWebhookOptions(webhookOptions, request);
+      } catch (error) {
+        // Log rejected webhook request (validation failed) if logging is enabled
+        await this.logWebhookRequestIfEnabled({
+          webhookId,
+          workflowId: trigger.workflowId,
+          userId: workflow.userId,
+          method: request.method,
+          path: request.path,
+          headers: request.headers,
+          body: request.body,
+          query: request.query,
+          ip: request.ip,
+          userAgent: request.userAgent,
+          status: 'rejected',
+          reason: error instanceof AppError ? error.message : 'Validation failed',
+          responseCode: error instanceof AppError ? error.statusCode : 403,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }, webhookOptions);
+        
+        throw error;
+      }
 
       // Check workflow settings for database storage
       const workflowSettings = typeof workflow.settings === "string"
@@ -1094,6 +1198,25 @@ export class TriggerService {
         });
       }
 
+      // Log successful webhook request if logging is enabled
+      await this.logWebhookRequestIfEnabled({
+        webhookId,
+        workflowId: trigger.workflowId,
+        userId: workflow.userId,
+        method: request.method,
+        path: request.path,
+        headers: request.headers,
+        body: request.body,
+        query: request.query,
+        ip: request.ip,
+        userAgent: request.userAgent,
+        status: 'success',
+        executionId: result.executionId,
+        responseCode: responseData?.statusCode || 200,
+        responseTime: Date.now() - startTime,
+        testMode,
+      }, webhookOptions);
+      
       return {
         success: true,
         executionId: result.executionId,
@@ -1102,6 +1225,78 @@ export class TriggerService {
       };
     } catch (error) {
       logger.error(`Error handling webhook trigger ${webhookId}:`, error);
+      
+      // Try to log failed webhook request
+      try {
+        // Try to get workflow info if available
+        let workflowId = 'unknown';
+        let userId = 'unknown';
+        
+        try {
+          const match = this.matchWebhookPath(webhookId);
+          if (match && match.triggers.length > 0) {
+            const trigger = match.triggers[0];
+            workflowId = trigger.workflowId;
+            
+            const workflow = await this.prisma.workflow.findUnique({
+              where: { id: trigger.workflowId },
+              select: { userId: true },
+            });
+            userId = workflow?.userId || 'unknown';
+          }
+        } catch (e) {
+          // Ignore errors getting workflow info
+        }
+        
+        // Try to get webhook options for logging control
+        let webhookOptions: any = {};
+        try {
+          const match = this.matchWebhookPath(webhookId);
+          if (match && match.triggers.length > 0) {
+            const trigger = match.triggers[0];
+            const workflow = await this.prisma.workflow.findUnique({
+              where: { id: trigger.workflowId },
+              select: { nodes: true },
+            });
+            
+            if (workflow) {
+              const workflowNodes = typeof workflow.nodes === "string" 
+                ? JSON.parse(workflow.nodes) 
+                : workflow.nodes;
+              
+              const webhookTriggerNode = (workflowNodes as any[])?.find(
+                (node: any) => node.id === trigger.nodeId
+              );
+              
+              webhookOptions = webhookTriggerNode?.parameters?.options || {};
+            }
+          }
+        } catch (e) {
+          // Ignore errors getting webhook options
+        }
+        
+        await this.logWebhookRequestIfEnabled({
+          webhookId,
+          workflowId,
+          userId,
+          method: request.method,
+          path: request.path,
+          headers: request.headers,
+          body: request.body,
+          query: request.query,
+          ip: request.ip,
+          userAgent: request.userAgent,
+          status: 'failed',
+          reason: error instanceof AppError ? error.message : 'Internal server error',
+          responseCode: error instanceof AppError ? error.statusCode : 500,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }, webhookOptions);
+      } catch (logError) {
+        // Don't fail the webhook if logging fails
+        logger.error('Failed to log failed webhook request:', logError);
+      }
+      
       return {
         success: false,
         error:

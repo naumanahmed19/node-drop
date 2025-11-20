@@ -43,28 +43,63 @@ export function getTriggerNodes(nodes: WorkflowNode[], nodeTypes: NodeType[]): W
 
 /**
  * Extract triggers from workflow nodes (for saving to backend)
- * Note: This is a simplified version that checks node type naming patterns
- * The backend will properly extract triggers using node definitions
+ * Uses node types to determine trigger type from node definitions
  */
-export function extractTriggersFromNodes(nodes: WorkflowNode[]): any[] {
+export function extractTriggersFromNodes(nodes: WorkflowNode[], nodeTypes?: NodeType[]): any[] {
   if (!Array.isArray(nodes)) {
     return []
   }
 
-  // Simple extraction based on node type naming patterns
-  // Backend will validate and enrich using actual node definitions
+  // If nodeTypes are provided, use them for accurate trigger detection
+  if (nodeTypes && nodeTypes.length > 0) {
+    return nodes
+      .filter((node) => {
+        const nodeType = nodeTypes.find(nt => nt.identifier === node.type)
+        return nodeType?.triggerType !== undefined
+      })
+      .map((node) => {
+        const nodeType = nodeTypes.find(nt => nt.identifier === node.type)
+        const triggerType = nodeType?.triggerType || 'manual'
+        
+        return {
+          id: `trigger-${node.id}`,
+          type: triggerType,
+          nodeId: node.id,
+          active: !node.disabled,
+          settings: {
+            description: node.parameters?.description || `${node.name} trigger`,
+            ...node.parameters,
+          },
+        }
+      })
+  }
+
+  // Fallback: Simple extraction based on node type naming patterns
+  // This ensures backward compatibility if nodeTypes are not provided
   return nodes
     .filter((node) => {
       // Check if node type includes 'trigger' in its identifier
       return node.type.toLowerCase().includes('trigger')
     })
-    .map((node) => ({
-      id: `trigger-${node.id}`,
-      nodeId: node.id,
-      active: !node.disabled,
-      settings: {
-        description: node.parameters?.description || `${node.name} trigger`,
-        ...node.parameters,
-      },
-    }))
+    .map((node) => {
+      // Try to infer trigger type from node type identifier
+      const nodeTypeId = node.type.toLowerCase()
+      let triggerType = 'manual' // default
+      
+      if (nodeTypeId.includes('webhook')) triggerType = 'webhook'
+      else if (nodeTypeId.includes('schedule') || nodeTypeId.includes('cron')) triggerType = 'schedule'
+      else if (nodeTypeId.includes('polling')) triggerType = 'polling'
+      else if (nodeTypeId.includes('manual')) triggerType = 'manual'
+      
+      return {
+        id: `trigger-${node.id}`,
+        type: triggerType,
+        nodeId: node.id,
+        active: !node.disabled,
+        settings: {
+          description: node.parameters?.description || `${node.name} trigger`,
+          ...node.parameters,
+        },
+      }
+    })
 }

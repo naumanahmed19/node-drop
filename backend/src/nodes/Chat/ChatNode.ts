@@ -236,6 +236,15 @@ export const ChatNode: NodeDefinition = {
         },
       },
     },
+    {
+      displayName: "Options",
+      name: "options",
+      type: "collection",
+      placeholder: "Add Option",
+      default: {},
+      description: "Additional chat configuration options",
+      options: require("../../config/webhookOptions").getWebhookOptions('chat'),
+    },
   ],
 
   execute: async function (

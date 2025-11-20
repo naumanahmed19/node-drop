@@ -88,7 +88,7 @@ export function WorkflowEditor({
             chat: ChatInterfaceNode,
             'image-preview': ImagePreviewNode,
             'data-preview': DataPreviewNode,
-            'form-generator': FormGeneratorNode,
+            'forms': FormGeneratorNode,
             group: GroupNode,
             annotation: AnnotationNode,
           //  'ai-agent': AIAgentNode,

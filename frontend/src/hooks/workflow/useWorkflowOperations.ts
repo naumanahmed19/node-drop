@@ -1,5 +1,5 @@
 import { workflowService } from "@/services";
-import { useAuthStore, useWorkflowStore } from "@/stores";
+import { useAuthStore, useWorkflowStore, useNodeTypes } from "@/stores";
 import { Workflow } from "@/types";
 import { extractTriggersFromNodes } from "@/utils/triggerUtils";
 import { useCallback, useMemo } from "react";
@@ -25,6 +25,7 @@ export function useWorkflowOperations() {
   const isImporting = useWorkflowStore((state) => state.isImporting);
 
   const { user } = useAuthStore();
+  const { activeNodeTypes } = useNodeTypes();
 
   // Memoize derived values
   const canSave = useMemo(() => Boolean(workflow && user), [workflow, user]);
@@ -36,7 +37,7 @@ export function useWorkflowOperations() {
   // Helper to build workflow data (DRY principle)
   const buildWorkflowData = useCallback(
     (currentWorkflow: Workflow) => {
-      const triggers = extractTriggersFromNodes(currentWorkflow.nodes);
+      const triggers = extractTriggersFromNodes(currentWorkflow.nodes, activeNodeTypes);
 
       console.log(
         "🔍 FRONTEND: Workflow nodes before building:",
@@ -44,6 +45,7 @@ export function useWorkflowOperations() {
       );
 
       console.log('🔍 Building workflow data with settings:', currentWorkflow.settings);
+      console.log('🔍 Extracted triggers with types:', triggers);
       
       return {
         name: workflowTitle || currentWorkflow.name,
@@ -57,7 +59,7 @@ export function useWorkflowOperations() {
         tags: currentWorkflow.tags,
       };
     },
-    [workflowTitle]
+    [workflowTitle, activeNodeTypes]
   );
 
   // Save workflow function

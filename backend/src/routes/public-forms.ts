@@ -11,13 +11,35 @@ import { CredentialService } from "../services/CredentialService";
 import ExecutionHistoryService from "../services/ExecutionHistoryService";
 import { ExecutionService } from "../services/ExecutionService";
 import { SocketService } from "../services/SocketService";
+import { WebhookRequestLogService } from "../services/WebhookRequestLogService";
 import { WorkflowService } from "../services/WorkflowService";
 import {
   getTriggerService,
   initializeTriggerService,
 } from "../services/triggerServiceSingleton";
+import {
+  getWebhookOptions,
+  validateWebhookRequest,
+  applyCorsHeaders,
+  shouldLogRequest,
+} from "../utils/webhookValidation";
 
 const router = Router();
+
+// Apply dynamic CORS based on form node settings
+// For now, allow all origins by default (will be validated per-node in handlers)
+router.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  
+  next();
+});
 
 // Rate limiter for form fetching (GET requests)
 // Allow more frequent reads since they're less expensive
@@ -56,6 +78,26 @@ const formSubmitLimiter = rateLimit({
   },
 });
 const prisma = new PrismaClient();
+const webhookLogService = new WebhookRequestLogService(prisma);
+
+/**
+ * Helper to conditionally log form requests based on saveRequestLogs option
+ */
+async function logFormRequestIfEnabled(
+  logData: any,
+  formNode?: any
+): Promise<void> {
+  if (!formNode) return;
+  
+  const options = getWebhookOptions(formNode.parameters);
+  
+  if (shouldLogRequest(options)) {
+    await webhookLogService.logRequest(logData)
+      .catch(err => console.error('Failed to log form request:', err));
+  } else {
+    console.debug('Form request logging disabled for this form');
+  }
+}
 
 // Use lazy initialization to get services when needed
 const getNodeService = () => {
@@ -117,6 +159,8 @@ router.get(
   formFetchLimiter, // Apply rate limiting
   asyncHandler(async (req: Request, res: Response) => {
     const { formId } = req.params;
+    const startTime = Date.now();
+    const testMode = req.query.test === 'true';
 
     try {
       // Find workflow with form generator node that has this formId
@@ -127,6 +171,7 @@ router.get(
         select: {
           id: true,
           name: true,
+          userId: true,
           nodes: true,
           active: true,
         },
@@ -135,6 +180,7 @@ router.get(
       let formConfig = null;
       let workflowId = null;
       let workflowName = null;
+      let foundFormNode = null;
 
       // Search through workflows for matching formId
       for (const workflow of workflows) {
@@ -143,17 +189,52 @@ router.get(
             ? JSON.parse(workflow.nodes)
             : workflow.nodes;
 
-        // Find form-generator node with matching formId
+        // Find forms node with matching formId
         const formNode = (workflowNodes as any[])?.find((node: any) => {
-          const isFormGenerator = node.type === "form-generator";
+          const isFormGenerator = node.type === "forms" || node.identifier === "forms";
           const hasFormUrl = node.parameters?.formUrl;
-          const matches = hasFormUrl === formId;
+          
+          // Normalize both values by removing leading slashes for comparison
+          const normalizedFormUrl = hasFormUrl?.replace(/^\/+/, '');
+          const normalizedFormId = formId?.replace(/^\/+/, '');
+          const matches = normalizedFormUrl === normalizedFormId;
 
           return isFormGenerator && matches;
         });
 
         if (formNode) {
           const params = formNode.parameters || {};
+          
+          // Validate request based on form options
+          const options = getWebhookOptions(params);
+          const validation = validateWebhookRequest(req, options);
+          
+          if (!validation.allowed) {
+            // Log rejected request
+            await webhookLogService.logRequest({
+              type: 'form',
+              webhookId: formId,
+              workflowId: workflow.id,
+              userId: workflow.userId,
+              method: req.method,
+              path: req.path,
+              headers: req.headers as Record<string, string>,
+              body: req.body,
+              query: req.query as Record<string, any>,
+              ip: req.ip || req.connection.remoteAddress || 'unknown',
+              userAgent: req.get('User-Agent'),
+              status: 'rejected',
+              reason: validation.reason,
+              responseCode: 403,
+              responseTime: Date.now() - startTime,
+              testMode,
+            }).catch(err => console.error('Failed to log form request:', err));
+            
+            return res.status(403).json({
+              success: false,
+              error: validation.reason || 'Access denied',
+            });
+          }
 
           // Process form fields
           const processFormFields = (fields: any[]) => {
@@ -207,11 +288,32 @@ router.get(
 
           workflowId = workflow.id;
           workflowName = workflow.name;
+          foundFormNode = formNode;
           break;
         }
       }
 
       if (!formConfig) {
+        // Always log "not found" errors regardless of settings
+        await webhookLogService.logRequest({
+          type: 'form',
+          webhookId: formId,
+          workflowId: 'unknown',
+          userId: 'unknown',
+          method: req.method,
+          path: req.path,
+          headers: req.headers as Record<string, string>,
+          body: req.body,
+          query: req.query as Record<string, any>,
+          ip: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent'),
+          status: 'rejected',
+          reason: 'Form not found or is not active',
+          responseCode: 404,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }).catch(err => console.error('Failed to log form request:', err));
+        
         return res.status(404).json({
           success: false,
           error: "Form not found or is not active",
@@ -229,6 +331,26 @@ router.get(
         const correctPassword = (formConfig as any).formPassword;
 
         if (!providedPassword) {
+          // Log password required if logging is enabled
+          await logFormRequestIfEnabled({
+            type: 'form',
+            webhookId: formId,
+            workflowId: workflowId!,
+            userId: 'unknown',
+            method: req.method,
+            path: req.path,
+            headers: req.headers as Record<string, string>,
+            body: req.body,
+            query: req.query as Record<string, any>,
+            ip: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent'),
+            status: 'rejected',
+            reason: 'Password required',
+            responseCode: 401,
+            responseTime: Date.now() - startTime,
+            testMode,
+          }, foundFormNode);
+          
           return res.status(401).json({
             success: false,
             error: "Password required",
@@ -237,6 +359,26 @@ router.get(
         }
 
         if (providedPassword !== correctPassword) {
+          // Log invalid password if logging is enabled
+          await logFormRequestIfEnabled({
+            type: 'form',
+            webhookId: formId,
+            workflowId: workflowId!,
+            userId: 'unknown',
+            method: req.method,
+            path: req.path,
+            headers: req.headers as Record<string, string>,
+            body: req.body,
+            query: req.query as Record<string, any>,
+            ip: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent'),
+            status: 'rejected',
+            reason: 'Invalid password',
+            responseCode: 403,
+            responseTime: Date.now() - startTime,
+            testMode,
+          }, foundFormNode);
+          
           return res.status(403).json({
             success: false,
             error: "Invalid password",
@@ -250,6 +392,25 @@ router.get(
       delete (safeFormConfig as any).formPassword;
       delete (safeFormConfig as any).accessKey;
 
+      // Log successful form fetch if logging is enabled
+      await logFormRequestIfEnabled({
+        type: 'form',
+        webhookId: formId,
+        workflowId: workflowId!,
+        userId: 'unknown', // Public form, no user
+        method: req.method,
+        path: req.path,
+        headers: req.headers as Record<string, string>,
+        body: req.body,
+        query: req.query as Record<string, any>,
+        ip: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent'),
+        status: 'success',
+        responseCode: 200,
+        responseTime: Date.now() - startTime,
+        testMode,
+      }, foundFormNode);
+
       res.json({
         success: true,
         form: safeFormConfig,
@@ -259,6 +420,26 @@ router.get(
         requiresAccessKey: formProtection === "accessKey",
       });
     } catch (error: any) {
+      // Log failed form fetch (no formNode available in catch)
+      await webhookLogService.logRequest({
+        type: 'form',
+        webhookId: formId,
+        workflowId: 'unknown',
+        userId: 'unknown',
+        method: req.method,
+        path: req.path,
+        headers: req.headers as Record<string, string>,
+        body: req.body,
+        query: req.query as Record<string, any>,
+        ip: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent'),
+        status: 'failed',
+        reason: error.message,
+        responseCode: 500,
+        responseTime: Date.now() - startTime,
+        testMode: req.query.test === 'true',
+      }).catch(err => console.error('Failed to log form request:', err));
+      
       res.status(500).json({
         success: false,
         error: "Failed to fetch form configuration",
@@ -280,6 +461,8 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { formId } = req.params;
     const { formData, workflowId } = req.body;
+    const startTime = Date.now();
+    const testMode = req.query.test === 'true';
 
     try {
       // Fetch the specific workflow directly using workflowId
@@ -299,6 +482,26 @@ router.post(
       });
 
       if (!targetWorkflow) {
+        // Always log workflow not found (404 errors)
+        await webhookLogService.logRequest({
+          type: 'form',
+          webhookId: formId,
+          workflowId: workflowId || 'unknown',
+          userId: 'unknown',
+          method: req.method,
+          path: req.path,
+          headers: req.headers as Record<string, string>,
+          body: req.body,
+          query: req.query as Record<string, any>,
+          ip: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent'),
+          status: 'rejected',
+          reason: 'Workflow not found',
+          responseCode: 404,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }).catch(err => console.error('Failed to log form request:', err));
+        
         return res.status(404).json({
           success: false,
           error: "Workflow not found",
@@ -306,6 +509,26 @@ router.post(
       }
 
       if (!targetWorkflow.active) {
+        // Log workflow not active if logging is enabled
+        await logFormRequestIfEnabled({
+          type: 'form',
+          webhookId: formId,
+          workflowId: targetWorkflow.id,
+          userId: targetWorkflow.userId,
+          method: req.method,
+          path: req.path,
+          headers: req.headers as Record<string, string>,
+          body: req.body,
+          query: req.query as Record<string, any>,
+          ip: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent'),
+          status: 'rejected',
+          reason: 'Workflow is not active',
+          responseCode: 403,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }, null); // No formNode yet
+        
         return res.status(403).json({
           success: false,
           error: "Workflow is not active",
@@ -318,13 +541,36 @@ router.post(
           ? JSON.parse(targetWorkflow.nodes)
           : targetWorkflow.nodes;
 
-      // Find form-generator node with matching formId
-      const formNode = (workflowNodes as any[])?.find(
-        (n: any) =>
-          n.type === "form-generator" && n.parameters?.formUrl === formId
-      );
+      // Find forms node with matching formId
+      const formNode = (workflowNodes as any[])?.find((n: any) => {
+        const isFormNode = n.type === "forms" || n.identifier === "forms";
+        // Normalize both values by removing leading slashes for comparison
+        const normalizedFormUrl = n.parameters?.formUrl?.replace(/^\/+/, '');
+        const normalizedFormId = formId?.replace(/^\/+/, '');
+        return isFormNode && normalizedFormUrl === normalizedFormId;
+      });
 
       if (!formNode) {
+        // Always log form not found (404 errors)
+        await webhookLogService.logRequest({
+          type: 'form',
+          webhookId: formId,
+          workflowId: targetWorkflow.id,
+          userId: targetWorkflow.userId,
+          method: req.method,
+          path: req.path,
+          headers: req.headers as Record<string, string>,
+          body: req.body,
+          query: req.query as Record<string, any>,
+          ip: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent'),
+          status: 'rejected',
+          reason: 'Form not found or is not active',
+          responseCode: 404,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }).catch(err => console.error('Failed to log form request:', err));
+        
         return res.status(404).json({
           success: false,
           error: "Form not found or is not active",
@@ -342,6 +588,26 @@ router.post(
         const correctPassword = params.formPassword;
 
         if (!providedPassword || providedPassword !== correctPassword) {
+          // Log invalid password if logging is enabled
+          await logFormRequestIfEnabled({
+            type: 'form',
+            webhookId: formId,
+            workflowId: targetWorkflow.id,
+            userId: targetWorkflow.userId,
+            method: req.method,
+            path: req.path,
+            headers: req.headers as Record<string, string>,
+            body: req.body,
+            query: req.query as Record<string, any>,
+            ip: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent'),
+            status: 'rejected',
+            reason: 'Invalid or missing password',
+            responseCode: 403,
+            responseTime: Date.now() - startTime,
+            testMode,
+          }, formNode);
+          
           return res.status(403).json({
             success: false,
             error: "Invalid or missing password",
@@ -356,6 +622,26 @@ router.post(
         const correctKey = params.accessKey;
 
         if (!providedKey || providedKey !== correctKey) {
+          // Log invalid access key if logging is enabled
+          await logFormRequestIfEnabled({
+            type: 'form',
+            webhookId: formId,
+            workflowId: targetWorkflow.id,
+            userId: targetWorkflow.userId,
+            method: req.method,
+            path: req.path,
+            headers: req.headers as Record<string, string>,
+            body: req.body,
+            query: req.query as Record<string, any>,
+            ip: req.ip || req.connection.remoteAddress || 'unknown',
+            userAgent: req.get('User-Agent'),
+            status: 'rejected',
+            reason: 'Invalid or missing access key',
+            responseCode: 403,
+            responseTime: Date.now() - startTime,
+            testMode,
+          }, formNode);
+          
           return res.status(403).json({
             success: false,
             error: "Invalid or missing access key",
@@ -377,7 +663,7 @@ router.post(
         workflowName: targetWorkflow.name,
         nodeCount: workflowNodes.length,
         triggerNodeId: formNode.id,
-        triggerNodeType: "form-generator",
+        triggerNodeType: "forms",
         // Form-specific data
         formId,
         submittedAt: timestamp,
@@ -430,6 +716,26 @@ router.post(
 
       // Check execution result
       if (!executionResult.success) {
+        // Log failed execution if logging is enabled
+        await logFormRequestIfEnabled({
+          type: 'form',
+          webhookId: formId,
+          workflowId: targetWorkflow.id,
+          userId: targetWorkflow.userId,
+          method: req.method,
+          path: req.path,
+          headers: req.headers as Record<string, string>,
+          body: req.body,
+          query: req.query as Record<string, any>,
+          ip: req.ip || req.connection.remoteAddress || 'unknown',
+          userAgent: req.get('User-Agent'),
+          status: 'failed',
+          reason: executionResult.error?.message || 'Unknown error',
+          responseCode: 500,
+          responseTime: Date.now() - startTime,
+          testMode,
+        }, formNode);
+        
         return res.status(500).json({
           success: false,
           error: "Failed to process form submission",
@@ -439,6 +745,26 @@ router.post(
 
       const executionId = executionResult.data?.executionId;
 
+      // Log successful form submission if logging is enabled
+      await logFormRequestIfEnabled({
+        type: 'form',
+        webhookId: formId,
+        workflowId: targetWorkflow.id,
+        userId: targetWorkflow.userId,
+        method: req.method,
+        path: req.path,
+        headers: req.headers as Record<string, string>,
+        body: req.body,
+        query: req.query as Record<string, any>,
+        ip: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent'),
+        status: 'success',
+        executionId,
+        responseCode: 200,
+        responseTime: Date.now() - startTime,
+        testMode,
+      }, formNode);
+
       res.json({
         success: true,
         message: "Form submitted successfully",
@@ -447,6 +773,26 @@ router.post(
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
+      // Log exception if logging is enabled
+      await logFormRequestIfEnabled({
+        type: 'form',
+        webhookId: formId,
+        workflowId: workflowId || 'unknown',
+        userId: 'unknown',
+        method: req.method,
+        path: req.path,
+        headers: req.headers as Record<string, string>,
+        body: req.body,
+        query: req.query as Record<string, any>,
+        ip: req.ip || req.connection.remoteAddress || 'unknown',
+        userAgent: req.get('User-Agent'),
+        status: 'failed',
+        reason: error.message,
+        responseCode: 500,
+        responseTime: Date.now() - startTime,
+        testMode,
+      }, null); // No formNode in catch block
+      
       res.status(500).json({
         success: false,
         error: "Failed to submit form",

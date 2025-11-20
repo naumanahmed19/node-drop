@@ -131,6 +131,14 @@ export const WebhookTriggerNode: NodeDefinition = {
           tooltip: "Ignore requests from bots like link previewers and web crawlers",
         },
         {
+          name: "saveRequestLogs",
+          displayName: "Save Request Logs",
+          type: "boolean",
+          default: false,
+          tooltip: "Save webhook request logs to database",
+          description: "Enable to log all webhook requests for debugging and monitoring. Disable for high-traffic webhooks or to avoid storing sensitive data.",
+        },
+        {
           name: "ipWhitelist",
           displayName: "IP(s) Whitelist",
           type: "string",

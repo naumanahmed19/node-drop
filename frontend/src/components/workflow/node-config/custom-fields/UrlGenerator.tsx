@@ -53,17 +53,18 @@ export function UrlGenerator({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get base URLs from environment or use defaults
-  // Production and test use the same base URL for all types
+  // All webhook-based triggers now use /webhook prefix for consistency
   const getBaseUrl = () => {
     if (urlType === "form") {
-      // For forms, use frontend URL
+      // For forms, use frontend URL for the user-facing page
       return import.meta.env.VITE_APP_URL || "http://localhost:3000";
     } else if (urlType === "chat") {
-      // For chats, use API URL (add /api if not present)
+      // For chats, use backend /webhook/chats
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
-      return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
+      const baseUrl = apiUrl.replace(/\/api$/, '');
+      return `${baseUrl}/webhook/chats`;
     } else {
-      // For webhooks, use same base URL for both test and production
+      // For webhooks, use /webhook prefix
       if (import.meta.env.VITE_WEBHOOK_URL) {
         return import.meta.env.VITE_WEBHOOK_URL;
       }
@@ -105,13 +106,13 @@ export function UrlGenerator({
     const baseUrl = getBaseUrl();
     
     if (urlType === "form") {
-      // Form URLs: http://localhost:3000/form/{formPath}
+      // Form URLs: http://localhost:3000/form/{formPath} (frontend page)
       // Use the value directly as the form path
       const formPath = webhookId?.trim().replace(/^\/+/, "") || "";
       return formPath ? `${baseUrl}/form/${formPath}` : baseUrl;
     } else if (urlType === "chat") {
-      // Chat URLs: http://localhost:4000/api/public/chats/{chatId}
-      return `${baseUrl}/public/chats/${webhookId}`;
+      // Chat URLs: http://localhost:4000/webhook/chats/{chatId}
+      return `${baseUrl}/${webhookId}`;
     } else {
       // Webhook URLs: [uuid/]path (uuid is optional)
       const cleanPath = webhookPath?.trim().replace(/^\/+/, "") || "";
@@ -133,8 +134,21 @@ export function UrlGenerator({
     }
   };
 
+  // Construct backend API URL for forms (for developers)
+  const constructFormApiUrl = () => {
+    if (urlType !== "form") return null;
+    
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+    const baseUrl = apiUrl.replace(/\/api$/, '');
+    const formPath = webhookId?.trim().replace(/^\/+/, "") || "";
+    
+    return formPath ? `${baseUrl}/webhook/forms/${formPath}` : null;
+  };
+
   const webhookUrl = constructWebhookUrl();
   const testWebhookUrlWithVisualization = `${webhookUrl}?test=true`;
+  const formApiUrl = constructFormApiUrl();
+  const formApiTestUrl = formApiUrl ? `${formApiUrl}?test=true` : null;
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: "test" | "production") => {
@@ -334,6 +348,40 @@ export function UrlGenerator({
               </>
             )}
           </div>
+
+          {/* Backend API URL for Forms */}
+          {urlType === "form" && formApiUrl && (
+            <>
+              <div className="border-t -mx-3" />
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  Backend API URL (for developers)
+                </Label>
+                <div className="flex gap-1.5">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={activeTab === "test" ? formApiTestUrl || "" : formApiUrl}
+                      readOnly
+                      disabled={disabled}
+                      className="font-mono text-[11px] h-8 pr-8 bg-muted/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(activeTab === "test" ? formApiTestUrl || "" : formApiUrl, activeTab)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted transition-colors cursor-pointer"
+                      title="Copy API URL"
+                    >
+                      <Copy className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Use this URL for direct API integration (GET to fetch config, POST to /submit)
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -29,6 +29,7 @@ import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
 import variableRoutes from "./routes/variables";
 import webhookRoutes from "./routes/webhook";
+import webhookLogsRoutes from "./routes/webhook-logs";
 import { workflowRoutes } from "./routes/workflows";
 
 // Import middleware
@@ -416,6 +417,10 @@ app.get("/", (req, res) => {
       triggers: "/api/triggers",
       webhooks: "/webhook/{webhookId}",
       webhookTest: "/webhook/{webhookId}/test",
+      forms: "/webhook/forms/{formId}",
+      formSubmit: "/webhook/forms/{formId}/submit",
+      chats: "/webhook/chats/{chatId}",
+      chatMessage: "/webhook/chats/{chatId}/message",
       customNodes: "/api/custom-nodes",
       flowExecution: "/api/flow-execution",
       executionControl: "/api/execution-control",
@@ -424,8 +429,6 @@ app.get("/", (req, res) => {
       oauth: "/api/oauth",
       google: "/api/google",
       health: "/health",
-      publicForms: "/api/public/forms/{formId}",
-      publicFormSubmit: "/api/public/forms/{formId}/submit",
     },
   });
 });
@@ -450,12 +453,13 @@ app.use("/api/execution-recovery", executionRecoveryRoutes);
 app.use("/api/oauth", oauthRoutes);
 app.use("/api/google", googleRoutes);
 app.use("/api/ai-memory", aiMemoryRoutes);
-
-// Public API routes (no authentication required)
-app.use("/api/public/forms", publicFormsRoutes);
-app.use("/api/public/chats", publicChatsRoutes);
+app.use("/api", webhookLogsRoutes);
 
 // Webhook routes (public endpoints without /api prefix for easier external integration)
+// All webhook-based triggers are under /webhook for consistency
+// IMPORTANT: Register specific routes BEFORE generic webhook route
+app.use("/webhook/forms", publicFormsRoutes);
+app.use("/webhook/chats", publicChatsRoutes);
 app.use("/webhook", webhookRoutes);
 
 // 404 handler
