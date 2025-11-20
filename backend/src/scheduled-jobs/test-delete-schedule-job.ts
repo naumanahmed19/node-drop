@@ -24,7 +24,7 @@ async function testDeleteScheduleJob() {
 
         // Step 1: List all jobs in database
         logger.info('Step 1: Checking jobs in database...');
-        const allJobs = await prisma.scheduledJob.findMany({
+        const allJobs = await prisma.triggerJob.findMany({
             include: {
                 workflow: {
                     select: {
@@ -64,7 +64,7 @@ async function testDeleteScheduleJob() {
 
         // Step 3: Verify job exists before deletion
         logger.info('Step 3: Verifying job exists before deletion...');
-        const jobBeforeDelete = await prisma.scheduledJob.findFirst({
+        const jobBeforeDelete = await prisma.triggerJob.findFirst({
             where: {
                 workflowId: testJob.workflowId,
                 triggerId: testJob.triggerId,
@@ -90,7 +90,7 @@ async function testDeleteScheduleJob() {
 
         // Step 5: Verify job is deleted
         logger.info('Step 5: Verifying job is deleted...');
-        const jobAfterDelete = await prisma.scheduledJob.findFirst({
+        const jobAfterDelete = await prisma.triggerJob.findFirst({
             where: {
                 workflowId: testJob.workflowId,
                 triggerId: testJob.triggerId,
@@ -113,7 +113,7 @@ async function testDeleteScheduleJob() {
 
         // Step 6: Check remaining jobs
         logger.info('Step 6: Checking remaining jobs...');
-        const remainingJobs = await prisma.scheduledJob.findMany();
+        const remainingJobs = await prisma.triggerJob.findMany();
         logger.info(`Remaining jobs in database: ${remainingJobs.length}\n`);
 
         if (remainingJobs.length > 0) {

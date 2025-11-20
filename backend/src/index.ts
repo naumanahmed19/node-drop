@@ -23,7 +23,6 @@ import { nodeRoutes } from "./routes/nodes";
 import oauthRoutes from "./routes/oauth";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
-import { scheduleJobsRoutes } from "./routes/schedule-jobs";
 import aiMemoryRoutes from "./routes/ai-memory.routes";
 import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
@@ -219,6 +218,7 @@ declare global {
   var realtimeExecutionEngine: RealtimeExecutionEngine;
   var workflowService: WorkflowService;
   var scheduleJobManager: ScheduleJobManager;
+  var triggerService: any;
   var prisma: PrismaClient;
 }
 global.socketService = socketService;
@@ -444,7 +444,6 @@ app.use("/api/node-types", nodeTypeRoutes);
 app.use("/api/credentials", credentialRoutes);
 app.use("/api/variables", variableRoutes);
 app.use("/api/triggers", triggerRoutes);
-app.use("/api/schedule-jobs", scheduleJobsRoutes);
 app.use("/api/custom-nodes", customNodeRoutes);
 app.use("/api/flow-execution", flowExecutionRoutes);
 app.use("/api/execution-control", executionControlRoutes);
@@ -500,6 +499,7 @@ httpServer.listen(PORT, async () => {
       executionHistoryService,
       credentialService
     );
+    global.triggerService = getTriggerService();
     console.log(`✅ Initialized triggers & webhooks`);
   } catch (error) {
     console.error(`Failed to initialize TriggerService:`, error);

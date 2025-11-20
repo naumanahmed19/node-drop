@@ -283,6 +283,57 @@ router.get(
   })
 );
 
+// Get all active triggers (schedule + polling) for user
+router.get(
+  "/active-triggers",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.id;
+
+    const triggers = await getTriggerService().getAllActiveTriggers(userId);
+
+    res.json({
+      success: true,
+      data: {
+        triggers,
+      },
+    });
+  })
+);
+
+// Delete an active trigger (schedule or polling)
+router.delete(
+  "/active-triggers/:triggerId",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { triggerId } = req.params;
+    const userId = req.user!.id;
+
+    // Get the trigger to verify ownership
+    const triggers = await getTriggerService().getAllActiveTriggers(userId);
+    const trigger = triggers.find(t => t.triggerId === triggerId || t.id === triggerId);
+
+    if (!trigger) {
+      throw new AppError("Trigger not found", 404, "TRIGGER_NOT_FOUND");
+    }
+
+    // Delete based on type
+    if (trigger.type === 'polling') {
+      // Deactivate polling trigger
+      await getTriggerService().deactivateTrigger(triggerId);
+    }
+
+    // Delete from database (works for both types)
+    const jobId = `${trigger.workflowId}-${trigger.triggerId}`;
+    await global.scheduleJobManager.removeScheduleJob(jobId);
+
+    res.json({
+      success: true,
+      message: "Trigger deleted successfully",
+    });
+  })
+);
+
 // Webhook endpoint - handles incoming webhook requests
 router.all(
   "/webhooks/:webhookId",

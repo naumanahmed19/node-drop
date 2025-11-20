@@ -14,7 +14,7 @@ import { NodeService } from '../services/NodeService';
 import ExecutionHistoryService from '../services/ExecutionHistoryService';
 import { logger } from '../utils/logger';
 
-async function testScheduledJobsDatabase() {
+async function testtriggerJobsDatabase() {
     const prisma = new PrismaClient();
     const nodeService = new NodeService(prisma);
     const executionHistoryService = new ExecutionHistoryService(prisma);
@@ -36,12 +36,12 @@ async function testScheduledJobsDatabase() {
 
         // Test 2: Count existing jobs
         logger.info('Test 2: Count existing jobs in database');
-        const jobCount = await prisma.scheduledJob.count();
+        const jobCount = await prisma.triggerJob.count();
         logger.info(`📊 Found ${jobCount} scheduled jobs in database\n`);
 
         // Test 3: List all jobs
         logger.info('Test 3: List all jobs');
-        const jobs = await prisma.scheduledJob.findMany({
+        const jobs = await prisma.triggerJob.findMany({
             include: {
                 workflow: {
                     select: {
@@ -81,7 +81,7 @@ async function testScheduledJobsDatabase() {
 
         // Test 6: Verify database and manager are in sync
         logger.info('Test 6: Verify database and manager sync');
-        const activeDbJobs = await prisma.scheduledJob.count({ where: { active: true } });
+        const activeDbJobs = await prisma.triggerJob.count({ where: { active: true } });
         if (activeDbJobs === managerJobs.length) {
             logger.info(`✅ Database and manager are in sync (${activeDbJobs} active jobs)\n`);
         } else {
@@ -150,7 +150,7 @@ async function testScheduledJobsDatabase() {
 
 // Run tests
 if (require.main === module) {
-    testScheduledJobsDatabase()
+    testtriggerJobsDatabase()
         .then(() => {
             logger.info('\n✅ Test script completed');
             process.exit(0);
@@ -161,4 +161,4 @@ if (require.main === module) {
         });
 }
 
-export { testScheduledJobsDatabase };
+export { testtriggerJobsDatabase };

@@ -59,7 +59,7 @@ model Workflow {
   executions       Execution[]
   variables        Variable[]
   environments     WorkflowEnvironment[]
-  scheduledJobs    ScheduledJob[]
+  triggerJobs      TriggerJob[]
   user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("workflows")
@@ -332,17 +332,19 @@ enum NodeExecutionStatus {
   FAILED
 }
 
-model ScheduledJob {
+model TriggerJob {
   id             String    @id @default(cuid())
   workflowId     String
   triggerId      String    // References trigger.id in workflow.triggers JSON
-  jobKey         String    @unique // Bull queue job key
-  cronExpression String
+  type           String    @default("schedule") // 'schedule' or 'polling'
+  jobKey         String    @unique // Bull queue job key (for schedule) or trigger ID (for polling)
+  cronExpression String?   // Only for schedule type
+  pollInterval   Int?      // Only for polling type (in seconds)
   timezone       String    @default("UTC")
   description    String?
   active         Boolean   @default(true)
   lastRun        DateTime?
-  nextRun        DateTime?
+  nextRun        DateTime? // For schedule: next cron run, For polling: last poll + interval
   failCount      Int       @default(0)
   lastError      Json?
   createdAt      DateTime  @default(now())
@@ -352,7 +354,8 @@ model ScheduledJob {
   @@unique([workflowId, triggerId])
   @@index([workflowId])
   @@index([active])
-  @@map("scheduled_jobs")
+  @@index([type])
+  @@map("trigger_jobs")
 }
 
 model WebhookRequestLog {

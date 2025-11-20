@@ -95,7 +95,7 @@ const data = {
   ],
   bottomItems: [
     {
-      title: "Scheduled Jobs",
+      title: "Active Triggers",
       url: "#",
       icon: CalendarClock,
       isActive: false,
@@ -360,7 +360,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <ExecutionsList />
                   )}
                   
-                  {activeWorkflowItem?.title === "Scheduled Jobs" && (
+                  {activeWorkflowItem?.title === "Active Triggers" && (
                     <ScheduledExecutionsList />
                   )}
                   

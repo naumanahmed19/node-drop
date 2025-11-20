@@ -440,6 +440,20 @@ export class TriggerService {
         }
         this.pollingIntervals.delete(triggerId);
         this.pollingTriggers.delete(triggerId);
+        
+        // Update database record to inactive
+        await this.prisma.triggerJob.updateMany({
+          where: {
+            triggerId,
+            type: 'polling',
+          },
+          data: {
+            active: false,
+          },
+        }).catch(err => {
+          logger.error(`Failed to deactivate polling trigger ${triggerId} in database:`, err);
+        });
+        
         console.log(`🗑️  Deactivated polling trigger: ${triggerId}`);
         logger.info(`🗑️  Deactivated polling trigger: ${triggerId}`);
       }
@@ -560,15 +574,102 @@ export class TriggerService {
     console.log(`🔄 Activating polling trigger ${trigger.id} with interval ${pollInterval}s`);
     logger.info(`🔄 Activating polling trigger ${trigger.id} with interval ${pollInterval}s`);
 
+    // Get workflow for description
+    const workflow = await this.prisma.workflow.findUnique({
+      where: { id: trigger.workflowId },
+      select: { name: true },
+    });
+
+    // Create or update database record
+    await this.prisma.triggerJob.upsert({
+      where: {
+        workflowId_triggerId: {
+          workflowId: trigger.workflowId,
+          triggerId: trigger.id,
+        },
+      },
+      create: {
+        workflowId: trigger.workflowId,
+        triggerId: trigger.id,
+        type: 'polling',
+        jobKey: trigger.id,
+        pollInterval,
+        description: `Polling trigger for ${workflow?.name || 'workflow'}`,
+        active: true,
+        nextRun: new Date(Date.now() + pollInterval * 1000),
+      },
+      update: {
+        type: 'polling',
+        pollInterval,
+        active: true,
+        nextRun: new Date(Date.now() + pollInterval * 1000),
+      },
+    });
+
     // Create polling function
     const pollFunction = async () => {
       try {
         await this.handlePollingTrigger(trigger);
+        
+        // Update or create lastRun and nextRun in database
+        await this.prisma.triggerJob.upsert({
+          where: {
+            workflowId_triggerId: {
+              workflowId: trigger.workflowId,
+              triggerId: trigger.id,
+            },
+          },
+          update: {
+            lastRun: new Date(),
+            nextRun: new Date(Date.now() + pollInterval * 1000),
+            failCount: 0,
+          },
+          create: {
+            workflowId: trigger.workflowId,
+            triggerId: trigger.id,
+            type: 'polling',
+            jobKey: trigger.id,
+            pollInterval,
+            description: `Polling trigger`,
+            active: true,
+            lastRun: new Date(),
+            nextRun: new Date(Date.now() + pollInterval * 1000),
+          },
+        }).catch(err => {
+          logger.error(`Failed to update polling trigger ${trigger.id} in database:`, err);
+        });
       } catch (error) {
         logger.error(
           `Error executing polling trigger ${trigger.id}:`,
           error
         );
+        
+        // Update fail count in database (or create if doesn't exist)
+        await this.prisma.triggerJob.upsert({
+          where: {
+            workflowId_triggerId: {
+              workflowId: trigger.workflowId,
+              triggerId: trigger.id,
+            },
+          },
+          update: {
+            failCount: { increment: 1 },
+            lastError: error instanceof Error ? { message: error.message, stack: error.stack } : { error: String(error) },
+          },
+          create: {
+            workflowId: trigger.workflowId,
+            triggerId: trigger.id,
+            type: 'polling',
+            jobKey: trigger.id,
+            pollInterval,
+            description: `Polling trigger`,
+            active: true,
+            failCount: 1,
+            lastError: error instanceof Error ? { message: error.message, stack: error.stack } : { error: String(error) },
+          },
+        }).catch(err => {
+          logger.error(`Failed to update error for polling trigger ${trigger.id}:`, err);
+        });
       }
     };
 
@@ -1687,8 +1788,20 @@ export class TriggerService {
           );
         }
         break;
+      case "polling":
+        if (!settings.pollInterval || settings.pollInterval < 10) {
+          throw new AppError(
+            "Poll interval must be at least 10 seconds",
+            400,
+            "INVALID_POLL_INTERVAL"
+          );
+        }
+        break;
       case "manual":
         // No specific validation needed for manual triggers
+        break;
+      case "workflow-called":
+        // No specific validation needed for workflow-called triggers
         break;
       default:
         throw new AppError(
@@ -2054,6 +2167,100 @@ export class TriggerService {
       nodeId: trigger.nodeId,
       settings: trigger.settings,
     }));
+  }
+
+  /**
+   * Get all active polling triggers for a user
+   */
+  async getActivePollingTriggers(userId: string): Promise<any[]> {
+    try {
+      // Get polling triggers from database with workflow details
+      const pollingJobs = await this.prisma.triggerJob.findMany({
+        where: {
+          type: 'polling',
+          workflow: {
+            userId,
+          },
+        },
+        include: {
+          workflow: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return pollingJobs.map((job) => ({
+        id: job.id,
+        workflowId: job.workflowId,
+        workflowName: job.workflow.name,
+        triggerId: job.triggerId,
+        pollInterval: job.pollInterval,
+        description: job.description,
+        status: job.active ? 'active' : 'inactive',
+        lastRun: job.lastRun,
+        nextRun: job.nextRun,
+        failCount: job.failCount,
+        lastError: job.lastError,
+        createdAt: job.createdAt,
+      }));
+    } catch (error) {
+      logger.error('Error getting active polling triggers:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active triggers (schedule + polling) for a user
+   */
+  async getAllActiveTriggers(userId: string): Promise<any[]> {
+    try {
+      // Get all trigger jobs from database with workflow details
+      const triggerJobs = await this.prisma.triggerJob.findMany({
+        where: {
+          workflow: {
+            userId,
+          },
+        },
+        include: {
+          workflow: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return triggerJobs.map((job) => ({
+        id: job.id,
+        workflowId: job.workflowId,
+        workflowName: job.workflow.name,
+        triggerId: job.triggerId,
+        type: job.type,
+        cronExpression: job.cronExpression,
+        pollInterval: job.pollInterval,
+        timezone: job.timezone,
+        description: job.description,
+        status: job.active ? 'active' : 'inactive',
+        lastRun: job.lastRun,
+        nextRun: job.nextRun,
+        failCount: job.failCount,
+        lastError: job.lastError,
+        createdAt: job.createdAt,
+      }));
+    } catch (error) {
+      logger.error('Error getting all active triggers:', error);
+      throw error;
+    }
   }
 
   /**
