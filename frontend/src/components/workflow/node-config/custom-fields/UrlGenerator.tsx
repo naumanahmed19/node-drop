@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, Copy, Globe, TestTube, Sparkles, Info } from "lucide-react";
+import { Check, Copy, Globe, TestTube, Sparkles, Info, Play, Square, Loader2, Radio } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { executionWebSocket } from "@/services/ExecutionWebSocket";
 
 interface UrlGeneratorProps {
   value?: string; // webhookId, formPath, or chatId (UUID or path string)
@@ -44,6 +45,8 @@ export function UrlGenerator({
   const [copiedTest, setCopiedTest] = useState(false);
   const [copiedProd, setCopiedProd] = useState(false);
   const [activeTab, setActiveTab] = useState<"test" | "production">(mode);
+  const [isListening, setIsListening] = useState(() => executionWebSocket.isConnected());
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Notify parent of auto-generated ID (skip for forms)
   useEffect(() => {
@@ -51,6 +54,18 @@ export function UrlGenerator({
       onChange(webhookId);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check WebSocket connection status
+  useEffect(() => {
+    const checkConnection = () => {
+      setIsListening(executionWebSocket.isConnected());
+    };
+    
+    checkConnection();
+    const interval = setInterval(checkConnection, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Get base URLs from environment or use defaults
   // All webhook-based triggers now use /webhook prefix for consistency
@@ -149,6 +164,29 @@ export function UrlGenerator({
   const testWebhookUrlWithVisualization = `${webhookUrl}?test=true`;
   const formApiUrl = constructFormApiUrl();
   const formApiTestUrl = formApiUrl ? `${formApiUrl}?test=true` : null;
+
+  // Listen mode handlers
+  const startListening = async () => {
+    setIsConnecting(true);
+    try {
+      await executionWebSocket.connect();
+      setIsListening(true);
+    } catch (error) {
+      console.error('Failed to start listening:', error);
+      setIsListening(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+  
+  const stopListening = () => {
+    try {
+      executionWebSocket.disconnect();
+      setIsListening(false);
+    } catch (error) {
+      console.error('Failed to stop listening:', error);
+    }
+  };
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: "test" | "production") => {
@@ -316,6 +354,53 @@ export function UrlGenerator({
                   <Info className="w-2.5 h-2.5 shrink-0" />
                   Includes <code className="font-mono bg-muted px-1 rounded">?test=true</code> for debugging
                 </p>
+                
+                {/* Listen for Test Event Button - Only show for webhooks */}
+                {urlType === "webhook" && webhookId && (
+                  <>
+                    <div className="border-t -mx-3 my-2" />
+                    <div className="space-y-2">
+                      <Button
+                        type="button"
+                        variant={isListening ? "default" : "outline"}
+                        size="sm"
+                        onClick={isListening ? stopListening : startListening}
+                        disabled={disabled || isConnecting}
+                        className="w-full h-8 text-xs"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                            Connecting...
+                          </>
+                        ) : isListening ? (
+                          <>
+                            <Square className="w-3 h-3 mr-1.5" />
+                            Stop Listening
+                            <Radio className="w-3 h-3 ml-1.5 animate-pulse" />
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 mr-1.5" />
+                            Listen for Test Event
+                          </>
+                        )}
+                      </Button>
+                      
+                      {isListening ? (
+                        <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Radio className="w-2.5 h-2.5 text-green-500 animate-pulse" />
+                          Waiting for webhook call...
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Info className="w-2.5 h-2.5 shrink-0" />
+                          Save workflow to activate webhook
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <>
