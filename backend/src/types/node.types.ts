@@ -12,7 +12,7 @@ export interface CredentialSelectorConfig {
 
 export interface NodeDefinition {
   identifier: string; // Unique identifier for the node type (was 'type')
-  nodeCategory?: 'service' | 'tool'; // Category for execution control (service/tool nodes are not directly executable)
+  nodeCategory?: 'trigger' | 'action' | 'service' | 'tool' | 'condition' | 'transform'; // High-level category for organization and execution control
   displayName: string;
   name: string;
   group: string[];
@@ -29,6 +29,11 @@ export interface NodeDefinition {
     required?: boolean;
     description?: string;
   }>; // Service connections (rendered at bottom-right with labels)
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
+    required?: boolean;
+  }>; // Optional input configuration
   credentials?: CredentialDefinition[];
   credentialSelector?: CredentialSelectorConfig;
   properties: NodeProperty[] | (() => NodeProperty[]); // Support both static and dynamic properties
@@ -37,6 +42,8 @@ export interface NodeDefinition {
   icon?: string;
   color?: string;
   outputComponent?: string; // Optional custom output component identifier
+  // Trigger-specific metadata (only for trigger nodes)
+  triggerType?: "manual" | "webhook" | "schedule" | "polling" | "workflow-called";
   // Execution metadata (optional - will be computed from group if not provided)
   executionCapability?: "trigger" | "action" | "transform" | "condition";
   canExecuteIndividually?: boolean;
@@ -201,7 +208,7 @@ export interface NodeValidationError {
 
 export interface NodeSchema {
   identifier: string; // Unique identifier for the node type (was 'type')
-  nodeCategory?: 'service' | 'tool'; // Category for execution control
+  nodeCategory?: 'trigger' | 'action' | 'service' | 'tool' | 'condition' | 'transform'; // High-level category
   displayName: string;
   name: string;
   group: string[];
@@ -210,6 +217,11 @@ export interface NodeSchema {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
+    required?: boolean;
+  }>; // Optional input configuration
   properties: NodeProperty[];
   credentials?: CredentialDefinition[];
   credentialSelector?: CredentialSelectorConfig;
@@ -267,11 +279,20 @@ export interface NodeTypeInfo {
     required?: boolean;
     description?: string;
   }>; // Optional service inputs for AI Agent nodes
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
+    required?: boolean;
+  }>; // Optional input configuration
   properties: NodeProperty[];
   credentials?: CredentialDefinition[]; // Include credentials
   credentialSelector?: CredentialSelectorConfig; // Include unified credential selector
   icon?: string;
   color?: string;
+  // Node category for high-level organization
+  nodeCategory?: 'trigger' | 'action' | 'service' | 'tool' | 'condition' | 'transform';
+  // Trigger-specific metadata
+  triggerType?: "manual" | "webhook" | "schedule" | "polling" | "workflow-called";
   // Execution metadata
   executionCapability?: "trigger" | "action" | "transform" | "condition";
   canExecuteIndividually?: boolean;

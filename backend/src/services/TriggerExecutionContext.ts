@@ -11,7 +11,7 @@ import {
  */
 export interface TriggerExecutionContext extends FlowExecutionContext {
   triggerId: string;
-  triggerType: "webhook" | "schedule" | "manual" | "workflow-called";
+  triggerType: "webhook" | "schedule" | "manual" | "workflow-called" | "polling";
   affectedNodes: Set<string>;
   isolatedExecution: boolean;
   parentExecutionId?: string;
@@ -37,7 +37,7 @@ export class TriggerExecutionContextFactory {
    */
   static createTriggerContext(
     triggerId: string,
-    triggerType: "webhook" | "schedule" | "manual" | "workflow-called",
+    triggerType: "webhook" | "schedule" | "manual" | "workflow-called" | "polling",
     workflowId: string,
     userId: string,
     triggerNodeId: string,
@@ -94,6 +94,8 @@ export class TriggerExecutionContextFactory {
         return 1; // Highest priority
       case "webhook":
         return 2; // Medium priority
+      case "polling":
+        return 2; // Medium priority (same as webhook)
       case "schedule":
         return 3; // Lowest priority
       default:

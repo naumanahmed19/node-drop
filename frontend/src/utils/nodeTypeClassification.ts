@@ -61,13 +61,30 @@ export function getNodeTypeMetadata(nodeType: string): NodeTypeMetadata | null {
 }
 
 /**
- * Fallback: Determine execution capability from group if not provided by backend
+ * Determine execution capability from nodeCategory
  */
 function determineExecutionCapability(
   nodeData: NodeType
 ): NodeExecutionCapability {
-  const group = nodeData.group;
+  // Use nodeCategory (all nodes should have this now)
+  if (nodeData.nodeCategory) {
+    switch (nodeData.nodeCategory) {
+      case "trigger":
+        return "trigger";
+      case "condition":
+        return "condition";
+      case "transform":
+        return "transform";
+      case "action":
+      case "service":
+      case "tool":
+      default:
+        return "action";
+    }
+  }
 
+  // Legacy fallback for nodes without nodeCategory (should be rare)
+  const group = nodeData.group;
   if (group.includes("trigger")) {
     return "trigger";
   } else if (group.includes("condition")) {
@@ -80,9 +97,16 @@ function determineExecutionCapability(
 }
 
 /**
- * Fallback: Determine if node can execute individually
+ * Determine if node can execute individually
+ * Only triggers can execute individually, service/tool nodes cannot
  */
 function determineCanExecuteIndividually(nodeData: NodeType): boolean {
+  // Use nodeCategory (all nodes should have this now)
+  if (nodeData.nodeCategory) {
+    return nodeData.nodeCategory === "trigger";
+  }
+  
+  // Legacy fallback for nodes without nodeCategory (should be rare)
   return nodeData.group.includes("trigger");
 }
 

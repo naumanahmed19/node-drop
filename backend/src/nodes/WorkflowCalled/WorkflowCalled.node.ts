@@ -9,6 +9,8 @@ export const WorkflowCalledNode: NodeDefinition = {
   displayName: "Called by Workflow",
   name: "workflowCalled",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "workflow-called",
   version: 1,
   description: "Receives data when this workflow is called by another workflow",
   icon: "fa:phone-alt",

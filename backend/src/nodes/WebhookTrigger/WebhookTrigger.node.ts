@@ -9,6 +9,8 @@ export const WebhookTriggerNode: NodeDefinition = {
   displayName: "Webhook Trigger",
   name: "webhookTrigger",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "webhook",
   version: 1,
   description: "Triggers workflow execution when a webhook is called",
   icon: "Webhook",

@@ -178,8 +178,10 @@ export interface NodeType {
   id?: string; // Optional database ID for custom nodes
   createdAt?: string; // Optional timestamp for custom nodes
   updatedAt?: string; // Optional timestamp for custom nodes
-  // Node category for execution control
-  nodeCategory?: 'service' | 'tool'; // Service/tool nodes are not directly executable
+  // Node category for high-level organization and execution control
+  nodeCategory?: 'trigger' | 'action' | 'service' | 'tool' | 'condition' | 'transform';
+  // Trigger-specific metadata (only for trigger nodes)
+  triggerType?: "manual" | "webhook" | "schedule" | "polling" | "workflow-called";
   // Execution metadata from backend
   executionCapability?: "trigger" | "action" | "transform" | "condition";
   canExecuteIndividually?: boolean;

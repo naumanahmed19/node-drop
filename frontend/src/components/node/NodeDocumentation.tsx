@@ -236,7 +236,7 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
         </p>
       </div>
 
-      {nodeType.group.includes('trigger') && (
+      {nodeType.nodeCategory === 'trigger' && (
         <div className="border rounded-md p-3 bg-muted/20">
           <h4 className="font-medium mb-2">Trigger Usage</h4>
           <p className="text-xs text-muted-foreground mb-2">
@@ -257,7 +257,7 @@ export function NodeDocumentation({ nodeType }: NodeDocumentationProps) {
           {nodeType.group.includes('data') && (
             <li>• Processing and transforming data</li>
           )}
-          {nodeType.group.includes('trigger') && (
+          {nodeType.nodeCategory === 'trigger' && (
             <li>• Starting workflows based on events</li>
           )}
           {nodeType.group.includes('notification') && (

@@ -572,7 +572,7 @@ export function AddNodeCommandDialog({
                         nodeGroup={node.group}
                         displayName={node.displayName}
                         backgroundColor={node.color || '#6b7280'}
-                        isTrigger={node.group.includes('trigger')}
+                        isTrigger={node.nodeCategory === 'trigger'}
                         size="md"
                         className="flex-shrink-0 shadow-sm"
                       />

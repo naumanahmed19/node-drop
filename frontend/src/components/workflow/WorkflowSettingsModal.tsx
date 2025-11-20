@@ -37,6 +37,7 @@ export function WorkflowSettingsModal({
   const [saveExecutionToDatabase, setSaveExecutionToDatabase] = useState(
     workflow.settings?.saveExecutionToDatabase !== false // Default to true
   )
+  const [active, setActive] = useState(workflow.active || false)
 
   // Reset form when workflow changes
   useEffect(() => {
@@ -45,6 +46,7 @@ export function WorkflowSettingsModal({
     setCategory(workflow.category || '')
     setTags(workflow.tags || [])
     setSaveExecutionToDatabase(workflow.settings?.saveExecutionToDatabase !== false)
+    setActive(workflow.active || false)
   }, [workflow])
 
   const handleAddTag = () => {
@@ -64,6 +66,7 @@ export function WorkflowSettingsModal({
       description: description.trim(),
       category: category || undefined,
       tags,
+      active,
       settings: {
         ...(workflow.settings || {}), // Ensure settings is an object
         saveExecutionToDatabase

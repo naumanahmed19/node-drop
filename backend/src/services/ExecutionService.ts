@@ -155,11 +155,10 @@ export class ExecutionService {
 
       // Find trigger nodes or determine starting point
       // Include chat nodes as they can trigger workflows
-      const triggerNodes = workflowNodes.filter(
-        (node: any) =>
-          node.type.includes("trigger") ||
-          ["manual-trigger", "workflow-called", "chat"].includes(node.type)
-      );
+      const triggerNodes = workflowNodes.filter((node: any) => {
+        const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+        return nodeDef?.triggerType !== undefined || node.type === "chat";
+      });
 
       let flowResult: FlowExecutionResult;
 
@@ -1260,12 +1259,8 @@ export class ExecutionService {
       }
 
       // Handle execution based on mode
-      const triggerNodeTypes = [
-        "manual-trigger",
-        "webhook-trigger",
-        "workflow-called",
-      ];
-      const isTriggerNode = triggerNodeTypes.includes(node.type);
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      const isTriggerNode = nodeDef?.triggerType !== undefined;
 
       if (mode === "workflow" && !isTriggerNode) {
         return {

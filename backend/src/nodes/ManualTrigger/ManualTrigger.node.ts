@@ -36,6 +36,8 @@ export const ManualTriggerNode: NodeDefinition = {
   displayName: "Manual Trigger",
   name: "manualTrigger",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "manual",
   version: 1,
   description:
     "Triggers workflow execution manually when requested by the user",

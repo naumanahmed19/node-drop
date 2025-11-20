@@ -14,7 +14,7 @@ import { WorkflowService } from "./WorkflowService";
 
 export interface TriggerDefinition {
   id: string;
-  type: "webhook" | "schedule" | "manual" | "workflow-called";
+  type: "webhook" | "schedule" | "manual" | "workflow-called" | "polling";
   workflowId: string;
   nodeId: string;
   settings: TriggerSettings;
@@ -50,6 +50,11 @@ export interface TriggerSettings {
   cronExpression?: string;
   timezone?: string;
 
+  // Polling settings
+  pollInterval?: number; // Interval in seconds
+  lastPollTime?: number; // Timestamp of last poll
+  lastPollState?: any; // State from last poll (e.g., last email ID)
+
   // Manual settings (no specific settings needed)
 
   // Common settings
@@ -61,7 +66,7 @@ export interface TriggerEvent {
   id: string;
   triggerId: string;
   workflowId: string;
-  type: "webhook" | "schedule" | "manual" | "workflow-called";
+  type: "webhook" | "schedule" | "manual" | "workflow-called" | "polling";
   data: any;
   timestamp: Date;
   executionId?: string;
@@ -93,10 +98,15 @@ export class TriggerService {
   private socketService: SocketService;
   private executionHistoryService: ExecutionHistoryService;
   private credentialService: CredentialService;
+  private nodeService: NodeService;
   private triggerManager: TriggerManager;
   private scheduledTasks: Map<string, cron.ScheduledTask> = new Map();
   // Map webhook key (path or path/uuid) to trigger definition
   private webhookTriggers: Map<string, TriggerDefinition> = new Map();
+  // Map trigger ID to polling interval
+  private pollingIntervals: Map<string, NodeJS.Timeout> = new Map();
+  // Map trigger ID to trigger definition (for polling triggers)
+  private pollingTriggers: Map<string, TriggerDefinition> = new Map();
 
   constructor(
     prisma: PrismaClient,
@@ -113,6 +123,7 @@ export class TriggerService {
     this.socketService = socketService;
     this.executionHistoryService = executionHistoryService;
     this.credentialService = credentialService;
+    this.nodeService = nodeService;
 
     // Initialize TriggerManager with concurrent execution support
     this.triggerManager = new TriggerManager(
@@ -371,6 +382,9 @@ export class TriggerService {
         case "schedule":
           await this.activateScheduleTrigger(trigger);
           break;
+        case "polling":
+          await this.activatePollingTrigger(trigger);
+          break;
         case "manual":
           // Manual triggers don't need activation
           break;
@@ -413,6 +427,18 @@ export class TriggerService {
         }
         this.scheduledTasks.delete(triggerId);
         logger.info(`🗑️  Deactivated scheduled task: ${triggerId}`);
+      }
+
+      // Remove from polling intervals
+      if (this.pollingIntervals.has(triggerId)) {
+        const interval = this.pollingIntervals.get(triggerId);
+        if (interval) {
+          clearInterval(interval);
+        }
+        this.pollingIntervals.delete(triggerId);
+        this.pollingTriggers.delete(triggerId);
+        console.log(`🗑️  Deactivated polling trigger: ${triggerId}`);
+        logger.info(`🗑️  Deactivated polling trigger: ${triggerId}`);
       }
 
 
@@ -513,6 +539,48 @@ export class TriggerService {
     task.start();
 
 
+  }
+
+  private async activatePollingTrigger(
+    trigger: TriggerDefinition
+  ): Promise<void> {
+    const { pollInterval } = trigger.settings;
+
+    if (!pollInterval || pollInterval < 10) {
+      throw new AppError(
+        "Poll interval must be at least 10 seconds",
+        400,
+        "INVALID_POLL_INTERVAL"
+      );
+    }
+
+    console.log(`🔄 Activating polling trigger ${trigger.id} with interval ${pollInterval}s`);
+    logger.info(`🔄 Activating polling trigger ${trigger.id} with interval ${pollInterval}s`);
+
+    // Create polling function
+    const pollFunction = async () => {
+      try {
+        await this.handlePollingTrigger(trigger);
+      } catch (error) {
+        logger.error(
+          `Error executing polling trigger ${trigger.id}:`,
+          error
+        );
+      }
+    };
+
+    // Execute immediately on activation
+    pollFunction();
+
+    // Set up interval for continuous polling
+    const interval = setInterval(pollFunction, pollInterval * 1000);
+
+    // Store interval and trigger definition
+    this.pollingIntervals.set(trigger.id, interval);
+    this.pollingTriggers.set(trigger.id, trigger);
+
+    console.log(`✅ Polling trigger ${trigger.id} activated and running in background`);
+    logger.info(`✅ Polling trigger ${trigger.id} activated and running in background`);
   }
 
   /**
@@ -1129,6 +1197,163 @@ export class TriggerService {
     }
   }
 
+  private async handlePollingTrigger(
+    trigger: TriggerDefinition
+  ): Promise<void> {
+    try {
+      console.log(`📬 Polling trigger ${trigger.id} checking for new data...`);
+      logger.info(`📬 Polling trigger ${trigger.id} checking for new data...`);
+
+      // Fetch workflow to get nodes and userId
+      const workflow = await this.prisma.workflow.findUnique({
+        where: { id: trigger.workflowId },
+        select: { 
+          userId: true, 
+          nodes: true,
+          settings: true,
+        },
+      });
+
+      if (!workflow) {
+        logger.error(`Workflow ${trigger.workflowId} not found for polling trigger ${trigger.id}`);
+        return;
+      }
+
+      // Parse workflow nodes to get trigger node
+      const workflowNodes = typeof workflow.nodes === "string" 
+        ? JSON.parse(workflow.nodes) 
+        : workflow.nodes;
+      
+      const triggerNode = (workflowNodes as any[])?.find(
+        (node: any) => node.id === trigger.nodeId
+      );
+
+      if (!triggerNode) {
+        logger.error(`Trigger node ${trigger.nodeId} not found in workflow ${trigger.workflowId}`);
+        return;
+      }
+
+      // Execute the trigger node to check for new data
+      // Build credentials mapping
+      const credentialsMapping: Record<string, string> = {};
+      if (triggerNode.parameters?.authentication) {
+        const credId = triggerNode.parameters.authentication;
+        if (typeof credId === 'string' && credId.startsWith('c')) {
+          const cred = await this.prisma.credential.findUnique({
+            where: { id: credId },
+            select: { type: true }
+          });
+          if (cred) {
+            credentialsMapping[cred.type] = credId;
+          }
+        }
+      }
+
+      // Execute the trigger node to poll for data
+      const pollResult = await this.nodeService.executeNode(
+        triggerNode.type,
+        triggerNode.parameters,
+        {},
+        credentialsMapping,
+        `poll_${trigger.id}_${Date.now()}`,
+        workflow.userId,
+        { timeout: 30000 },
+        trigger.workflowId
+      );
+
+      // Check if we got any new data
+      const hasNewData = pollResult.success && 
+        pollResult.data?.main && 
+        Array.isArray(pollResult.data.main) && 
+        pollResult.data.main.length > 0;
+
+      if (!hasNewData) {
+        console.log(`📭 No new data found for polling trigger ${trigger.id}`);
+        logger.info(`📭 No new data found for polling trigger ${trigger.id}`);
+        return;
+      }
+
+      console.log(`📬 New data found! Triggering workflow for ${trigger.id}`, {
+        itemCount: pollResult.data?.main?.length || 0
+      });
+      logger.info(`📬 New data found! Triggering workflow for ${trigger.id}`, {
+        itemCount: pollResult.data?.main?.length || 0
+      });
+
+      // Check workflow settings for database storage
+      const workflowSettings = workflow.settings
+        ? typeof workflow.settings === "string"
+          ? JSON.parse(workflow.settings)
+          : workflow.settings
+        : {};
+      
+      const saveToDatabase = workflowSettings?.saveExecutionToDatabase !== false;
+
+      // Create trigger execution request with the polled data
+      const triggerRequest: TriggerExecutionRequest = {
+        triggerId: trigger.id,
+        triggerType: "polling" as any,
+        workflowId: trigger.workflowId,
+        userId: workflow.userId,
+        triggerNodeId: trigger.nodeId,
+        triggerData: pollResult.data?.main?.[0]?.json || pollResult.data?.main?.[0] || {},
+        options: {
+          isolatedExecution: false,
+          priority: 2,
+          triggerTimeout: 300000,
+          saveToDatabase,
+        },
+      };
+
+      // Create trigger event for logging
+      const triggerEvent: TriggerEvent = {
+        id: uuidv4(),
+        triggerId: trigger.id,
+        workflowId: trigger.workflowId,
+        type: "polling",
+        data: triggerRequest.triggerData,
+        timestamp: new Date(),
+        status: "pending",
+      };
+
+      await this.logTriggerEvent(triggerEvent);
+
+      // Execute using TriggerManager
+      const result = await this.triggerManager.executeTrigger(triggerRequest);
+
+      if (!result.success) {
+        triggerEvent.status = "failed";
+        triggerEvent.error = result.reason;
+        await this.updateTriggerEvent(triggerEvent);
+        logger.error(`Polling trigger ${trigger.id} execution failed: ${result.reason}`);
+        return;
+      }
+
+      // Update trigger event
+      triggerEvent.executionId = result.executionId;
+      triggerEvent.status = result.status === "started" ? "processing" : "pending";
+      await this.updateTriggerEvent(triggerEvent);
+
+      // Emit real-time update
+      this.socketService.getServer()
+        .to(`workflow:${trigger.workflowId}`)
+        .emit("trigger-executed", {
+          triggerId: trigger.id,
+          executionId: result.executionId,
+          type: "polling",
+          status: result.status,
+          timestamp: new Date().toISOString(),
+        });
+
+      logger.info(`✅ Polling trigger ${trigger.id} executed successfully`, {
+        executionId: result.executionId
+      });
+
+    } catch (error) {
+      logger.error(`Error handling polling trigger ${trigger.id}:`, error);
+    }
+  }
+
   async handleManualTrigger(
     workflowId: string,
     triggerId: string,
@@ -1662,13 +1887,33 @@ export class TriggerService {
       const triggers = workflow.triggers as any[];
 
       // Deactivate existing triggers for this workflow
-      const existingTriggers = [
+      const existingTriggers: TriggerDefinition[] = [
         ...Array.from(this.webhookTriggers.values()),
-        ...Array.from(this.scheduledTasks.keys()).map((id) => ({ id })),
-      ].filter((t) => (t as any).workflowId === workflowId);
+        ...Array.from(this.pollingTriggers.values()),
+      ].filter((t) => t.workflowId === workflowId);
 
+      // Also check scheduled tasks (they don't have full trigger objects stored)
+      for (const [taskId, task] of this.scheduledTasks.entries()) {
+        // We need to check if this task belongs to this workflow
+        // For now, we'll deactivate all tasks and re-activate the correct ones
+        // This is safe because we re-activate them below if needed
+      }
+
+      console.log(`🔄 Deactivating ${existingTriggers.length} existing trigger(s) for workflow ${workflowId}`);
+      
       for (const trigger of existingTriggers) {
         await this.deactivateTrigger(trigger.id);
+      }
+      
+      // Also deactivate all scheduled tasks for this workflow
+      // We'll re-activate the correct ones below
+      const scheduledTaskIds = Array.from(this.scheduledTasks.keys());
+      for (const taskId of scheduledTaskIds) {
+        // Check if this task belongs to this workflow by checking if it's in the triggers array
+        const belongsToWorkflow = triggers?.some((t: any) => t.id === taskId);
+        if (belongsToWorkflow) {
+          await this.deactivateTrigger(taskId);
+        }
       }
 
       // Activate new triggers if workflow is active

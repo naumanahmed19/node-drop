@@ -38,25 +38,28 @@ export class WorkflowService {
       return [];
     }
 
-    const triggerNodeTypes: Record<string, string> = {
-      "manual-trigger": "manual",
-      "webhook-trigger": "webhook",
-      "schedule-trigger": "schedule",
-      "workflow-called": "workflow-called",
-    };
+    const nodeService = global.nodeService;
+    if (!nodeService) {
+      console.warn("NodeService not available, cannot extract triggers");
+      return [];
+    }
 
     return nodes
-      .filter((node) => node.type && triggerNodeTypes[node.type])
+      .filter((node) => {
+        const nodeDef = nodeService.getNodeDefinitionSync(node.type);
+        return nodeDef?.triggerType !== undefined;
+      })
       .map((node) => {
-        const triggerType = triggerNodeTypes[node.type];
+        const nodeDef = nodeService.getNodeDefinitionSync(node.type);
+        const triggerType = nodeDef?.triggerType;
+        
         return {
           id: `trigger-${node.id}`,
           type: triggerType,
           nodeId: node.id,
-          active: !node.disabled, // Active if node is not disabled
+          active: !node.disabled,
           settings: {
-            description:
-              node.parameters?.description || `${triggerType} trigger`,
+            description: node.parameters?.description || `${triggerType} trigger`,
             ...node.parameters,
           },
         };
@@ -233,12 +236,17 @@ export class WorkflowService {
       let triggersToSave = data.triggers;
       if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
         triggersToSave = this.extractTriggersFromNodes(data.nodes);
+        console.log('🔍 Extracted triggers from nodes:', JSON.stringify(triggersToSave, null, 2));
       }
 
       // Normalize triggers if they are being updated
       const normalizedTriggers = triggersToSave
         ? this.normalizeTriggers(triggersToSave)
         : undefined;
+      
+      if (normalizedTriggers) {
+        console.log('🔍 Normalized triggers:', JSON.stringify(normalizedTriggers, null, 2));
+      }
 
 
 
@@ -271,11 +279,19 @@ export class WorkflowService {
         (normalizedTriggers || data.active !== undefined)
       ) {
         try {
+          console.log(`🔄 Syncing triggers for workflow ${id}...`);
           await getTriggerService().syncWorkflowTriggers(id);
+          console.log(`✅ Triggers synced successfully for workflow ${id}`);
         } catch (error) {
-          console.error(`Error syncing triggers for workflow ${id}:`, error);
+          console.error(`❌ Error syncing triggers for workflow ${id}:`, error);
           // Don't fail the update if trigger sync fails
         }
+      } else {
+        console.log(`⏭️  Skipping trigger sync for workflow ${id}`, {
+          triggerServiceInitialized: isTriggerServiceInitialized(),
+          hasNormalizedTriggers: !!normalizedTriggers,
+          hasActiveChange: data.active !== undefined,
+        });
       }
 
       // Sync schedule jobs with ScheduleJobManager

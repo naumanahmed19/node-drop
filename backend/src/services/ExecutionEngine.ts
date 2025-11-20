@@ -460,19 +460,12 @@ export class ExecutionEngine extends EventEmitter {
         maxConcurrentRequests: 5,
       };
 
-      // For manual triggers, add additional context
-      if (node.type === "manual-trigger") {
-        logger.info(`Executing manual trigger node ${nodeId}`, {
+      // For trigger nodes, add additional context
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      if (nodeDef?.triggerType) {
+        logger.info(`Executing ${nodeDef.triggerType} trigger node ${nodeId}`, {
           executionId,
-          triggerDataSize: JSON.stringify(context.triggerData || {}).length,
-          nodeParameters: Object.keys(node.parameters || {}),
-        });
-      }
-
-      // For workflow-called triggers, add additional context
-      if (node.type === "workflow-called") {
-        logger.info(`Executing workflow-called trigger node ${nodeId}`, {
-          executionId,
+          triggerType: nodeDef.triggerType,
           triggerDataSize: JSON.stringify(context.triggerData || {}).length,
           nodeParameters: Object.keys(node.parameters || {}),
         });
@@ -500,17 +493,23 @@ export class ExecutionEngine extends EventEmitter {
           status: NodeExecutionStatus.SUCCESS,
           outputData: result.data as any,
           finishedAt: new Date(),
-          // Store additional execution metadata for manual triggers
-          ...(node.type === "manual-trigger" && {
-            real_output_data: result.data,
-            network_metrics: {
-              executionTime:
-                new Date().getTime() -
-                new Date(nodeExecution.startedAt || new Date()).getTime(),
-              triggerType: "manual",
-              triggerDataSize: JSON.stringify(context.triggerData || {}).length,
-            },
-          }),
+          // Store additional execution metadata for trigger nodes
+          ...(() => {
+            const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+            if (nodeDef?.triggerType) {
+              return {
+                real_output_data: result.data,
+                network_metrics: {
+                  executionTime:
+                    new Date().getTime() -
+                    new Date(nodeExecution.startedAt || new Date()).getTime(),
+                  triggerType: nodeDef.triggerType,
+                  triggerDataSize: JSON.stringify(context.triggerData || {}).length,
+                },
+              };
+            }
+            return {};
+          })(),
         },
       });
 
@@ -552,19 +551,23 @@ export class ExecutionEngine extends EventEmitter {
         const workflowNodes = workflow?.nodes as unknown as Node[];
         const currentNode = workflowNodes?.find((n) => n.id === nodeId);
 
-        if (currentNode && currentNode.type === "manual-trigger") {
-          logger.error(`Manual trigger node ${nodeId} execution failed`, {
-            executionId,
-            error: error instanceof Error ? error.message : "Unknown error",
-            triggerDataSize: JSON.stringify(currentContext.triggerData || {}).length,
-            nodeParameters: Object.keys(currentNode.parameters || {}),
-          });
+        if (currentNode) {
+          const nodeDef = this.nodeService.getNodeDefinitionSync(currentNode.type);
+          if (nodeDef?.triggerType) {
+            logger.error(`${nodeDef.triggerType} trigger node ${nodeId} execution failed`, {
+              executionId,
+              triggerType: nodeDef.triggerType,
+              error: error instanceof Error ? error.message : "Unknown error",
+              triggerDataSize: JSON.stringify(currentContext.triggerData || {}).length,
+              nodeParameters: Object.keys(currentNode.parameters || {}),
+            });
+          }
         }
 
-        // Enhanced error handling for workflow-called triggers
+        // Continue with error handling
         if (currentNode && currentNode.type === "workflow-called") {
           logger.error(
-            `Workflow-called trigger node ${nodeId} execution failed`,
+            `Workflow-called trigger node ${nodeId} execution failed (legacy log)`,
             {
               executionId,
               error: error instanceof Error ? error.message : "Unknown error",
@@ -1074,21 +1077,27 @@ export class ExecutionEngine extends EventEmitter {
       // This is a trigger node, prepare trigger data properly
       const node = graph.nodes.get(nodeId);
 
-      if (node && node.type === "manual-trigger") {
-        // For manual triggers, pass the trigger data as the first item
-        // The manual trigger node will handle validation and processing
-        const triggerInput = context.triggerData || {};
+      if (node) {
+        const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+        
+        if (nodeDef?.triggerType) {
+          // For trigger nodes, pass the trigger data as the first item
+          // The trigger node will handle validation and processing
+          const triggerInput = context.triggerData || {};
 
-        // Log trigger data for debugging
-        logger.debug(`Preparing manual trigger input data for node ${nodeId}`, {
-          triggerDataKeys: Object.keys(triggerInput),
-          triggerDataSize: JSON.stringify(triggerInput).length,
-        });
+          // Log trigger data for debugging
+          logger.debug(`Preparing ${nodeDef.triggerType} trigger input data for node ${nodeId}`, {
+            triggerType: nodeDef.triggerType,
+            triggerDataKeys: Object.keys(triggerInput),
+            triggerDataSize: JSON.stringify(triggerInput).length,
+          });
 
-        inputData.main = [[{ json: triggerInput }]];
-      } else if (node && node.type === "workflow-called") {
-        // For workflow-called triggers, pass the trigger data as the first item
-        // Similar to manual triggers but specifically for workflow-to-workflow calls
+          inputData.main = [[{ json: triggerInput }]];
+        }
+      }
+      
+      // Legacy handling for workflow-called (keeping for backward compatibility)
+      if (node && node.type === "workflow-called") {
         const triggerInput = context.triggerData || {};
 
         // Log trigger data for debugging
@@ -1497,35 +1506,20 @@ export class ExecutionEngine extends EventEmitter {
    * Determine the trigger type for a workflow
    */
   private determineTriggerType(nodes: Node[]): string {
-    // Find trigger nodes (nodes with no inputs)
-    const triggerNodes = nodes.filter(
-      (node) =>
-        node.type.includes("trigger") ||
-        [
-          "manual-trigger",
-          "webhook-trigger",
-          "schedule-trigger",
-          "workflow-called",
-        ].includes(node.type)
-    );
+    // Find trigger nodes using node definitions
+    const triggerNodes = nodes.filter((node) => {
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      return nodeDef?.triggerType !== undefined;
+    });
 
     if (triggerNodes.length === 0) {
       return "unknown";
     }
 
-    // Return the first trigger type found
+    // Return the trigger type from the first trigger node
     const firstTrigger = triggerNodes[0];
-    if (firstTrigger.type === "manual-trigger") {
-      return "manual";
-    } else if (firstTrigger.type === "webhook-trigger") {
-      return "webhook";
-    } else if (firstTrigger.type === "schedule-trigger") {
-      return "schedule";
-    } else if (firstTrigger.type === "workflow-called") {
-      return "workflow-called";
-    }
-
-    return firstTrigger.type;
+    const nodeDef = this.nodeService.getNodeDefinitionSync(firstTrigger.type);
+    return nodeDef?.triggerType || firstTrigger.type;
   }
 
   /**

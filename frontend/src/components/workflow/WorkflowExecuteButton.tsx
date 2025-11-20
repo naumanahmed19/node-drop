@@ -11,8 +11,9 @@ import {
   TooltipContent,
   TooltipTrigger
 } from '@/components/ui/tooltip'
-import { useWorkflowStore } from '@/stores'
+import { useWorkflowStore, useNodeTypes } from '@/stores'
 import { WorkflowNode } from '@/types/workflow'
+import { getTriggerNodes, getTriggerType } from '@/utils/triggerUtils'
 import {
   ChevronDown,
   Clock,
@@ -30,24 +31,22 @@ interface WorkflowExecuteButtonProps {
   className?: string
 }
 
-// Map trigger types to icons
-const triggerIcons = {
-  'manual-trigger': Hand,
-  'webhook-trigger': Globe,
-  'schedule-trigger': Clock,
-  'cron-trigger': Clock,
-  'timer-trigger': Clock,
+// Map trigger types to icons (using triggerType values, not node identifiers)
+const triggerIcons: Record<string, any> = {
+  'manual': Hand,
+  'webhook': Globe,
+  'schedule': Clock,
+  'polling': Clock,
   'workflow-called': Zap,
   default: Zap
 }
 
-// Map trigger types to display names
-const triggerDisplayNames = {
-  'manual-trigger': 'Manual Trigger',
-  'webhook-trigger': 'Webhook Trigger', 
-  'schedule-trigger': 'Schedule Trigger',
-  'cron-trigger': 'Cron Trigger',
-  'timer-trigger': 'Timer Trigger',
+// Map trigger types to display names (using triggerType values)
+const triggerDisplayNames: Record<string, string> = {
+  'manual': 'Manual Trigger',
+  'webhook': 'Webhook Trigger', 
+  'schedule': 'Schedule Trigger',
+  'polling': 'Polling Trigger',
   'workflow-called': 'Called by Workflow',
   default: 'Trigger'
 }
@@ -58,17 +57,14 @@ export function WorkflowExecuteButton({
   className = '' 
 }: WorkflowExecuteButtonProps) {
   const { workflow, executionState } = useWorkflowStore()
+  const { activeNodeTypes } = useNodeTypes()
   const [isExecuting, setIsExecuting] = useState(false)
 
-  // Find all trigger nodes in the workflow
+  // Find all trigger nodes in the workflow using node definitions
   const triggerNodes = useMemo(() => {
-    if (!workflow?.nodes) return []
-    
-    return workflow.nodes.filter((node: WorkflowNode) => 
-      node.type.includes('trigger') || 
-      ['manual-trigger', 'webhook-trigger', 'schedule-trigger', 'cron-trigger', 'timer-trigger', 'workflow-called'].includes(node.type)
-    )
-  }, [workflow?.nodes])
+    if (!workflow?.nodes || !activeNodeTypes.length) return []
+    return getTriggerNodes(workflow.nodes, activeNodeTypes)
+  }, [workflow?.nodes, activeNodeTypes])
 
   // Check if workflow is currently executing
   const isCurrentlyExecuting = executionState?.status === 'running' || isExecuting
@@ -87,15 +83,17 @@ export function WorkflowExecuteButton({
     }
   }
 
-  // Get icon for trigger type
-  const getTriggerIcon = (triggerType: string) => {
-    const IconComponent = triggerIcons[triggerType as keyof typeof triggerIcons] || triggerIcons.default
+  // Get icon for trigger node
+  const getTriggerIcon = (node: WorkflowNode) => {
+    const triggerType = getTriggerType(node, activeNodeTypes)
+    const IconComponent = triggerType ? (triggerIcons[triggerType] || triggerIcons.default) : triggerIcons.default
     return IconComponent
   }
 
-  // Get display name for trigger type
-  const getTriggerDisplayName = (triggerType: string, nodeName: string) => {
-    const displayName = triggerDisplayNames[triggerType as keyof typeof triggerDisplayNames] || triggerDisplayNames.default
+  // Get display name for trigger node
+  const getTriggerDisplayName = (node: WorkflowNode, nodeName: string) => {
+    const triggerType = getTriggerType(node, activeNodeTypes)
+    const displayName = triggerType ? (triggerDisplayNames[triggerType] || triggerDisplayNames.default) : triggerDisplayNames.default
     return `${nodeName} (${displayName})`
   }
 
@@ -144,7 +142,7 @@ export function WorkflowExecuteButton({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Execute workflow from {getTriggerDisplayName(trigger.type, trigger.name)}</p>
+          <p>Execute workflow from {getTriggerDisplayName(trigger, trigger.name)}</p>
         </TooltipContent>
       </Tooltip>
     )
@@ -178,7 +176,7 @@ export function WorkflowExecuteButton({
       
       <DropdownMenuContent align="end" className="w-56">
         {triggerNodes.map((trigger) => {
-          const TriggerIcon = getTriggerIcon(trigger.type)
+          const TriggerIcon = getTriggerIcon(trigger)
           
           return (
             <DropdownMenuItem
@@ -188,7 +186,7 @@ export function WorkflowExecuteButton({
               className="text-xs"
             >
               <TriggerIcon className="mr-2 h-3.5 w-3.5" />
-              {getTriggerDisplayName(trigger.type, trigger.name)}
+              {getTriggerDisplayName(trigger, trigger.name)}
             </DropdownMenuItem>
           )
         })}

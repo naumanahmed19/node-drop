@@ -183,16 +183,18 @@ const FA_TO_LUCIDE_MAP: Record<string, string> = {
  * @param iconString - Icon identifier (e.g., "lucide:play", "fa:globe", "svg:openai", "file:postgres.svg", "⚡", "H")
  * @param nodeType - Optional node type for fallback logic and file: icon resolution
  * @param nodeGroup - Optional node group array for category-based icons
+ * @param nodeCategory - Optional node category for better categorization
  * @returns Lucide icon component, SVG path string, or null
  */
 export function getIconComponent(
   iconString?: string,
   nodeType?: string,
-  nodeGroup?: string[]
+  nodeGroup?: string[],
+  nodeCategory?: string
 ): IconType | null {
   // No icon string provided
   if (!iconString) {
-    return getFallbackIcon(nodeType, nodeGroup);
+    return getFallbackIcon(nodeType, nodeGroup, nodeCategory);
   }
 
   // Check for file: prefix (custom node SVG files from backend)
@@ -239,28 +241,32 @@ export function getIconComponent(
  */
 function getFallbackIcon(
   nodeType?: string,
-  nodeGroup?: string[]
+  nodeGroup?: string[],
+  nodeCategory?: string
 ): LucideIcon | null {
   if (!nodeType && !nodeGroup) {
     return Command; // Default fallback
   }
 
-  // Check node group
-  if (nodeGroup) {
-    if (nodeGroup.includes("trigger")) {
-      // Trigger-specific fallback based on type
-      if (nodeType) {
-        const lowerType = nodeType.toLowerCase();
-        if (lowerType.includes("manual")) return Play;
-        if (lowerType.includes("webhook")) return Webhook;
-        if (lowerType.includes("schedule") || lowerType.includes("cron"))
-          return Calendar;
-        if (lowerType.includes("chat")) return MessageCircle;
-        if (lowerType.includes("workflow")) return ExternalLink;
-      }
-      return Zap; // Default trigger icon
+  // Check nodeCategory (all trigger nodes have this now)
+  const isTrigger = nodeCategory === "trigger";
+  
+  if (isTrigger) {
+    // Trigger-specific fallback based on type
+    if (nodeType) {
+      const lowerType = nodeType.toLowerCase();
+      if (lowerType.includes("manual")) return Play;
+      if (lowerType.includes("webhook")) return Webhook;
+      if (lowerType.includes("schedule") || lowerType.includes("cron"))
+        return Calendar;
+      if (lowerType.includes("chat")) return MessageCircle;
+      if (lowerType.includes("workflow")) return ExternalLink;
     }
+    return Zap; // Default trigger icon
+  }
 
+  // Check other node groups
+  if (nodeGroup) {
     if (nodeGroup.includes("transform")) return Zap;
     if (nodeGroup.includes("logic")) return GitBranch;
     if (nodeGroup.includes("action")) return Send;

@@ -309,6 +309,7 @@ export class NodeService {
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
           nodeCategory: nodeDefinition.nodeCategory, // Include node category for service/tool nodes
+          triggerType: nodeDefinition.triggerType, // Include trigger type for trigger nodes
           // Add execution metadata - use provided values or compute from group
           executionCapability:
             nodeDefinition.executionCapability ||
@@ -376,7 +377,22 @@ export class NodeService {
   }
 
   /**
-   * Get raw node definition by type from in-memory registry
+   * Get raw node definition by type from in-memory registry (synchronous)
+   * Use this when you need immediate access to node definition without async/await
+   */
+  getNodeDefinitionSync(nodeType: string): NodeDefinition | null {
+    try {
+      // Get from in-memory registry (synchronous)
+      const nodeDefinition = this.nodeRegistry.get(nodeType);
+      return nodeDefinition || null;
+    } catch (error) {
+      logger.error(`Failed to get node definition for ${nodeType}`, { error });
+      return null;
+    }
+  }
+
+  /**
+   * Get raw node definition by type from in-memory registry (async version)
    */
   async getNodeDefinition(nodeType: string): Promise<NodeDefinition | null> {
     try {
@@ -1112,13 +1128,31 @@ export class NodeService {
   }
 
   /**
-   * Determine execution capability based on node group
+   * Determine execution capability based on nodeCategory
    */
   private getExecutionCapability(
     nodeDefinition: NodeDefinition
   ): "trigger" | "action" | "transform" | "condition" {
-    const group = nodeDefinition.group;
+    // Use nodeCategory (all nodes should have this now)
+    if (nodeDefinition.nodeCategory) {
+      // Map nodeCategory to executionCapability
+      switch (nodeDefinition.nodeCategory) {
+        case "trigger":
+          return "trigger";
+        case "condition":
+          return "condition";
+        case "transform":
+          return "transform";
+        case "action":
+        case "service":
+        case "tool":
+        default:
+          return "action";
+      }
+    }
 
+    // Legacy fallback for nodes without nodeCategory (should be rare)
+    const group = nodeDefinition.group;
     if (group.includes("trigger")) {
       return "trigger";
     } else if (group.includes("condition")) {
@@ -1131,9 +1165,16 @@ export class NodeService {
   }
 
   /**
-   * Determine if node can execute individually (only trigger nodes)
+   * Determine if node can execute individually
+   * Only triggers can execute individually, service/tool nodes cannot
    */
   private canExecuteIndividually(nodeDefinition: NodeDefinition): boolean {
+    // Use nodeCategory (all nodes should have this now)
+    if (nodeDefinition.nodeCategory) {
+      return nodeDefinition.nodeCategory === "trigger";
+    }
+    
+    // Legacy fallback for nodes without nodeCategory (should be rare)
     return nodeDefinition.group.includes("trigger");
   }
 
