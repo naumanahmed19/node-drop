@@ -1,5 +1,4 @@
-import { CredentialType, CredentialData } from "../services/CredentialService";
-import axios from "axios";
+import { CredentialType, CredentialData } from "../../services/CredentialService";
 
 /**
  * Generic OAuth2 Credential
@@ -91,17 +90,38 @@ export const OAuth2Credentials: CredentialType = {
         };
       }
 
-      // For OAuth2 testing, we need the access token
+      // Check if access token is present
       if (!data.accessToken) {
         return {
           success: false,
-          message: "Please complete OAuth2 authorization first"
+          message: "No access token found. Please complete the OAuth2 authorization flow."
         };
+      }
+
+      // Check if token is expired (if tokenObtainedAt and expiresIn are available)
+      if (data.tokenObtainedAt && data.expiresIn) {
+        const obtainedDate = new Date(data.tokenObtainedAt);
+        const expiresAt = new Date(
+          obtainedDate.getTime() + data.expiresIn * 1000
+        );
+
+        if (new Date() > expiresAt) {
+          if (!data.refreshToken) {
+            return {
+              success: false,
+              message: "Access token has expired and no refresh token is available. Please re-authorize."
+            };
+          }
+          return {
+            success: false,
+            message: "Access token has expired. Please refresh the token."
+          };
+        }
       }
 
       return {
         success: true,
-        message: "OAuth2 credentials are configured"
+        message: "OAuth2 credentials are configured correctly"
       };
     } catch (error: any) {
       return {

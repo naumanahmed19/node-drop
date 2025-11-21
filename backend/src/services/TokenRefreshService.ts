@@ -3,19 +3,15 @@
  * Automatically refreshes OAuth tokens when needed
  */
 
-import { PrismaClient } from '@prisma/client';
 import { CredentialService } from './CredentialService';
-// Token refresh is now handled via OAuth provider registry
-// import { refreshOAuthToken, shouldRefreshToken } from '../oauth/tokenRefresh';
+import { oauthProviderRegistry } from '../oauth/OAuthProviderRegistry';
 import { logger } from '../utils/logger';
 import { AppError } from '../utils/errors';
 
 export class TokenRefreshService {
-  private prisma: PrismaClient;
   private credentialService: CredentialService;
 
   constructor(credentialService: CredentialService) {
-    this.prisma = new PrismaClient();
     this.credentialService = credentialService;
   }
 
@@ -30,8 +26,10 @@ export class TokenRefreshService {
       throw new AppError('Credential not found', 404);
     }
 
-    // Check if this is an OAuth credential
-    if (!this.isOAuthCredential(credential.type)) {
+    // Get credential type definition to check if it's OAuth
+    const credentialType = this.credentialService.getCredentialType(credential.type);
+    if (!credentialType || !credentialType.oauthProvider) {
+      // Not an OAuth credential, return access token if available
       return credential.data.accessToken || '';
     }
 
@@ -45,26 +43,33 @@ export class TokenRefreshService {
 
     logger.info(`[TokenRefresh] Refreshing token for credential ${credentialId}`);
 
-    // Extract provider from credential type
-    const provider = this.extractProvider(credential.type);
+    // Get OAuth provider from registry
+    const providerName = credentialType.oauthProvider;
+    const provider = oauthProviderRegistry.get(providerName);
     
+    if (!provider) {
+      throw new AppError(`OAuth provider '${providerName}' not found`, 500);
+    }
+    
+    if (!provider.refreshAccessToken) {
+      throw new AppError(`OAuth provider '${providerName}' does not support token refresh`, 500);
+    }
+
     // Refresh the token
     try {
-      const tokens = await refreshOAuthToken(
-        provider,
-        credential.data.refreshToken,
-        credential.data.clientId,
-        credential.data.clientSecret
-      );
+      const tokens = await provider.refreshAccessToken({
+        refreshToken: credential.data.refreshToken,
+        clientId: credential.data.clientId,
+        clientSecret: credential.data.clientSecret
+      });
 
       // Update credential with new tokens
       await this.credentialService.updateCredential(credentialId, userId, {
         data: {
           ...credential.data,
           accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
+          refreshToken: tokens.refreshToken || credential.data.refreshToken,
           expiresIn: tokens.expiresIn,
-          tokenType: tokens.tokenType,
           tokenObtainedAt: new Date().toISOString(),
         },
       });
@@ -83,46 +88,20 @@ export class TokenRefreshService {
 
   /**
    * Check if credential needs token refresh
+   * Refreshes if token expires within 5 minutes
    */
   private checkIfNeedsRefresh(data: any): boolean {
     if (!data.tokenObtainedAt || !data.expiresIn) {
       return false; // Can't determine, assume valid
     }
 
-    return shouldRefreshToken(data.tokenObtainedAt, data.expiresIn, 5);
-  }
+    const obtainedAt = new Date(data.tokenObtainedAt).getTime();
+    const expiresIn = data.expiresIn * 1000; // Convert to milliseconds
+    const expiresAt = obtainedAt + expiresIn;
+    const now = Date.now();
+    const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-  /**
-   * Check if credential type is OAuth-based
-   */
-  private isOAuthCredential(type: string): boolean {
-    const oauthTypes = [
-      'googleOAuth2',
-      'googleSheetsOAuth2',
-      'googleDriveOAuth2',
-      'oauth2',
-      'githubOAuth2',
-      'microsoftOAuth2',
-      'slackOAuth2',
-    ];
-    
-    return oauthTypes.includes(type) || type.toLowerCase().includes('oauth');
-  }
-
-  /**
-   * Extract provider name from credential type
-   */
-  private extractProvider(type: string): string {
-    // Map credential types to providers
-    const typeToProvider: Record<string, string> = {
-      'googleOAuth2': 'google',
-      'googleSheetsOAuth2': 'google',
-      'googleDriveOAuth2': 'google',
-      'githubOAuth2': 'github',
-      'microsoftOAuth2': 'microsoft',
-      'slackOAuth2': 'slack',
-    };
-
-    return typeToProvider[type] || type.split('OAuth')[0].toLowerCase();
+    // Refresh if token expires within the buffer time
+    return now >= (expiresAt - bufferTime);
   }
 }
