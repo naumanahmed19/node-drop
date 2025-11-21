@@ -2,30 +2,30 @@ import { CredentialType, CredentialData } from "../services/CredentialService";
 
 /**
  * Generic Google OAuth2 Credential
- * Can be used by Google Drive, Google Sheets, Gmail, and other Google services
- * Each service can specify its own scopes when using this credential
+ * Can be used by Google Drive, Google Sheets, Gmail, Calendar, and other Google services
+ * 
+ * Default scopes include commonly used permissions:
+ * - Gmail: Send, read, modify emails and manage labels
+ * - Drive: Read, write, and manage files
+ * - Sheets: Read and write spreadsheets
+ * - Calendar: Read and write calendar events
+ * - User info: Email and profile
+ * 
+ * Users can customize scopes in the "Scopes (Advanced)" field if they need
+ * different permissions or want to limit access.
  */
 export const GoogleOAuth2Credentials: CredentialType = {
   name: "googleOAuth2",
   displayName: "Google OAuth2",
-  description: "OAuth2 authentication for Google services (Drive, Sheets, Gmail, etc.)",
+  description: "OAuth2 for Google services. Select which services you need access to.",
   icon: "🔐",
   color: "#4285F4",
   testable: true,
   properties: [
     {
-      displayName: "OAuth Redirect URL",
-      name: "oauthCallbackUrl",
-      type: "string",
-      required: false,
-      description:
-        "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-      placeholder: `${
-        process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`,
-      default: `${
-        process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`,
+      name: "services",
+      type: "hidden",
+      default: "gmail",
     },
     {
       displayName: "Client ID",
@@ -43,14 +43,40 @@ export const GoogleOAuth2Credentials: CredentialType = {
       description: "OAuth2 Client Secret from Google Cloud Console",
       placeholder: "GOCSPX-***",
     },
-    {
-      displayName: "Scopes",
-      name: "scopes",
+
+      {
+      displayName: "OAuth Redirect URL",
+      name: "oauthCallbackUrl",
       type: "string",
-      required: false,
-      description: "Comma-separated list of OAuth2 scopes (optional, defaults will be used)",
-      placeholder: "https://www.googleapis.com/auth/drive, https://www.googleapis.com/auth/spreadsheets",
+      readonly: true,
+      description:
+        "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
+      placeholder: `${
+        process.env.FRONTEND_URL || "http://localhost:3000"
+      }/oauth/callback`,
+      default: `${
+        process.env.FRONTEND_URL || "http://localhost:3000"
+      }/oauth/callback`,
     },
+    {
+      displayName: "Use Custom Scopes",
+      name: "useCustomScopes",
+      type: "boolean",
+      default: false,
+  
+    },
+    {
+      displayName: "Custom Scopes",
+      name: "customScopes",
+      type: "string",
+      placeholder: "https://www.googleapis.com/auth/gmail.readonly, https://www.googleapis.com/auth/drive.readonly",
+      displayOptions: {
+        show: {
+          useCustomScopes: [true],
+        },
+      },
+    },
+  
     // Note: accessToken and refreshToken are stored in the credential
     // but not shown in the form - they're automatically filled via OAuth
   ],

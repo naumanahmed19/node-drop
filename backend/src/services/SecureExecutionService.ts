@@ -496,6 +496,33 @@ export class SecureExecutionService {
           userId
         );
 
+      // Check if this is an OAuth credential that might need token refresh
+      if (this.isOAuthCredential(credentialData)) {
+        // Check if token needs refresh
+        if (this.shouldRefreshToken(credentialData)) {
+          logger.info(`Token refresh needed for credential ${credentialId}`);
+          
+          try {
+            // Attempt to refresh the token
+            const refreshedData = await this.refreshOAuthToken(
+              credentialId,
+              userId,
+              credentialData
+            );
+            
+            if (refreshedData) {
+              logger.info(`Token refreshed successfully for credential ${credentialId}`);
+              return refreshedData;
+            }
+          } catch (refreshError) {
+            logger.warn(`Token refresh failed for credential ${credentialId}, using existing token`, {
+              error: refreshError instanceof Error ? refreshError.message : 'Unknown error'
+            });
+            // Continue with existing token if refresh fails
+          }
+        }
+      }
+
       return credentialData;
     } catch (error) {
       logger.error("Credential injection failed:", {
@@ -509,6 +536,118 @@ export class SecureExecutionService {
         }`
       );
     }
+  }
+
+  /**
+   * Check if credential is OAuth-based
+   */
+  private isOAuthCredential(credentialData: any): boolean {
+    return !!(
+      credentialData.accessToken &&
+      credentialData.refreshToken &&
+      credentialData.clientId &&
+      credentialData.clientSecret
+    );
+  }
+
+  /**
+   * Check if OAuth token needs refresh (expired or expiring soon)
+   */
+  private shouldRefreshToken(credentialData: any): boolean {
+    if (!credentialData.tokenObtainedAt || !credentialData.expiresIn) {
+      return false; // Can't determine, assume valid
+    }
+
+    const obtainedAt = new Date(credentialData.tokenObtainedAt);
+    const expiresAt = new Date(obtainedAt.getTime() + credentialData.expiresIn * 1000);
+    const now = new Date();
+    const bufferTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes buffer
+
+    return expiresAt <= bufferTime;
+  }
+
+  /**
+   * Refresh OAuth token
+   */
+  private async refreshOAuthToken(
+    credentialId: string,
+    userId: string,
+    credentialData: any
+  ): Promise<any> {
+    try {
+      // Import token refresh utility
+      const { refreshOAuthToken } = require('../oauth/utils/tokenRefresh');
+      
+      // Get the full credential from database to access the type
+      const credential = await this.credentialService.getCredential(
+        credentialId,
+        userId
+      );
+      
+      if (!credential) {
+        throw new Error('Credential not found');
+      }
+      
+      // Extract provider from credential type
+      // Examples: "googleOAuth2" -> "google", "githubOAuth2" -> "github"
+      const provider = this.extractProviderFromType(credential.type);
+      
+      // Refresh the token
+      const tokens = await refreshOAuthToken(
+        provider,
+        credentialData.refreshToken,
+        credentialData.clientId,
+        credentialData.clientSecret
+      );
+
+      // Update credential in database
+      await this.credentialService.updateCredential(credentialId, userId, {
+        data: {
+          ...credentialData,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+          tokenType: tokens.tokenType,
+          tokenObtainedAt: new Date().toISOString(),
+        },
+      });
+
+      // Return updated credential data
+      return {
+        ...credentialData,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        tokenType: tokens.tokenType,
+        tokenObtainedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error('Failed to refresh OAuth token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract OAuth provider from credential type
+   * Examples:
+   * - "googleOAuth2" -> "google"
+   * - "githubOAuth2" -> "github"
+   * - "microsoftOAuth2" -> "microsoft"
+   * - "slackOAuth2" -> "slack"
+   */
+  private extractProviderFromType(credentialType: string): string {
+    // Remove "OAuth2" suffix and convert to lowercase
+    const provider = credentialType
+      .replace(/OAuth2$/i, '')
+      .replace(/OAuth$/i, '')
+      .toLowerCase();
+    
+    // Handle special cases
+    if (provider === 'googlesheets' || provider === 'googledrive') {
+      return 'google';
+    }
+    
+    return provider;
   }
 
   /**

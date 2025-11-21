@@ -24,8 +24,9 @@ export interface CredentialType {
 export interface CredentialProperty {
   displayName: string;
   name: string;
-  type: "string" | "password" | "number" | "boolean" | "options";
+  type: "string" | "password" | "number" | "boolean" | "options" | "hidden";
   required?: boolean;
+  readonly?: boolean;
   default?: any;
   description?: string;
   options?: Array<{ name: string; value: any }>;
@@ -654,20 +655,6 @@ export class CredentialService {
         description: "OAuth2 credentials for Google Sheets API",
         properties: [
           {
-            displayName: "OAuth Redirect URL",
-            name: "oauthCallbackUrl",
-            type: "string",
-            required: false,
-            description:
-              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-            placeholder: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-            default: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-          },
-          {
             displayName: "Client ID",
             name: "clientId",
             type: "string",
@@ -682,6 +669,21 @@ export class CredentialService {
             required: true,
             description: "OAuth2 Client Secret from Google Cloud Console",
             placeholder: "GOCSPX-***",
+          },
+          {
+            displayName: "OAuth Redirect URL",
+            name: "oauthCallbackUrl",
+            type: "string",
+            required: false,
+            readonly: true,
+            description:
+              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
+            placeholder: `${
+              process.env.FRONTEND_URL || "http://localhost:3000"
+            }/oauth/callback`,
+            default: `${
+              process.env.FRONTEND_URL || "http://localhost:3000"
+            }/oauth/callback`,
           },
           // Note: accessToken and refreshToken are stored in the credential
           // but not shown in the form - they're automatically filled via OAuth
@@ -696,20 +698,6 @@ export class CredentialService {
         description: "OAuth2 credentials for Google Drive API",
         properties: [
           {
-            displayName: "OAuth Redirect URL",
-            name: "oauthCallbackUrl",
-            type: "string",
-            required: false,
-            description:
-              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-            placeholder: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-            default: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-          },
-          {
             displayName: "Client ID",
             name: "clientId",
             type: "string",
@@ -724,6 +712,21 @@ export class CredentialService {
             required: true,
             description: "OAuth2 Client Secret from Google Cloud Console",
             placeholder: "GOCSPX-***",
+          },
+          {
+            displayName: "OAuth Redirect URL",
+            name: "oauthCallbackUrl",
+            type: "string",
+            required: false,
+            readonly: true,
+            description:
+              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
+            placeholder: `${
+              process.env.FRONTEND_URL || "http://localhost:3000"
+            }/oauth/callback`,
+            default: `${
+              process.env.FRONTEND_URL || "http://localhost:3000"
+            }/oauth/callback`,
           },
           // Note: accessToken and refreshToken are stored in the credential
           // but not shown in the form - they're automatically filled via OAuth

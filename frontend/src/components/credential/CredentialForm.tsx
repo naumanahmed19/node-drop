@@ -14,6 +14,7 @@ interface CredentialFormProps {
   onSuccess: (credential: Credential) => void
   onCancel: () => void
   showHeader?: boolean
+  nodeType?: string // Node type for context-specific defaults
 }
 
 export function CredentialForm({
@@ -21,7 +22,8 @@ export function CredentialForm({
   credential,
   onSuccess,
   onCancel,
-  showHeader = true
+  showHeader = true,
+  nodeType
 }: CredentialFormProps) {
   const { createCredential, updateCredential, testCredential, isLoading } = useCredentialStore()
   const formRef = useRef<FormGeneratorRef>(null)
@@ -36,12 +38,14 @@ export function CredentialForm({
 
   const isOAuthCredential = credentialType.name === 'googleOAuth2' || credentialType.name === 'googleSheetsOAuth2' || credentialType.name === 'googleDriveOAuth2'
 
+  const [contextualDisplayName, setContextualDisplayName] = useState<string>(credentialType.displayName)
+
   // Memoize fields array to prevent recreating on every render
   const fields = useMemo((): FormFieldConfig[] => [
     {
       name: 'name',
       displayName: 'Credential Name',
-      type: 'text',
+      type: 'text' as const,
       required: true,
       placeholder: 'Enter a name for this credential',
       description: 'A unique name to identify this credential',
@@ -50,21 +54,54 @@ export function CredentialForm({
   ], [credentialType.properties])
 
   useEffect(() => {
-    // Initialize form data with default values
-    const initialData: Record<string, any> = {
-      name: credential?.name || '',
-    }
-    credentialType.properties.forEach(prop => {
-      if (prop.type === 'boolean') {
-        initialData[prop.name] = false
-      } else {
-        initialData[prop.name] = ''
+    // Fetch defaults if nodeType is provided
+    const fetchDefaults = async () => {
+      const initialData: Record<string, any> = {
+        name: credential?.name || '',
       }
-    })
-    setFormValues(initialData)
-    setFormErrors({})
-    setTestResult(null)
-  }, [credentialType, credential])
+
+      // If nodeType is provided, fetch node-specific defaults and displayName
+      if (nodeType && !credential) {
+        try {
+          const response = await apiClient.get(
+            `/credentials/types/${credentialType.name}/defaults?nodeType=${nodeType}`
+          )
+          
+          if (response.success && response.data) {
+            // Apply defaults from backend
+            if (response.data.defaults) {
+              Object.assign(initialData, response.data.defaults)
+            }
+            
+            // Use context-specific displayName if provided
+            if (response.data.credentialType?.displayName) {
+              setContextualDisplayName(response.data.credentialType.displayName)
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to fetch credential defaults:', error)
+        }
+      }
+
+      // Initialize remaining fields with default values
+      credentialType.properties.forEach(prop => {
+        // Only set default if not already set by backend defaults
+        if (!(prop.name in initialData)) {
+          if (prop.type === 'boolean') {
+            initialData[prop.name] = false
+          } else {
+            initialData[prop.name] = ''
+          }
+        }
+      })
+
+      setFormValues(initialData)
+      setFormErrors({})
+      setTestResult(null)
+    }
+
+    fetchDefaults()
+  }, [credentialType, credential, nodeType])
 
   const handleFieldChange = useCallback((name: string, value: any) => {
     setFormValues(prev => ({ ...prev, [name]: value }))
@@ -136,6 +173,17 @@ export function CredentialForm({
         params.append('clientSecret', credentialData.clientSecret)
         params.append('credentialName', name || `${credentialType.displayName} - ${new Date().toLocaleDateString()}`)
         params.append('credentialType', credentialType.name)
+        
+        // Pass service selection and custom scopes if provided
+        if (credentialData.services) {
+          params.append('services', credentialData.services)
+        }
+        if (credentialData.useCustomScopes) {
+          params.append('useCustomScopes', 'true')
+          if (credentialData.customScopes) {
+            params.append('customScopes', credentialData.customScopes)
+          }
+        }
       }
 
       const response = await apiClient.get(`/oauth/google/authorize?${params.toString()}`)
@@ -168,6 +216,11 @@ export function CredentialForm({
             toast.success('Successfully authenticated with Google!')
 
             if (event.data.credential) {
+              // Add the new credential to the store immediately
+              useCredentialStore.setState((state) => ({
+                credentials: [...state.credentials, event.data.credential]
+              }))
+              
               onSuccess(event.data.credential)
             }
 
@@ -287,7 +340,7 @@ export function CredentialForm({
             {credentialType.icon || <Key className="w-4 h-4" />}
           </div>
           <div className="flex-1">
-            <h3 className="text-base font-medium">{credentialType.displayName}</h3>
+            <h3 className="text-base font-medium">{contextualDisplayName}</h3>
             <p className="text-sm text-muted-foreground">{credentialType.description}</p>
           </div>
         </div>

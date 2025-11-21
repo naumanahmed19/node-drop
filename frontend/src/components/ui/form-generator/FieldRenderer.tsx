@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { CalendarDays, Eye, EyeOff } from 'lucide-react'
+import { CalendarDays, CheckCircle, Copy, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { CollectionField } from './CollectionField'
 import { ConditionRow } from './ConditionRow'
@@ -277,6 +277,16 @@ export function FieldRenderer({
   }
 
   switch (field.type) {
+    case 'hidden':
+      // Render a hidden input field - value is still submitted but not visible
+      return (
+        <input
+          type="hidden"
+          name={field.name}
+          value={value || ''}
+        />
+      )
+
     case 'credential':
       return (
         <UnifiedCredentialSelector
@@ -287,23 +297,116 @@ export function FieldRenderer({
           required={field.required}
           error={error}
           disabled={disabled || field.disabled}
+          nodeType={nodeType}
         />
       )
 
     case 'string':
+      // If readonly, show with copy button (same as text type)
+      if (field.readonly) {
+        const [copied, setCopied] = useState(false)
+        
+        const handleCopy = async () => {
+          try {
+            await navigator.clipboard.writeText(value || '')
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+          } catch (error) {
+            console.error('Failed to copy:', error)
+          }
+        }
+        
+        return (
+          <div className="relative">
+            <Input
+              type="text"
+              value={value || ''}
+              readOnly
+              placeholder={field.placeholder}
+              className={`pr-20 ${error ? 'border-destructive' : ''}`}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-xs"
+            >
+              {copied ? (
+                <>
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3 mr-1" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </div>
+        )
+      }
+      
       return (
         <ExpressionInput
           value={value || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           placeholder={field.placeholder}
-          disabled={disabled || field.disabled || field.readonly}
+          disabled={disabled || field.disabled}
           error={!!error}
           nodeId={nodeId}
         />
       )
 
     case 'text':
+      // If readonly, show with copy button
+      if (field.readonly) {
+        const [copied, setCopied] = useState(false)
+        
+        const handleCopy = async () => {
+          try {
+            await navigator.clipboard.writeText(value || '')
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+          } catch (error) {
+            console.error('Failed to copy:', error)
+          }
+        }
+        
+        return (
+          <div className="relative">
+            <Input
+              type="text"
+              value={value || ''}
+              readOnly
+              placeholder={field.placeholder}
+              className={`pr-20 ${error ? 'border-destructive' : ''}`}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-xs"
+            >
+              {copied ? (
+                <>
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3 mr-1" />
+                  Copy
+                </>
+              )}
+            </Button>
+          </div>
+        )
+      }
+      
       return (
         <Input
           type="text"
@@ -311,7 +414,7 @@ export function FieldRenderer({
           onChange={(e) => handleChange(e.target.value)}
           onBlur={handleBlur}
           placeholder={field.placeholder}
-          disabled={disabled || field.disabled || field.readonly}
+          disabled={disabled || field.disabled}
           className={error ? 'border-destructive' : ''}
         />
       )
@@ -415,7 +518,7 @@ export function FieldRenderer({
             htmlFor={field.name}
             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
-            {field.description || field.displayName}
+            {field.displayName}
           </label>
         </div>
       )
@@ -433,7 +536,7 @@ export function FieldRenderer({
             htmlFor={field.name}
             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
-            {field.description || field.displayName}
+            {field.displayName}
           </label>
         </div>
       )

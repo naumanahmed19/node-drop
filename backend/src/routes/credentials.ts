@@ -50,6 +50,69 @@ router.get(
   })
 );
 
+// Get credential type with node context (for default values)
+router.get(
+  "/types/:typeName/defaults",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { typeName } = req.params;
+    const { nodeType } = req.query;
+
+    const credentialType = getCredentialService().getCredentialType(typeName);
+    
+    if (!credentialType) {
+      throw new AppError("Credential type not found", 404);
+    }
+
+    // If nodeType is provided, get node-specific defaults and displayName
+    let defaults: Record<string, any> = {};
+    let contextualCredentialType = { ...credentialType };
+    
+    if (nodeType) {
+      // Get node definition to extract credential properties
+      const nodeService = global.nodeService;
+      if (nodeService) {
+        try {
+          const nodeDefinition = await nodeService.getNodeDefinition(nodeType as string);
+          
+          if (nodeDefinition?.credentials) {
+            const credDef = nodeDefinition.credentials.find(
+              (c: any) => c.name === typeName
+            );
+            
+            if (credDef) {
+              // Use context-specific displayName if provided
+              if (credDef.displayName) {
+                contextualCredentialType.displayName = credDef.displayName;
+              }
+              
+              // Extract default values from node's credential properties
+              if (credDef.properties) {
+                credDef.properties.forEach((prop: any) => {
+                  if (prop.name && prop.value !== undefined) {
+                    defaults[prop.name] = prop.value;
+                  }
+                });
+              }
+            }
+          }
+        } catch (error) {
+          // Node not found or error getting definition, continue without defaults
+          console.warn(`Could not get node definition for ${nodeType}:`, error);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        credentialType: contextualCredentialType,
+        defaults,
+      },
+    });
+  })
+);
+
 // Get expiring credentials
 router.get(
   "/expiring/:days?",

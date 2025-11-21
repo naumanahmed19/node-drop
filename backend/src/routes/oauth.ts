@@ -4,6 +4,8 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { AuthenticatedRequest, authenticateToken } from "../middleware/auth";
 import { CredentialService } from "../services/CredentialService";
 import { AppError } from "../utils/errors";
+import { getProviderConfig, getScopesForService } from "../oauth/providers";
+import { refreshOAuthToken } from "../oauth/utils/tokenRefresh";
 
 const router = Router();
 
@@ -16,49 +18,28 @@ const getCredentialService = () => {
 };
 
 /**
- * Google OAuth2 Configuration
- */
-const GOOGLE_OAUTH_CONFIG = {
-  authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-  tokenUrl: "https://oauth2.googleapis.com/token",
-  scopes: {
-    googleOAuth2: [
-      // Core credential - comprehensive scopes for all Google services
-      "https://www.googleapis.com/auth/drive",
-      "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.send",
-      "https://www.googleapis.com/auth/gmail.modify",
-      "https://www.googleapis.com/auth/userinfo.email",
-    ],
-    googleSheetsOAuth2: [
-      // Legacy credential
-      "https://www.googleapis.com/auth/spreadsheets.readonly",
-      "https://www.googleapis.com/auth/drive.readonly",
-    ],
-    googleDriveOAuth2: [
-      // Legacy credential
-      "https://www.googleapis.com/auth/drive",
-    ],
-  },
-};
-
-/**
- * GET /api/oauth/google/authorize
- * Get the authorization URL to redirect user to Google consent screen
- * Now accepts clientId and clientSecret in query params for new credentials
+ * GET /api/oauth/:provider/authorize
+ * Generic authorization endpoint for any OAuth provider
  */
 router.get(
-  "/google/authorize",
+  "/:provider/authorize",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { provider } = req.params;
     const {
       credentialId,
       clientId: queryClientId,
       clientSecret: queryClientSecret,
       credentialName,
       credentialType,
+      serviceId,
     } = req.query;
+
+    // Get provider configuration
+    const providerConfig = getProviderConfig(provider);
+    if (!providerConfig) {
+      throw new AppError(`Unsupported OAuth provider: ${provider}`, 400);
+    }
 
     let clientId: string;
 
@@ -89,26 +70,53 @@ router.get(
     }
 
     // Build callback URL
-    const callbackUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`;
+    const callbackUrl = `${
+      process.env.FRONTEND_URL || "http://localhost:3000"
+    }/oauth/callback`;
 
     // Determine credential type and scopes
-    const finalCredentialType = credentialType as string || "googleOAuth2";
-    const scopes = GOOGLE_OAUTH_CONFIG.scopes[finalCredentialType as keyof typeof GOOGLE_OAUTH_CONFIG.scopes] || GOOGLE_OAUTH_CONFIG.scopes.googleOAuth2;
+    const finalCredentialType = (credentialType as string) || `${provider}OAuth2`;
+    
+    // Check if user specified custom scopes or service selection
+    let scopes: string[];
+    const selectedService = req.query.services as string;
+    const useCustomScopes = req.query.useCustomScopes === 'true';
+    
+    if (useCustomScopes && req.query.customScopes) {
+      // User enabled custom scopes and provided them
+      scopes = (req.query.customScopes as string).split(',').map(s => s.trim());
+    } else if (selectedService) {
+      // User selected a predefined service
+      scopes = getScopesForService(provider, selectedService);
+    } else {
+      // Fallback to credential type or default
+      const finalServiceId = (serviceId as string) || finalCredentialType;
+      scopes = getScopesForService(provider, finalServiceId);
+    }
+    
+    // Validate that we have scopes
+    if (!scopes || scopes.length === 0) {
+      throw new AppError(
+        'No scopes configured. Please select a service or provide custom scopes.',
+        400
+      );
+    }
 
     // Encode credential data in state parameter
     const stateData = {
+      provider,
       credentialId: credentialId as string | undefined,
       clientId: queryClientId as string | undefined,
       clientSecret: queryClientSecret as string | undefined,
       credentialName: credentialName as string | undefined,
       credentialType: finalCredentialType,
+      serviceId: (serviceId as string) || selectedService || finalCredentialType,
       userId: req.user!.id,
     };
     const state = Buffer.from(JSON.stringify(stateData)).toString("base64");
 
     // Build authorization URL with all required parameters
-    const authUrl = new URL(GOOGLE_OAUTH_CONFIG.authorizationUrl);
+    const authUrl = new URL(providerConfig.authorizationUrl);
     authUrl.searchParams.append("client_id", clientId);
     authUrl.searchParams.append("redirect_uri", callbackUrl);
     authUrl.searchParams.append("response_type", "code");
@@ -122,24 +130,32 @@ router.get(
       data: {
         authorizationUrl: authUrl.toString(),
         callbackUrl,
+        provider: providerConfig.name,
+        scopes,
       },
     });
   })
 );
 
 /**
- * POST /api/oauth/google/callback
- * Exchange authorization code for access token
- * Now handles both new and existing credentials
+ * POST /api/oauth/:provider/callback
+ * Generic callback endpoint for any OAuth provider
  */
 router.post(
-  "/google/callback",
+  "/:provider/callback",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { provider } = req.params;
     const { code, state } = req.body;
 
     if (!code || !state) {
       throw new AppError("Authorization code and state are required", 400);
+    }
+
+    // Get provider configuration
+    const providerConfig = getProviderConfig(provider);
+    if (!providerConfig) {
+      throw new AppError(`Unsupported OAuth provider: ${provider}`, 400);
     }
 
     // Decode state to get credential info
@@ -150,8 +166,14 @@ router.post(
       throw new AppError("Invalid state parameter", 400);
     }
 
-    const { credentialId, clientId, clientSecret, credentialName, credentialType, userId } =
-      stateData;
+    const {
+      credentialId,
+      clientId,
+      clientSecret,
+      credentialName,
+      credentialType,
+      userId,
+    } = stateData;
 
     // Verify user matches
     if (userId !== req.user!.id) {
@@ -185,13 +207,14 @@ router.post(
       isNewCredential = true;
     }
 
-    const callbackUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`;
+    const callbackUrl = `${
+      process.env.FRONTEND_URL || "http://localhost:3000"
+    }/oauth/callback`;
 
     try {
       // Exchange authorization code for tokens
       const tokenResponse = await axios.post(
-        GOOGLE_OAUTH_CONFIG.tokenUrl,
+        providerConfig.tokenUrl,
         {
           code,
           client_id: finalClientId,
@@ -202,6 +225,7 @@ router.post(
         {
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
+            ...providerConfig.additionalHeaders,
           },
         }
       );
@@ -214,17 +238,14 @@ router.post(
       try {
         if (isNewCredential) {
           // Create new credential with all data including tokens
-          let defaultName = `Google OAuth2 - ${new Date().toLocaleDateString()}`;
-          if (credentialType === "googleDriveOAuth2") {
-            defaultName = `Google Drive OAuth2 - ${new Date().toLocaleDateString()}`;
-          } else if (credentialType === "googleSheetsOAuth2") {
-            defaultName = `Google Sheets OAuth2 - ${new Date().toLocaleDateString()}`;
-          }
+          const defaultName =
+            credentialName ||
+            `${providerConfig.name} OAuth2 - ${new Date().toLocaleDateString()}`;
 
           finalCredential = await getCredentialService().createCredential(
             req.user!.id,
-            credentialName || defaultName,
-            credentialType || "googleOAuth2",
+            defaultName,
+            credentialType || `${provider}OAuth2`,
             {
               clientId: finalClientId,
               clientSecret: finalClientSecret,
@@ -260,14 +281,13 @@ router.post(
         }
       } catch (credentialError: any) {
         console.error("OAuth credential save error:", credentialError.message);
-        // Re-throw credential errors as-is (e.g., duplicate name, validation errors)
         throw credentialError;
       }
 
       res.json({
         success: true,
         data: {
-          message: "Successfully authenticated with Google",
+          message: `Successfully authenticated with ${providerConfig.name}`,
           credential: finalCredential,
           expiresIn: expires_in,
         },
@@ -275,35 +295,41 @@ router.post(
     } catch (error: any) {
       console.error("OAuth callback error:", error);
 
-      // If it's an axios error (from token exchange), format it appropriately
       if (error.response?.data) {
         throw new AppError(
-          `Failed to exchange authorization code: ${error.response.data.error_description ||
-          error.response.data.error ||
-          error.message
+          `Failed to exchange authorization code: ${
+            error.response.data.error_description ||
+            error.response.data.error ||
+            error.message
           }`,
           400
         );
       }
 
-      // For other errors (like AppError from credential service), re-throw as-is
       throw error;
     }
   })
 );
 
 /**
- * POST /api/oauth/google/refresh
- * Refresh an expired access token
+ * POST /api/oauth/:provider/refresh
+ * Generic token refresh endpoint for any OAuth provider
  */
 router.post(
-  "/google/refresh",
+  "/:provider/refresh",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { provider } = req.params;
     const { credentialId } = req.body;
 
     if (!credentialId) {
       throw new AppError("Credential ID is required", 400);
+    }
+
+    // Get provider configuration
+    const providerConfig = getProviderConfig(provider);
+    if (!providerConfig) {
+      throw new AppError(`Unsupported OAuth provider: ${provider}`, 400);
     }
 
     // Get credential
@@ -316,8 +342,8 @@ router.post(
       throw new AppError("Credential not found", 404);
     }
 
-    const { clientId, clientSecret, refreshToken } = credential.data;
-    if (!clientId || !clientSecret || !refreshToken) {
+    const { clientId, clientSecret, refreshToken: oldRefreshToken } = credential.data;
+    if (!clientId || !clientSecret || !oldRefreshToken) {
       throw new AppError(
         "Client ID, Client Secret, and Refresh Token are required",
         400
@@ -325,34 +351,25 @@ router.post(
     }
 
     try {
-      // Refresh the access token
-      const tokenResponse = await axios.post(
-        GOOGLE_OAUTH_CONFIG.tokenUrl,
-        {
-          refresh_token: refreshToken,
-          client_id: clientId,
-          client_secret: clientSecret,
-          grant_type: "refresh_token",
-        },
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        }
+      // Use the centralized refresh utility
+      const tokens = await refreshOAuthToken(
+        provider,
+        oldRefreshToken,
+        clientId,
+        clientSecret
       );
 
-      const { access_token, expires_in, token_type } = tokenResponse.data;
-
-      // Update credential with new access token
+      // Update credential with new tokens
       const updatedCredential = await getCredentialService().updateCredential(
         credentialId,
         req.user!.id,
         {
           data: {
             ...credential.data,
-            accessToken: access_token,
-            tokenType: token_type,
-            expiresIn: expires_in,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            tokenType: tokens.tokenType,
+            expiresIn: tokens.expiresIn,
             tokenObtainedAt: new Date().toISOString(),
           },
         }
@@ -363,29 +380,22 @@ router.post(
         data: {
           message: "Token refreshed successfully",
           credentialId: updatedCredential.id,
-          expiresIn: expires_in,
+          expiresIn: tokens.expiresIn,
         },
       });
     } catch (error: any) {
-      console.error(
-        "OAuth token refresh error:",
-        error.response?.data || error.message
-      );
-      throw new AppError(
-        `Failed to refresh token: ${error.response?.data?.error_description || error.message
-        }`,
-        400
-      );
+      console.error("OAuth token refresh error:", error.message);
+      throw new AppError(`Failed to refresh token: ${error.message}`, 400);
     }
   })
 );
 
 /**
- * GET /api/oauth/google/status/:credentialId
- * Check the OAuth2 token status
+ * GET /api/oauth/:provider/status/:credentialId
+ * Check the OAuth2 token status for any provider
  */
 router.get(
-  "/google/status/:credentialId",
+  "/:provider/status/:credentialId",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { credentialId } = req.params;

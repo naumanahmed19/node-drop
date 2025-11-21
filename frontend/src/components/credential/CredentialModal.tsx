@@ -5,8 +5,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { apiClient } from '@/services/api'
 import { Credential, CredentialType } from '@/types'
 import { Key } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { CredentialForm } from './CredentialForm'
 
 interface CredentialModalProps {
@@ -15,6 +17,7 @@ interface CredentialModalProps {
   credential?: Credential
   onClose: () => void
   onSave: (credential: Credential) => void
+  nodeType?: string // Node type for context-specific defaults
 }
 
 export function CredentialModal({
@@ -22,8 +25,35 @@ export function CredentialModal({
   credentialType,
   credential,
   onClose,
-  onSave
+  onSave,
+  nodeType
 }: CredentialModalProps) {
+  const [contextualDisplayName, setContextualDisplayName] = useState<string>(credentialType.displayName)
+
+  useEffect(() => {
+    // Fetch context-specific displayName if nodeType is provided
+    const fetchContextualInfo = async () => {
+      if (nodeType && !credential) {
+        try {
+          const response = await apiClient.get(
+            `/credentials/types/${credentialType.name}/defaults?nodeType=${nodeType}`
+          )
+          
+          if (response.success && response.data?.credentialType?.displayName) {
+            setContextualDisplayName(response.data.credentialType.displayName)
+          }
+        } catch (error) {
+          console.warn('Failed to fetch contextual credential info:', error)
+        }
+      } else {
+        setContextualDisplayName(credentialType.displayName)
+      }
+    }
+
+    if (open) {
+      fetchContextualInfo()
+    }
+  }, [open, nodeType, credentialType, credential])
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -38,7 +68,7 @@ export function CredentialModal({
             </div>
             <div>
               <DialogTitle>
-                {credential ? 'Edit' : 'Create'} {credentialType.displayName}
+                {credential ? 'Edit' : 'Create'} {contextualDisplayName}
               </DialogTitle>
               <DialogDescription>
                 {credentialType.description}
@@ -55,6 +85,7 @@ export function CredentialModal({
             onSuccess={onSave}
             onCancel={onClose}
             showHeader={false}
+            nodeType={nodeType}
           />
         </div>
       </DialogContent>

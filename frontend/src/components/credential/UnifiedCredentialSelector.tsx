@@ -14,6 +14,7 @@ interface UnifiedCredentialSelectorProps {
   required?: boolean
   error?: string
   disabled?: boolean
+  nodeType?: string // Node type for context-specific defaults
 }
 
 export function UnifiedCredentialSelector({
@@ -24,7 +25,8 @@ export function UnifiedCredentialSelector({
   description,
   required = false,
   error,
-  disabled = false
+  disabled = false,
+  nodeType
 }: UnifiedCredentialSelectorProps) {
   const {
     credentials,
@@ -194,6 +196,7 @@ export function UnifiedCredentialSelector({
               setSelectedCredentialType(null)
             }}
             onSave={handleCredentialCreated}
+            nodeType={nodeType}
           />
         ) : null
       })()}
