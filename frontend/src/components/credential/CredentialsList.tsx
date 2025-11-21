@@ -18,13 +18,11 @@ import {
   Activity,
   Calendar,
   Clock,
-  Copy,
   Edit,
   Key as KeyIcon,
   MoreHorizontal,
   Plus,
   Shield,
-  TestTube,
   Trash2,
   Users
 } from 'lucide-react'
@@ -127,44 +125,6 @@ export function CredentialsList({}: CredentialsListProps) {
     }
   }
 
-  const handleTestCredential = async (credential: Credential) => {
-    try {
-      // This would need to be implemented in the store/service
-      toast.info(`Testing credential: ${credential.name}`)
-      // const result = await testCredential({ type: credential.type, data: credential.data })
-      // if (result.success) {
-      //   toast.success('Credential test successful')
-      // } else {
-      //   toast.error('Credential test failed: ' + result.error)
-      // }
-    } catch (error) {
-      toast.error('Failed to test credential')
-    }
-  }
-
-  const handleDuplicateCredential = (credential: Credential) => {
-    // Find the credential type and open the form with that type
-    const credentialType = credentialTypes.find(ct => ct.name === credential.type)
-    
-    if (credentialType) {
-      setEditingCredential(null) // Don't pre-fill data for security
-      setDetailSidebar({
-        isOpen: true,
-        title: `Create ${credentialType.displayName}`,
-        content: (
-          <CredentialFormSidebar
-            credentialType={credentialType}
-            onSuccess={handleCredentialSuccess}
-            onCancel={handleCloseDetailSidebar}
-          />
-        )
-      })
-      toast.info(`Creating duplicate of credential: ${credential.name}`)
-    } else {
-      toast.error('Credential type not found')
-    }
-  }
-
   const handleCredentialSuccess = async () => {
     try {
       // Refresh credentials list
@@ -257,12 +217,6 @@ export function CredentialsList({}: CredentialsListProps) {
     switch (action) {
       case 'edit':
         handleEditCredential(credential)
-        break
-      case 'test':
-        handleTestCredential(credential)
-        break
-      case 'duplicate':
-        handleDuplicateCredential(credential)
         break
       case 'delete':
         handleDeleteCredential(credential)
@@ -424,18 +378,6 @@ export function CredentialsList({}: CredentialsListProps) {
                         Edit
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem
-                      onClick={(e) => handleCredentialAction('test', credential.id, e)}
-                    >
-                      <TestTube className="h-4 w-4 mr-2" />
-                      Test
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => handleCredentialAction('duplicate', credential.id, e)}
-                    >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Duplicate
-                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={(e) => handleCredentialAction('delete', credential.id, e)}
