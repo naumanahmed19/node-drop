@@ -344,13 +344,13 @@ export function WorkflowsList({ }: WorkflowsListProps) {
         `}
         onClick={() => handleWorkflowClick(workflow.id)}
       >
-        <div className="p-3">
+        <div className="p-3 overflow-hidden">
           <div className="flex items-start justify-between mb-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
               <WorkflowIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <h4 className="text-sm font-medium truncate">{workflow.name}</h4>
+              <h4 className="text-sm font-medium break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{workflow.name}</h4>
               <span
-                className={`w-2 h-2 rounded-full mr-2 ${workflow.active ? 'bg-green-500' : 'bg-muted-foreground'
+                className={`w-2 h-2 rounded-full mr-2 shrink-0 ${workflow.active ? 'bg-green-500' : 'bg-muted-foreground'
                   }`}
                 title={workflow.active ? "Active" : "Inactive"}
               />

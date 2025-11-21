@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import { getProviderConfig } from '../providers';
+import { getProviderConfig } from './providers';
 import { logger } from '../../utils/logger';
 
 export interface TokenRefreshResult {

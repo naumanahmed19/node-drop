@@ -159,31 +159,52 @@ export class TriggerService {
 
   async initialize(): Promise<void> {
     // Load all active triggers from database and activate them
-    await this.loadActiveTriggers();
+   await this.loadActiveTriggers();
   }
 
   private async loadActiveTriggers(): Promise<void> {
     try {
-      // Get all active workflows with triggers
-      const workflows = await this.prisma.workflow.findMany({
+      let loadedCount = 0;
+
+      // Load polling and schedule triggers from database (source of truth)
+      const activeTriggerJobs = await this.prisma.triggerJob.findMany({
         where: { active: true },
-        select: {
-          id: true,
-          userId: true,
-          triggers: true,
+        include: {
+          workflow: {
+            select: {
+              id: true,
+              active: true,
+              triggers: true,
+            },
+          },
         },
       });
 
-      for (const workflow of workflows) {
-        const triggers = workflow.triggers as any[];
-        if (triggers && triggers.length > 0) {
-          for (const trigger of triggers) {
-            if (trigger.active) {
-              await this.activateTrigger(workflow.id, trigger);
-            }
-          }
+      // Process each trigger job from database
+      for (const job of activeTriggerJobs) {
+        // Check if workflow is active
+        if (!job.workflow.active) {
+          continue;
+        }
+
+        // Find trigger definition in workflow JSON
+        const triggers = job.workflow.triggers as any[];
+        const trigger = triggers?.find((t: any) => t.id === job.triggerId);
+
+        if (!trigger || !trigger.active) {
+          continue;
+        }
+
+        // Activate the trigger
+        try {
+          await this.activateTrigger(job.workflowId, trigger);
+          loadedCount++;
+        } catch (error) {
+          logger.error(`Failed to activate ${job.type} trigger ${job.triggerId}:`, error);
         }
       }
+
+      logger.info(`✅ Loaded ${loadedCount} active triggers`);
     } catch (error) {
       logger.error("Error loading active triggers:", error);
       throw new AppError(
@@ -344,10 +365,10 @@ export class TriggerService {
         throw new AppError("Trigger not found", 404, "TRIGGER_NOT_FOUND");
       }
 
-      // Deactivate trigger first
-      await this.deactivateTrigger(triggerId);
+      // Deactivate trigger first with permanent deletion flag
+      await this.deactivateTrigger(triggerId, true);
 
-      // Remove trigger from workflow
+      // Remove trigger from workflow JSON
       triggers.splice(triggerIndex, 1);
 
       await this.prisma.workflow.update({
@@ -358,6 +379,7 @@ export class TriggerService {
         },
       });
 
+      logger.info(`✅ Permanently deleted trigger ${triggerId} from workflow ${workflowId}`);
 
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -411,7 +433,7 @@ export class TriggerService {
     }
   }
 
-  async deactivateTrigger(triggerId: string): Promise<void> {
+  async deactivateTrigger(triggerId: string, permanentDelete: boolean = false): Promise<void> {
     try {
       // Remove from webhook triggers
       for (const [webhookKey, trigger] of this.webhookTriggers.entries()) {
@@ -430,6 +452,31 @@ export class TriggerService {
         }
         this.scheduledTasks.delete(triggerId);
         logger.info(`🗑️  Deactivated scheduled task: ${triggerId}`);
+        
+        // Delete or deactivate database record for schedule triggers
+        if (permanentDelete) {
+          await this.prisma.triggerJob.deleteMany({
+            where: {
+              triggerId,
+              type: 'schedule',
+            },
+          }).catch(err => {
+            logger.error(`Failed to delete schedule trigger ${triggerId} from database:`, err);
+          });
+          logger.info(`🗑️  Permanently deleted schedule trigger ${triggerId} from database`);
+        } else {
+          await this.prisma.triggerJob.updateMany({
+            where: {
+              triggerId,
+              type: 'schedule',
+            },
+            data: {
+              active: false,
+            },
+          }).catch(err => {
+            logger.error(`Failed to deactivate schedule trigger ${triggerId} in database:`, err);
+          });
+        }
       }
 
       // Remove from polling intervals
@@ -441,21 +488,33 @@ export class TriggerService {
         this.pollingIntervals.delete(triggerId);
         this.pollingTriggers.delete(triggerId);
         
-        // Update database record to inactive
-        await this.prisma.triggerJob.updateMany({
-          where: {
-            triggerId,
-            type: 'polling',
-          },
-          data: {
-            active: false,
-          },
-        }).catch(err => {
-          logger.error(`Failed to deactivate polling trigger ${triggerId} in database:`, err);
-        });
-        
-        console.log(`🗑️  Deactivated polling trigger: ${triggerId}`);
-        logger.info(`🗑️  Deactivated polling trigger: ${triggerId}`);
+        // Delete or deactivate database record for polling triggers
+        if (permanentDelete) {
+          await this.prisma.triggerJob.deleteMany({
+            where: {
+              triggerId,
+              type: 'polling',
+            },
+          }).catch(err => {
+            logger.error(`Failed to delete polling trigger ${triggerId} from database:`, err);
+          });
+          console.log(`🗑️  Permanently deleted polling trigger ${triggerId} from database`);
+          logger.info(`🗑️  Permanently deleted polling trigger ${triggerId} from database`);
+        } else {
+          await this.prisma.triggerJob.updateMany({
+            where: {
+              triggerId,
+              type: 'polling',
+            },
+            data: {
+              active: false,
+            },
+          }).catch(err => {
+            logger.error(`Failed to deactivate polling trigger ${triggerId} in database:`, err);
+          });
+          console.log(`🗑️  Deactivated polling trigger: ${triggerId}`);
+          logger.info(`🗑️  Deactivated polling trigger: ${triggerId}`);
+        }
       }
 
 
@@ -532,6 +591,41 @@ export class TriggerService {
       );
     }
 
+    console.log(`🔄 Activating schedule trigger ${trigger.id} with cron: ${cronExpression}`);
+    logger.info(`🔄 Activating schedule trigger ${trigger.id} with cron: ${cronExpression}`);
+
+    // Get workflow for description
+    const workflow = await this.prisma.workflow.findUnique({
+      where: { id: trigger.workflowId },
+      select: { name: true },
+    });
+
+    // Create or update database record
+    await this.prisma.triggerJob.upsert({
+      where: {
+        workflowId_triggerId: {
+          workflowId: trigger.workflowId,
+          triggerId: trigger.id,
+        },
+      },
+      create: {
+        workflowId: trigger.workflowId,
+        triggerId: trigger.id,
+        type: 'schedule',
+        jobKey: trigger.id,
+        cronExpression,
+        timezone: timezone || 'UTC',
+        description: `Schedule trigger for ${workflow?.name || 'workflow'}`,
+        active: true,
+      },
+      update: {
+        type: 'schedule',
+        cronExpression,
+        timezone: timezone || 'UTC',
+        active: true,
+      },
+    });
+
     // Create scheduled task
     const task = cron.schedule(
       cronExpression,
@@ -555,6 +649,8 @@ export class TriggerService {
     this.scheduledTasks.set(trigger.id, task);
     task.start();
 
+    console.log(`✅ Schedule trigger ${trigger.id} activated and running`);
+    logger.info(`✅ Schedule trigger ${trigger.id} activated and running`);
 
   }
 

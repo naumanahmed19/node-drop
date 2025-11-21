@@ -1,4 +1,4 @@
-import { CredentialType, CredentialData } from "../services/CredentialService";
+import { CredentialType, CredentialData } from "../../services/CredentialService";
 
 /**
  * Generic Google OAuth2 Credential
@@ -23,6 +23,7 @@ export const GoogleOAuth2Credentials: CredentialType = {
   testable: true,
   properties: [
     {
+      displayName: "Services",
       name: "services",
       type: "hidden",
       default: "gmail",
@@ -70,6 +71,7 @@ export const GoogleOAuth2Credentials: CredentialType = {
       name: "customScopes",
       type: "string",
       placeholder: "https://www.googleapis.com/auth/gmail.readonly, https://www.googleapis.com/auth/drive.readonly",
+      description: "Comma-separated list of OAuth scopes",
       displayOptions: {
         show: {
           useCustomScopes: [true],

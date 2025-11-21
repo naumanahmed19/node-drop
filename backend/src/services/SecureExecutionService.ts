@@ -576,7 +576,7 @@ export class SecureExecutionService {
   ): Promise<any> {
     try {
       // Import token refresh utility
-      const { refreshOAuthToken } = require('../oauth/utils/tokenRefresh');
+      const { refreshOAuthToken } = require('../credentials/oauth/tokenRefresh');
       
       // Get the full credential from database to access the type
       const credential = await this.credentialService.getCredential(

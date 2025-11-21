@@ -20,7 +20,7 @@ import flowExecutionRoutes from "./routes/flow-execution";
 import googleRoutes from "./routes/google";
 import { nodeTypeRoutes } from "./routes/node-types";
 import { nodeRoutes } from "./routes/nodes";
-import oauthRoutes from "./routes/oauth";
+import oauthRoutes from "./credentials/oauth/routes";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
 import aiMemoryRoutes from "./routes/ai-memory.routes";

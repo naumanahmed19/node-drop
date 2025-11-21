@@ -362,10 +362,10 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                       size="md"
                       className="shrink-0 mt-0.5"
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium break-words">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="font-medium">
                         <div className="flex items-start gap-2 flex-wrap">
-                          <span className="break-words">{nodeType.displayName}</span>
+                          <span className="break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{nodeType.displayName}</span>
                           {(nodeType as ExtendedNodeType).active === false && (
                             <Badge variant="outline" className="text-xs h-4 px-1 shrink-0">
                               <PowerOff className="h-2 w-2 mr-1" />

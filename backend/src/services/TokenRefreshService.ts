@@ -5,7 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { CredentialService } from './CredentialService';
-import { refreshOAuthToken, shouldRefreshToken } from '../oauth/utils/tokenRefresh';
+import { refreshOAuthToken, shouldRefreshToken } from '../credentials/oauth/tokenRefresh';
 import { logger } from '../utils/logger';
 import { AppError } from '../utils/errors';
 

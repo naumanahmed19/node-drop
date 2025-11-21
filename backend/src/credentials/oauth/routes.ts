@@ -1,11 +1,11 @@
 import axios from "axios";
 import { Response, Router } from "express";
-import { asyncHandler } from "../middleware/asyncHandler";
-import { AuthenticatedRequest, authenticateToken } from "../middleware/auth";
-import { CredentialService } from "../services/CredentialService";
-import { AppError } from "../utils/errors";
-import { getProviderConfig, getScopesForService } from "../oauth/providers";
-import { refreshOAuthToken } from "../oauth/utils/tokenRefresh";
+import { asyncHandler } from "../../middleware/asyncHandler";
+import { AuthenticatedRequest, authenticateToken } from "../../middleware/auth";
+import { CredentialService } from "../../services/CredentialService";
+import { AppError } from "../../utils/errors";
+import { getProviderConfig, getScopesForService } from "./providers";
+import { refreshOAuthToken } from "./tokenRefresh";
 
 const router = Router();
 

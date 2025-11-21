@@ -12,16 +12,19 @@
  * - Users can reuse the same credentials across multiple nodes
  */
 
-export { GoogleOAuth2Credentials } from "./GoogleOAuth2.credentials";
-export { HttpBasicAuthCredentials } from "./HttpBasicAuth.credentials";
-export { OAuth2Credentials } from "./OAuth2.credentials";
-export { ApiKeyCredentials } from "./ApiKey.credentials";
+export { GoogleOAuth2Credentials } from "./core/GoogleOAuth2.credentials";
+export { HttpBasicAuthCredentials } from "./core/HttpBasicAuth.credentials";
+export { OAuth2Credentials } from "./core/OAuth2.credentials";
+export { ApiKeyCredentials } from "./core/ApiKey.credentials";
+
+// Export OAuth utilities and providers
+export * from "./oauth";
 
 // Export all core credentials as an array for easy registration
-import { GoogleOAuth2Credentials } from "./GoogleOAuth2.credentials";
-import { HttpBasicAuthCredentials } from "./HttpBasicAuth.credentials";
-import { OAuth2Credentials } from "./OAuth2.credentials";
-import { ApiKeyCredentials } from "./ApiKey.credentials";
+import { GoogleOAuth2Credentials } from "./core/GoogleOAuth2.credentials";
+import { HttpBasicAuthCredentials } from "./core/HttpBasicAuth.credentials";
+import { OAuth2Credentials } from "./core/OAuth2.credentials";
+import { ApiKeyCredentials } from "./core/ApiKey.credentials";
 
 export const CoreCredentials = [
   GoogleOAuth2Credentials,

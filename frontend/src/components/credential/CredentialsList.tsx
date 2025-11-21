@@ -393,14 +393,14 @@ export function CredentialsList({}: CredentialsListProps) {
                 }
               }}
             >
-              <div className="px-4 py-3">
+              <div className="px-4 py-3 overflow-hidden">
               {/* Header Row - Name and Action Button */}
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                   <div className="shrink-0">
                     {getCredentialIcon(credential.type)}
                   </div>
-                  <h4 className="text-sm font-medium truncate">{credential.name}</h4>
+                  <h4 className="text-sm font-medium break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{credential.name}</h4>
                 </div>
                 
                 <DropdownMenu>

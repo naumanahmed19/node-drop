@@ -102,30 +102,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/calendar',
       ],
-      // Service-specific scopes (for fine-grained control)
-      'google-drive': [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/drive.file',
-      ],
-      'google-sheets': [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.readonly',
-      ],
-      'gmail': [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/gmail.send',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.labels',
-        'https://www.googleapis.com/auth/gmail.compose',
-      ],
-      'google-calendar': [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/calendar.events',
-      ],
       // Legacy credentials (backward compatibility)
       'googleSheetsOAuth2': [
         'https://www.googleapis.com/auth/spreadsheets.readonly',

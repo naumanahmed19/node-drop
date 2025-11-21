@@ -31,6 +31,10 @@ export interface CredentialProperty {
   description?: string;
   options?: Array<{ name: string; value: any }>;
   placeholder?: string;
+  displayOptions?: {
+    show?: Record<string, any[]>;
+    hide?: Record<string, any[]>;
+  };
 }
 
 export interface CredentialWithData {
