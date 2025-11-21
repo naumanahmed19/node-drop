@@ -32,20 +32,31 @@ export function UnifiedCredentialSelector({
     credentials,
     credentialTypes,
     fetchCredentials,
-    fetchCredentialTypes
+    fetchCredentialTypes,
+    isLoading
   } = useCredentialStore()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedCredentialType, setSelectedCredentialType] = useState<string | null>(null)
+  const [isFetchingTypes, setIsFetchingTypes] = useState(false)
 
+  // Fetch credentials and types on mount
   useEffect(() => {
-    if (credentials.length === 0) {
-      fetchCredentials()
+    const fetchData = async () => {
+      if (credentials.length === 0) {
+        fetchCredentials()
+      }
+      if (credentialTypes.length === 0) {
+        setIsFetchingTypes(true)
+        await fetchCredentialTypes()
+        setIsFetchingTypes(false)
+      }
     }
-    if (credentialTypes.length === 0) {
-      fetchCredentialTypes()
-    }
+    fetchData()
   }, [credentials.length, credentialTypes.length, fetchCredentials, fetchCredentialTypes])
+
+  // Check if credential types are ready
+  const isCredentialTypesReady = credentialTypes.length > 0 && !isFetchingTypes
 
   // Filter credentials that match any of the allowed types
   const availableCredentials = useMemo(() => {
@@ -133,12 +144,19 @@ export function UnifiedCredentialSelector({
         {!disabled && allowedTypes.length === 1 && (
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              // Ensure credential types are loaded before opening modal
+              if (!isCredentialTypesReady) {
+                setIsFetchingTypes(true)
+                await fetchCredentialTypes()
+                setIsFetchingTypes(false)
+              }
               setSelectedCredentialType(allowedTypes[0])
               setShowCreateModal(true)
             }}
-            className="h-9 w-9 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center justify-center flex-shrink-0"
-            title="Create new credential"
+            disabled={isFetchingTypes}
+            className="h-9 w-9 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center justify-center flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isFetchingTypes ? "Loading credential types..." : "Create new credential"}
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -149,37 +167,46 @@ export function UnifiedCredentialSelector({
           <div className="relative group">
             <button
               type="button"
-              className="h-9 w-9 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center justify-center flex-shrink-0"
-              title="Create new credential"
+              disabled={isFetchingTypes}
+              className="h-9 w-9 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center justify-center flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isFetchingTypes ? "Loading credential types..." : "Create new credential"}
             >
               <Plus className="w-4 h-4" />
             </button>
             
             {/* Dropdown menu for selecting credential type */}
-            <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-300 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-              <div className="py-1">
-                <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b">
-                  Select credential type
+            {isCredentialTypesReady && (
+              <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-300 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                <div className="py-1">
+                  <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b">
+                    Select credential type
+                  </div>
+                  {allowedTypes.map(typeName => {
+                    const credType = credentialTypes.find(ct => ct.name === typeName)
+                    return (
+                      <button
+                        key={typeName}
+                        type="button"
+                        onClick={async () => {
+                          // Ensure credential types are loaded
+                          if (!isCredentialTypesReady) {
+                            setIsFetchingTypes(true)
+                            await fetchCredentialTypes()
+                            setIsFetchingTypes(false)
+                          }
+                          setSelectedCredentialType(typeName)
+                          setShowCreateModal(true)
+                        }}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <Key className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm">{credType?.displayName || typeName}</span>
+                      </button>
+                    )
+                  })}
                 </div>
-                {allowedTypes.map(typeName => {
-                  const credType = credentialTypes.find(ct => ct.name === typeName)
-                  return (
-                    <button
-                      key={typeName}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCredentialType(typeName)
-                        setShowCreateModal(true)
-                      }}
-                      className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Key className="w-4 h-4 text-gray-400" />
-                      <span className="text-sm">{credType?.displayName || typeName}</span>
-                    </button>
-                  )
-                })}
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>

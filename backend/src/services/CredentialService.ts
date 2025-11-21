@@ -16,6 +16,7 @@ export interface CredentialType {
   icon?: string;
   color?: string;
   testable?: boolean;
+  oauthProvider?: string; // OAuth provider name (google, microsoft, github, etc.)
   test?: (
     data: CredentialData
   ) => Promise<{ success: boolean; message: string }>;
@@ -88,7 +89,7 @@ export class CredentialService {
 
     try {
       // Import core credentials
-      const { CoreCredentials } = require("../credentials");
+      const { CoreCredentials } = require("../oauth/credentials");
 
       // Register each core credential
       for (const credential of CoreCredentials) {

@@ -20,7 +20,7 @@ import flowExecutionRoutes from "./routes/flow-execution";
 import googleRoutes from "./routes/google";
 import { nodeTypeRoutes } from "./routes/node-types";
 import { nodeRoutes } from "./routes/nodes";
-import oauthRoutes from "./credentials/oauth/routes";
+import oauthGenericRoutes from "./routes/oauth-generic";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
 import aiMemoryRoutes from "./routes/ai-memory.routes";
@@ -65,8 +65,18 @@ const credentialService = new CredentialService();
 // Register core credentials (OAuth2, HTTP Basic Auth, API Key, etc.)
 try {
   credentialService.registerCoreCredentials();
+  logger.info("✅ Core credentials registered successfully");
 } catch (error) {
   console.error("❌ Failed to register core credentials:", error);
+}
+
+// Initialize OAuth providers (Google, Microsoft, Slack, GitHub)
+try {
+  const { initializeOAuthProviders } = require("./oauth");
+  initializeOAuthProviders();
+  logger.info("✅ OAuth providers initialized successfully");
+} catch (error) {
+  console.error("❌ Failed to initialize OAuth providers:", error);
 }
 
 const nodeLoader = new NodeLoader(nodeService, credentialService, prisma);
@@ -433,6 +443,10 @@ app.get("/", (req, res) => {
   });
 });
 
+// Debug routes (remove in production)
+import debugCredentialsRoutes from "./routes/debug-credentials";
+app.use("/api", debugCredentialsRoutes);
+
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -449,7 +463,7 @@ app.use("/api/flow-execution", flowExecutionRoutes);
 app.use("/api/execution-control", executionControlRoutes);
 app.use("/api/execution-history", executionHistoryRoutes);
 app.use("/api/execution-recovery", executionRecoveryRoutes);
-app.use("/api/oauth", oauthRoutes);
+app.use("/api", oauthGenericRoutes);
 app.use("/api/google", googleRoutes);
 app.use("/api/ai-memory", aiMemoryRoutes);
 app.use("/api", webhookLogsRoutes);

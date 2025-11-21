@@ -575,9 +575,6 @@ export class SecureExecutionService {
     credentialData: any
   ): Promise<any> {
     try {
-      // Import token refresh utility
-      const { refreshOAuthToken } = require('../credentials/oauth/tokenRefresh');
-      
       // Get the full credential from database to access the type
       const credential = await this.credentialService.getCredential(
         credentialId,
@@ -588,26 +585,38 @@ export class SecureExecutionService {
         throw new Error('Credential not found');
       }
       
-      // Extract provider from credential type
-      // Examples: "googleOAuth2" -> "google", "githubOAuth2" -> "github"
-      const provider = this.extractProviderFromType(credential.type);
+      // Get credential type to find OAuth provider
+      const credentialType = this.credentialService.getCredentialType(credential.type);
+      if (!credentialType || !credentialType.oauthProvider) {
+        throw new Error(`Credential type ${credential.type} is not an OAuth credential`);
+      }
+
+      // Get OAuth provider from registry
+      const { oauthProviderRegistry } = require('../oauth');
+      const oauthProvider = oauthProviderRegistry.get(credentialType.oauthProvider);
       
-      // Refresh the token
-      const tokens = await refreshOAuthToken(
-        provider,
-        credentialData.refreshToken,
-        credentialData.clientId,
-        credentialData.clientSecret
-      );
+      if (!oauthProvider) {
+        throw new Error(`OAuth provider ${credentialType.oauthProvider} not found`);
+      }
+
+      if (!oauthProvider.refreshAccessToken) {
+        throw new Error(`OAuth provider ${credentialType.oauthProvider} does not support token refresh`);
+      }
+
+      // Refresh the token using the provider
+      const tokens = await oauthProvider.refreshAccessToken({
+        refreshToken: credentialData.refreshToken,
+        clientId: credentialData.clientId,
+        clientSecret: credentialData.clientSecret,
+      });
 
       // Update credential in database
       await this.credentialService.updateCredential(credentialId, userId, {
         data: {
           ...credentialData,
           accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
+          refreshToken: tokens.refreshToken || credentialData.refreshToken,
           expiresIn: tokens.expiresIn,
-          tokenType: tokens.tokenType,
           tokenObtainedAt: new Date().toISOString(),
         },
       });
@@ -616,9 +625,8 @@ export class SecureExecutionService {
       return {
         ...credentialData,
         accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        refreshToken: tokens.refreshToken || credentialData.refreshToken,
         expiresIn: tokens.expiresIn,
-        tokenType: tokens.tokenType,
         tokenObtainedAt: new Date().toISOString(),
       };
     } catch (error) {

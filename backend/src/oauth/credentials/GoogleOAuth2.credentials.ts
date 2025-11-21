@@ -1,4 +1,4 @@
-import { CredentialType, CredentialData } from "../../services/CredentialService";
+import { CredentialType, CredentialData } from "../../../services/CredentialService";
 
 /**
  * Generic Google OAuth2 Credential
@@ -21,6 +21,7 @@ export const GoogleOAuth2Credentials: CredentialType = {
   icon: "🔐",
   color: "#4285F4",
   testable: true,
+  oauthProvider: "google", // Specifies which OAuth provider to use
   properties: [
     {
       displayName: "Services",

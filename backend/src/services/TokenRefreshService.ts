@@ -5,7 +5,8 @@
 
 import { PrismaClient } from '@prisma/client';
 import { CredentialService } from './CredentialService';
-import { refreshOAuthToken, shouldRefreshToken } from '../credentials/oauth/tokenRefresh';
+// Token refresh is now handled via OAuth provider registry
+// import { refreshOAuthToken, shouldRefreshToken } from '../oauth/tokenRefresh';
 import { logger } from '../utils/logger';
 import { AppError } from '../utils/errors';
 

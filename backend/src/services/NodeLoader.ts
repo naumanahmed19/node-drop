@@ -16,6 +16,7 @@ export interface NodePackageInfo {
   main: string;
   nodes: string[];
   credentials?: string[];
+  oauthProviders?: string[];
 }
 
 export interface NodeLoadResult {
@@ -105,6 +106,11 @@ export class NodeLoader {
           errors: compilation.errors,
           warnings: compilation.warnings,
         };
+      }
+
+      // Load OAuth providers if any
+      if (packageInfo.oauthProviders && packageInfo.oauthProviders.length > 0) {
+        await this.loadOAuthProviders(packagePath, packageInfo.oauthProviders);
       }
 
       // Load node definitions
@@ -267,7 +273,23 @@ export class NodeLoader {
       let packageInfo: NodePackageInfo;
 
       try {
-        packageInfo = JSON.parse(packageJsonContent);
+        const rawPackage = JSON.parse(packageJsonContent);
+        
+        // Extract nodeDrop configuration if it exists
+        const nodeDrop = rawPackage.nodeDrop || {};
+        
+        // Merge nodeDrop fields with root package info
+        packageInfo = {
+          name: rawPackage.name,
+          version: rawPackage.version,
+          description: rawPackage.description,
+          author: rawPackage.author,
+          keywords: rawPackage.keywords,
+          main: rawPackage.main,
+          nodes: nodeDrop.nodes || rawPackage.nodes || [],
+          credentials: nodeDrop.credentials || rawPackage.credentials,
+          oauthProviders: nodeDrop.oauthProviders || rawPackage.oauthProviders,
+        };
       } catch (parseError) {
         errors.push("Invalid package.json format");
         return { valid: false, errors, warnings };
@@ -510,6 +532,57 @@ export class NodeLoader {
     }
 
     return nodeDefinitions;
+  }
+
+  /**
+   * Load OAuth providers from a package
+   */
+  private async loadOAuthProviders(
+    packagePath: string,
+    oauthProviderPaths: string[]
+  ): Promise<void> {
+    for (const providerPath of oauthProviderPaths) {
+      try {
+        const fullPath = path.join(packagePath, providerPath);
+        await this.loadAndRegisterOAuthProvider(fullPath);
+      } catch (error) {
+        logger.error("Failed to load OAuth provider", { error, providerPath });
+      }
+    }
+  }
+
+  /**
+   * Load and register an OAuth provider
+   */
+  private async loadAndRegisterOAuthProvider(
+    providerPath: string
+  ): Promise<void> {
+    try {
+      // Clear require cache
+      delete require.cache[require.resolve(providerPath)];
+
+      // Load the provider module
+      const providerModule = require(providerPath);
+      const provider = providerModule.default || providerModule;
+
+      if (!provider || typeof provider !== "object") {
+        throw new Error("Invalid OAuth provider format");
+      }
+
+      // Validate provider has required fields
+      if (!provider.name || !provider.getAuthorizationUrl || !provider.exchangeCodeForTokens) {
+        throw new Error("OAuth provider must have name, getAuthorizationUrl, and exchangeCodeForTokens");
+      }
+
+      // Register with OAuth provider registry
+      const { oauthProviderRegistry } = require("../oauth");
+      oauthProviderRegistry.register(provider);
+
+      logger.info(`✅ Registered OAuth provider: ${provider.name}`);
+    } catch (error) {
+      logger.error("Failed to load OAuth provider", { error, providerPath });
+      throw error;
+    }
   }
 
   /**

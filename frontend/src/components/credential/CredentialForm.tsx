@@ -36,7 +36,8 @@ export function CredentialForm({
   const [isTesting, setIsTesting] = useState(false)
   const [isAuthenticating, setIsAuthenticating] = useState(false)
 
-  const isOAuthCredential = credentialType.name === 'googleOAuth2' || credentialType.name === 'googleSheetsOAuth2' || credentialType.name === 'googleDriveOAuth2'
+  // Check if this is an OAuth credential (has oauthProvider specified)
+  const isOAuthCredential = !!credentialType.oauthProvider
 
   const [contextualDisplayName, setContextualDisplayName] = useState<string>(credentialType.displayName)
 
@@ -186,7 +187,9 @@ export function CredentialForm({
         }
       }
 
-      const response = await apiClient.get(`/oauth/google/authorize?${params.toString()}`)
+      // Use the OAuth provider specified in the credential type
+      const oauthProvider = credentialType.oauthProvider || 'google'
+      const response = await apiClient.get(`/oauth/${oauthProvider}/authorize?${params.toString()}`)
 
       if (response.success && response.data?.authorizationUrl) {
         const width = 600
@@ -196,7 +199,7 @@ export function CredentialForm({
 
         const popup = window.open(
           response.data.authorizationUrl,
-          'GoogleOAuthPopup',
+          'OAuthPopup',
           `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
         )
 
@@ -213,7 +216,7 @@ export function CredentialForm({
 
           if (event.data.type === 'oauth-success') {
             window.removeEventListener('message', messageHandler)
-            toast.success('Successfully authenticated with Google!')
+            toast.success(`Successfully authenticated with ${credentialType.displayName}!`)
 
             if (event.data.credential) {
               // Add the new credential to the store immediately
@@ -236,7 +239,7 @@ export function CredentialForm({
             let errorMessage = rawError
 
             if (rawError.includes('redirect_uri_mismatch')) {
-              errorMessage = 'Redirect URI mismatch. Please ensure your Google Cloud Console has this callback URL configured: ' + response.data.callbackUrl
+              errorMessage = `Redirect URI mismatch. Please ensure your OAuth app has this callback URL configured: ${response.data.callbackUrl}`
             } else if (rawError.includes('access_denied')) {
               errorMessage = 'Access denied. You need to approve the permissions to continue.'
             } else if (rawError.includes('already exists')) {
@@ -287,7 +290,7 @@ export function CredentialForm({
 
       if (isOAuthCredential) {
         if (!credential) {
-          toast.error('Please complete "Sign in with Google" first before testing')
+          toast.error(`Please complete "Sign in with ${credentialType.displayName}" first before testing`)
           setIsTesting(false)
           return
         }
@@ -387,19 +390,23 @@ export function CredentialForm({
             type="button"
             onClick={handleOAuthAuthorization}
             disabled={isAuthenticating || isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            className="w-full"
+            style={{ 
+              backgroundColor: credentialType.color || '#6B7280',
+              color: 'white'
+            }}
           >
             {isAuthenticating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Opening Google...
+                Opening {credentialType.displayName}...
               </>
             ) : (
               <>
                 <LogIn className="w-4 h-4 mr-2" />
                 {formValues.accessToken
-                  ? 'Re-authorize with Google'
-                  : 'Sign in with Google'}
+                  ? `Re-authorize with ${credentialType.displayName}`
+                  : `Sign in with ${credentialType.displayName}`}
               </>
             )}
           </Button>
