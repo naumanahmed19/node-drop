@@ -1,4 +1,5 @@
 import { AutoComplete, AutoCompleteOption } from '@/components/ui/autocomplete'
+import { Badge } from '@/components/ui/badge'
 import { useCredentialStore } from '@/stores'
 import { Credential } from '@/types'
 import { Key, Plus } from 'lucide-react'
@@ -32,8 +33,7 @@ export function UnifiedCredentialSelector({
     credentials,
     credentialTypes,
     fetchCredentials,
-    fetchCredentialTypes,
-    isLoading
+    fetchCredentialTypes
   } = useCredentialStore()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -59,8 +59,18 @@ export function UnifiedCredentialSelector({
   const isCredentialTypesReady = credentialTypes.length > 0 && !isFetchingTypes
 
   // Filter credentials that match any of the allowed types
+  // Exclude VIEW-only credentials (they can't be used in workflows)
   const availableCredentials = useMemo(() => {
-    return credentials.filter(cred => allowedTypes.includes(cred.type))
+    return credentials.filter(cred => {
+      if (!allowedTypes.includes(cred.type)) return false
+      
+      // If credential is shared with VIEW permission only, exclude it
+      const permission = (cred as any).permission
+      const isSharedWithMe = !!(cred as any).sharedBy
+      if (isSharedWithMe && permission === 'VIEW') return false
+      
+      return true
+    })
   }, [credentials, allowedTypes])
 
   // Convert credentials to AutoComplete options
@@ -87,29 +97,56 @@ export function UnifiedCredentialSelector({
   }
 
   // Custom render for options to show credential type
-  const renderOption = (option: AutoCompleteOption) => (
-    <div className="flex items-start gap-2 flex-1 min-w-0">
-      <Key className="w-4 h-4 mt-0.5 text-gray-400 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm truncate font-medium">{option.label}</p>
-        {option.metadata?.subtitle && (
-          <p className="text-xs text-muted-foreground truncate">
-            {option.metadata.subtitle}
-          </p>
-        )}
+  const renderOption = (option: AutoCompleteOption) => {
+    const credential = availableCredentials.find(c => c.id === option.id)
+    const isSharedWithMe = !!(credential as any)?.sharedBy
+    
+    return (
+      <div className="flex items-start gap-2 flex-1 min-w-0">
+        <Key className="w-4 h-4 mt-0.5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm truncate font-medium">{option.label}</p>
+            {isSharedWithMe && (
+              <Badge variant="secondary" className="text-[9px] h-4 px-1 py-0">
+                Shared
+              </Badge>
+            )}
+          </div>
+          {option.metadata?.subtitle && (
+            <p className="text-xs text-muted-foreground truncate">
+              {option.metadata.subtitle}
+              {isSharedWithMe && (credential as any)?.sharedBy && (
+                <span className="ml-1">
+                  • by {(credential as any).sharedBy.name || (credential as any).sharedBy.email}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   // Custom render for selected value
-  const renderSelected = (option: AutoCompleteOption) => (
-    <div className="flex items-center gap-2">
-      <span className="font-medium">{option.label}</span>
-      <span className="text-xs text-muted-foreground">
-        ({option.metadata?.subtitle})
-      </span>
-    </div>
-  )
+  const renderSelected = (option: AutoCompleteOption) => {
+    const credential = availableCredentials.find(c => c.id === option.id)
+    const isSharedWithMe = !!(credential as any)?.sharedBy
+    
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="font-medium">{option.label}</span>
+        <span className="text-xs text-muted-foreground">
+          ({option.metadata?.subtitle})
+        </span>
+        {isSharedWithMe && (
+          <Badge variant="secondary" className="text-[9px] h-4 px-1 py-0">
+            Shared
+          </Badge>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2">

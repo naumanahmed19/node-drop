@@ -220,17 +220,40 @@ export class CredentialService {
 
   /**
    * Get credential by ID with decrypted data
+   * Checks both ownership and shared access
    */
   async getCredential(
     id: string,
     userId: string
   ): Promise<CredentialWithData | null> {
-    const credential = await this.prisma.credential.findFirst({
+    // First check if user owns the credential
+    let credential = await this.prisma.credential.findFirst({
       where: {
         id,
         userId,
       },
     });
+
+    let isOwner = !!credential;
+    let permission = "EDIT"; // Owner has full access
+
+    // If not owner, check if credential is shared with user
+    if (!credential) {
+      const share = await this.prisma.credentialShare.findFirst({
+        where: {
+          credentialId: id,
+          sharedWithUserId: userId,
+        },
+        include: {
+          credential: true,
+        },
+      });
+
+      if (share) {
+        credential = share.credential;
+        permission = share.permission;
+      }
+    }
 
     if (!credential) {
       return null;
@@ -246,7 +269,9 @@ export class CredentialService {
     return {
       ...credential,
       data: decryptedData,
-    };
+      isOwner,
+      permission,
+    } as any;
   }
 
   /**
@@ -704,5 +729,248 @@ export class CredentialService {
     }
 
     return obj;
+  }
+
+  // ============================================
+  // CREDENTIAL SHARING METHODS
+  // ============================================
+
+  /**
+   * Share credential with another user
+   */
+  async shareCredential(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string,
+    permission: "USE" | "VIEW" | "EDIT" = "USE",
+    sharedByUserId?: string
+  ): Promise<any> {
+    // Verify owner has access to credential
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Prevent sharing with self
+    if (ownerUserId === shareWithUserId) {
+      throw new AppError("Cannot share credential with yourself", 400);
+    }
+
+    // Verify target user exists
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: shareWithUserId },
+    });
+
+    if (!targetUser) {
+      throw new AppError("Target user not found", 404);
+    }
+
+    // Check if already shared
+    const existingShare = await this.prisma.credentialShare.findUnique({
+      where: {
+        credentialId_sharedWithUserId: {
+          credentialId,
+          sharedWithUserId: shareWithUserId,
+        },
+      },
+    });
+
+    if (existingShare) {
+      throw new AppError("Credential already shared with this user", 400);
+    }
+
+    // Create share
+    const share = await this.prisma.credentialShare.create({
+      data: {
+        credentialId,
+        ownerUserId,
+        sharedWithUserId: shareWithUserId,
+        permission,
+        sharedByUserId: sharedByUserId || ownerUserId,
+      },
+      include: {
+        sharedWith: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    logger.info(
+      `Credential shared: ${credentialId} with user ${shareWithUserId} (permission: ${permission})`
+    );
+
+    // TODO: Send email notification to shareWithUserId
+    // await emailService.sendCredentialSharedNotification(...)
+
+    return share;
+  }
+
+  /**
+   * Unshare credential (revoke access)
+   */
+  async unshareCredential(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string
+  ): Promise<void> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Delete share
+    const deleted = await this.prisma.credentialShare.deleteMany({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+    });
+
+    if (deleted.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Credential unshared: ${credentialId} from user ${shareWithUserId}`
+    );
+
+    // TODO: Send email notification to shareWithUserId
+    // await emailService.sendAccessRevokedNotification(...)
+  }
+
+  /**
+   * Get all shares for a credential
+   */
+  async getCredentialShares(
+    credentialId: string,
+    ownerUserId: string
+  ): Promise<any[]> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    return await this.prisma.credentialShare.findMany({
+      where: { credentialId },
+      include: {
+        sharedWith: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        sharedAt: "desc",
+      },
+    });
+  }
+
+  /**
+   * Update share permission
+   */
+  async updateSharePermission(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string,
+    newPermission: "USE" | "VIEW" | "EDIT"
+  ): Promise<any> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    const updated = await this.prisma.credentialShare.updateMany({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+      data: {
+        permission: newPermission,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Share permission updated: ${credentialId} for user ${shareWithUserId} to ${newPermission}`
+    );
+
+    // Return updated share
+    return await this.prisma.credentialShare.findUnique({
+      where: {
+        credentialId_sharedWithUserId: {
+          credentialId,
+          sharedWithUserId: shareWithUserId,
+        },
+      },
+      include: {
+        sharedWith: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get credentials shared WITH this user
+   */
+  async getSharedCredentials(userId: string): Promise<any[]> {
+    const shares = await this.prisma.credentialShare.findMany({
+      where: {
+        sharedWithUserId: userId,
+      },
+      include: {
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            createdAt: true,
+            updatedAt: true,
+            expiresAt: true,
+          },
+        },
+        owner: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        sharedAt: "desc",
+      },
+    });
+
+    return shares.map((share) => ({
+      ...share.credential,
+      sharedBy: share.owner,
+      permission: share.permission,
+      sharedAt: share.sharedAt,
+      isShared: true,
+    }));
   }
 }

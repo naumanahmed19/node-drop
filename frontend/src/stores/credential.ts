@@ -53,8 +53,8 @@ interface CredentialActions {
   bulkRotateCredentials: (credentialIds: string[]) => Promise<{ rotated: number; errors: string[] }>
   
   // Sharing
-  shareCredential: (credentialId: string, userIds: string[]) => Promise<void>
-  unshareCredential: (credentialId: string, userIds: string[]) => Promise<void>
+  shareCredential: (credentialId: string, userId: string, permission?: 'USE' | 'VIEW' | 'EDIT') => Promise<void>
+  unshareCredential: (credentialId: string, userId: string) => Promise<void>
   fetchSharedCredentials: () => Promise<void>
   
   // Security policies
@@ -295,18 +295,13 @@ export const useCredentialStore = createWithEqualityFn<CredentialState & Credent
   },
 
   // Sharing
-  shareCredential: async (credentialId: string, userIds: string[]) => {
+  shareCredential: async (credentialId: string, userId: string, permission: 'USE' | 'VIEW' | 'EDIT' = 'USE') => {
     set({ isLoading: true, error: null })
     try {
-      await credentialService.shareCredential(credentialId, userIds)
-      set(state => ({ 
-        credentials: state.credentials.map(c => 
-          c.id === credentialId 
-            ? { ...c, isShared: true, sharedWith: [...(c.sharedWith || []), ...userIds] }
-            : c
-        ),
-        isLoading: false 
-      }))
+      await credentialService.shareCredential(credentialId, userId, permission)
+      // Refresh credentials to get updated share status
+      const credentials = await credentialService.getCredentials()
+      set({ credentials, isLoading: false })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to share credential'
       set({ error: errorMessage, isLoading: false })
@@ -314,22 +309,13 @@ export const useCredentialStore = createWithEqualityFn<CredentialState & Credent
     }
   },
 
-  unshareCredential: async (credentialId: string, userIds: string[]) => {
+  unshareCredential: async (credentialId: string, userId: string) => {
     set({ isLoading: true, error: null })
     try {
-      await credentialService.unshareCredential(credentialId, userIds)
-      set(state => ({ 
-        credentials: state.credentials.map(c => 
-          c.id === credentialId 
-            ? { 
-                ...c, 
-                sharedWith: c.sharedWith?.filter(id => !userIds.includes(id)),
-                isShared: (c.sharedWith?.filter(id => !userIds.includes(id)).length || 0) > 0
-              }
-            : c
-        ),
-        isLoading: false 
-      }))
+      await credentialService.unshareCredential(credentialId, userId)
+      // Refresh credentials to get updated share status
+      const credentials = await credentialService.getCredentials()
+      set({ credentials, isLoading: false })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to unshare credential'
       set({ error: errorMessage, isLoading: false })

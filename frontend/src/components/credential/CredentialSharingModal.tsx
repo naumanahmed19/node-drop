@@ -1,13 +1,40 @@
 import { useState, useEffect } from 'react'
-import { X, Users, Search, UserCheck, UserX, Loader2 } from 'lucide-react'
+import { Users, Search, UserCheck, UserX, Loader2, UserPlus } from 'lucide-react'
 import { Credential } from '@/types'
-import { useCredentialStore } from '@/stores'
+import { credentialService } from '@/services'
+import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
 
 interface User {
   id: string
-  name: string
+  name: string | null
   email: string
-  avatar?: string
+}
+
+interface Share {
+  id: string
+  sharedWith: User
+  permission: 'USE' | 'VIEW' | 'EDIT'
+  sharedAt: string
 }
 
 interface CredentialSharingModalProps {
@@ -17,86 +44,106 @@ interface CredentialSharingModalProps {
 }
 
 export function CredentialSharingModal({ credential, onClose, onShare }: CredentialSharingModalProps) {
-  const { shareCredential, unshareCredential } = useCredentialStore()
-
   const [searchTerm, setSearchTerm] = useState('')
-  const [availableUsers, setAvailableUsers] = useState<User[]>([])
-  const [sharedUsers, setSharedUsers] = useState<User[]>([])
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([])
+  const [searchResults, setSearchResults] = useState<User[]>([])
+  const [shares, setShares] = useState<Share[]>([])
+  const [selectedUser, setSelectedUser] = useState<string | null>(null)
+  const [selectedPermission, setSelectedPermission] = useState<'USE' | 'VIEW' | 'EDIT'>('USE')
   const [isSharing, setIsSharing] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Mock data - in real app, this would come from an API
+  // Load existing shares
   useEffect(() => {
-    // Simulate fetching users
-    const mockUsers: User[] = [
-      { id: '1', name: 'John Doe', email: 'john@example.com' },
-      { id: '2', name: 'Jane Smith', email: 'jane@example.com' },
-      { id: '3', name: 'Bob Johnson', email: 'bob@example.com' },
-      { id: '4', name: 'Alice Brown', email: 'alice@example.com' },
-      { id: '5', name: 'Charlie Wilson', email: 'charlie@example.com' }
-    ]
+    loadShares()
+  }, [credential.id])
 
-    // Simulate currently shared users
-    const currentlyShared = mockUsers.slice(0, 2)
-    const available = mockUsers.slice(2)
+  // Search users when search term changes
+  useEffect(() => {
+    if (searchTerm.length >= 2) {
+      searchUsers()
+    } else {
+      setSearchResults([])
+    }
+  }, [searchTerm])
 
-    setSharedUsers(currentlyShared)
-    setAvailableUsers(available)
-  }, [])
+  const loadShares = async () => {
+    try {
+      const data = await credentialService.getCredentialShares(credential.id)
+      setShares(data)
+    } catch (error) {
+      console.error('Failed to load shares:', error)
+    }
+  }
 
-  const filteredUsers = availableUsers.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const searchUsers = async () => {
+    setIsSearching(true)
+    try {
+      const users = await credentialService.searchUsers(searchTerm)
+      // Filter out users who already have access
+      const filteredUsers = users.filter(
+        user => !shares.some(share => share.sharedWith.id === user.id)
+      )
+      setSearchResults(filteredUsers)
+    } catch (error) {
+      console.error('Failed to search users:', error)
+    } finally {
+      setIsSearching(false)
+    }
+  }
 
   const handleSelectUser = (userId: string) => {
-    setSelectedUsers(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
-    )
+    setSelectedUser(userId)
   }
 
   const handleShareWithSelected = async () => {
-    if (selectedUsers.length === 0) return
+    if (!selectedUser) return
 
     setIsSharing(true)
     setError(null)
 
     try {
-      await shareCredential(credential.id, selectedUsers)
-      
-      // Move selected users from available to shared
-      const usersToMove = availableUsers.filter(user => selectedUsers.includes(user.id))
-      setSharedUsers(prev => [...prev, ...usersToMove])
-      setAvailableUsers(prev => prev.filter(user => !selectedUsers.includes(user.id)))
-      setSelectedUsers([])
-      
+      await credentialService.shareCredential(credential.id, selectedUser, selectedPermission)
+      toast.success('Credential shared successfully')
+      setSearchTerm('')
+      setSearchResults([])
+      setSelectedUser(null)
+      await loadShares()
       onShare()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to share credential')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to share credential'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSharing(false)
     }
   }
 
   const handleUnshareUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to revoke access?')) return
+
     setError(null)
 
     try {
-      await unshareCredential(credential.id, [userId])
-      
-      // Move user from shared to available
-      const userToMove = sharedUsers.find(user => user.id === userId)
-      if (userToMove) {
-        setAvailableUsers(prev => [...prev, userToMove])
-        setSharedUsers(prev => prev.filter(user => user.id !== userId))
-      }
-      
+      await credentialService.unshareCredential(credential.id, userId)
+      toast.success('Access revoked successfully')
+      await loadShares()
       onShare()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to unshare credential')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to revoke access'
+      setError(errorMessage)
+      toast.error(errorMessage)
+    }
+  }
+
+  const handleUpdatePermission = async (userId: string, newPermission: 'USE' | 'VIEW' | 'EDIT') => {
+    try {
+      await credentialService.updateSharePermission(credential.id, userId, newPermission)
+      toast.success('Permission updated')
+      await loadShares()
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update permission'
+      toast.error(errorMessage)
     }
   }
 
@@ -105,173 +152,213 @@ export function CredentialSharingModal({ credential, onClose, onShare }: Credent
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Users className="w-6 h-6 text-purple-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Share Credential
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Manage access to "{credential.name}"
-                </p>
-              </div>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+              <Users className="w-5 h-5 text-purple-600" />
             </div>
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
+            <div>
+              <DialogTitle>Share Credential</DialogTitle>
+              <DialogDescription>
+                Manage access to "{credential.name}"
+              </DialogDescription>
+            </div>
           </div>
-        </div>
+        </DialogHeader>
 
-        {/* Content */}
-        <div className="px-6 py-4 max-h-96 overflow-y-auto">
+        <div className="space-y-6">
           {/* Error Display */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+              <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
 
           {/* Currently Shared Users */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">
-              Currently Shared With ({sharedUsers.length})
-            </h3>
+          <div>
+            <Label className="text-sm font-medium mb-3 block">
+              Currently Shared With ({shares.length})
+            </Label>
             
-            {sharedUsers.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">
-                <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            {shares.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">This credential is not shared with anyone</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {sharedUsers.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-medium text-purple-600">
-                          {getUserInitials(user.name)}
-                        </span>
+              <ScrollArea className="h-[200px]">
+                <div className="space-y-2 pr-4">
+                  {shares.map((share) => (
+                    <div key={share.id} className="flex items-center justify-between p-3 border rounded-lg bg-card">
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center shrink-0">
+                          <span className="text-xs font-medium text-purple-600">
+                            {getUserInitials(share.sharedWith.name || share.sharedWith.email)}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {share.sharedWith.name || share.sharedWith.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{share.sharedWith.email}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Shared {new Date(share.sharedAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <Select
+                          value={share.permission}
+                          onValueChange={(value) => handleUpdatePermission(share.sharedWith.id, value as any)}
+                        >
+                          <SelectTrigger className="w-[90px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="USE">Use</SelectItem>
+                            <SelectItem value="VIEW">View</SelectItem>
+                            <SelectItem value="EDIT">Edit</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleUnshareUser(share.sharedWith.id)}
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <UserX className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleUnshareUser(user.id)}
-                      className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                      title="Remove access"
-                    >
-                      <UserX className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
 
+          <Separator />
+
           {/* Add Users */}
           <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-3">
+            <Label className="text-sm font-medium mb-3 block">
               Share with Additional Users
-            </h3>
+            </Label>
 
             {/* Search */}
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search users by name or email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+            <div className="flex gap-2 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search users by name or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select
+                value={selectedPermission}
+                onValueChange={(value: any) => setSelectedPermission(value)}
+              >
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USE">Use</SelectItem>
+                  <SelectItem value="VIEW">View</SelectItem>
+                  <SelectItem value="EDIT">Edit</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* User List */}
-            {filteredUsers.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">
-                <Search className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">
-                  {searchTerm ? 'No users found matching your search' : 'No additional users available'}
-                </p>
+            {isSearching ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                <p className="text-sm">Searching users...</p>
               </div>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {filteredUsers.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user.id)}
-                        onChange={() => handleSelectUser(user.id)}
-                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-medium text-gray-600">
-                          {getUserInitials(user.name)}
-                        </span>
+            ) : searchResults.length === 0 && searchTerm.length >= 2 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No users found matching your search</p>
+              </div>
+            ) : searchResults.length > 0 ? (
+              <ScrollArea className="h-[180px]">
+                <div className="space-y-2 pr-4">
+                  {searchResults.map((user) => (
+                    <div 
+                      key={user.id} 
+                      className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedUser === user.id 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-border hover:bg-accent'
+                      }`}
+                      onClick={() => handleSelectUser(user.id)}
+                    >
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shrink-0">
+                          <span className="text-xs font-medium">
+                            {getUserInitials(user.name || user.email)}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {user.name || user.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
-                      </div>
+                      {selectedUser === user.id && (
+                        <UserCheck className="w-5 h-5 text-primary shrink-0" />
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              </ScrollArea>
+            ) : null}
 
             {/* Share Button */}
-            {selectedUsers.length > 0 && (
-              <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-purple-900">
-                      Share with {selectedUsers.length} user{selectedUsers.length === 1 ? '' : 's'}
+            {selectedUser && (
+              <div className="mt-3 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      Share with selected user
                     </p>
-                    <p className="text-xs text-purple-700">
-                      Selected users will gain access to this credential
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Permission: <Badge variant="outline" className="ml-1">{selectedPermission}</Badge>
                     </p>
                   </div>
-                  <button
+                  <Button
                     onClick={handleShareWithSelected}
                     disabled={isSharing}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    size="sm"
                   >
                     {isSharing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
                     ) : (
-                      <UserCheck className="w-4 h-4" />
+                      <UserPlus className="w-4 h-4 mr-2" />
                     )}
-                    <span>Share</span>
-                  </button>
+                    Share
+                  </Button>
                 </div>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            Close
-          </button>
+          {/* Permission Info */}
+          <div className="p-4 bg-muted/50 rounded-lg border">
+            <h4 className="text-sm font-medium mb-2">Permissions</h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li><strong className="text-foreground">Use:</strong> Can use credential in workflows</li>
+              <li><strong className="text-foreground">View:</strong> Can see credential details</li>
+              <li><strong className="text-foreground">Edit:</strong> Can modify credential settings</li>
+            </ul>
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
