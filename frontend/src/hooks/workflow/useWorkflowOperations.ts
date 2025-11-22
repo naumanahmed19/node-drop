@@ -57,7 +57,7 @@ export function useWorkflowOperations() {
         active: currentWorkflow.active,
         category: currentWorkflow.category || undefined,
         tags: currentWorkflow.tags,
-        teamId: currentWorkflow.teamId !== undefined ? currentWorkflow.teamId : undefined,
+        teamId: currentWorkflow.teamId !== undefined && currentWorkflow.teamId !== null ? currentWorkflow.teamId : undefined,
       };
     },
     [workflowTitle, activeNodeTypes]

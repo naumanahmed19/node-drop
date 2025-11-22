@@ -104,10 +104,10 @@ export const AIAgentNode = memo(function AIAgentNode({
               nodeLabel={nodeData.label}
               disabled={nodeData.disabled}
               isExecuting={nodeExecutionState.isExecuting}
-              hasError={nodeVisualState.hasError}
-              hasSuccess={nodeVisualState.hasSuccess}
-              executionError={nodeVisualState.error}
-              workflowExecutionStatus={nodeExecutionState.workflowExecutionStatus}
+              hasError={nodeExecutionState.hasError}
+              hasSuccess={nodeExecutionState.hasSuccess}
+              executionError={nodeExecutionState.executionError}
+              workflowExecutionStatus={nodeVisualState.status}
               onExecute={handleExecuteFromContext}
               onRetry={handleExecuteFromContext}
             />
@@ -115,12 +115,11 @@ export const AIAgentNode = memo(function AIAgentNode({
             {/* Node Header */}
             <div className="p-3">
               <NodeHeader
-                Icon={Bot}
-                iconColor="bg-purple-500"
                 label={nodeData.label}
-                status={effectiveStatus}
-                disabled={nodeData.disabled}
-                locked={nodeData.locked}
+                icon={{
+                  Icon: Bot,
+                  iconColor: "bg-purple-500"
+                }}
               />
 
               {/* Node Content */}
@@ -136,24 +135,22 @@ export const AIAgentNode = memo(function AIAgentNode({
       </ContextMenuTrigger>
 
       <NodeContextMenu
-        nodeId={id}
         nodeType={nodeData.nodeType}
-        nodeLabel={nodeData.label}
-        disabled={nodeData.disabled}
-        locked={nodeData.locked}
+        isDisabled={nodeData.disabled}
+        isLocked={nodeData.locked}
         onOpenProperties={handleOpenProperties}
         onExecute={handleExecuteFromContext}
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         onToggleLock={handleToggleLock}
-        onToggleDisabled={handleToggleDisabled}
+        onToggleDisabled={() => handleToggleDisabled(id, !nodeData.disabled)}
         onUngroup={handleUngroup}
         onGroup={handleGroup}
-        onCopy={() => copy([id])}
-        onCut={() => cut([id])}
-        onPaste={paste}
-        canCopy={canCopy([id])}
-        canPaste={canPaste()}
+        onCopy={copy || undefined}
+        onCut={cut || undefined}
+        onPaste={paste || undefined}
+        canCopy={canCopy}
+        canPaste={canPaste}
       />
     </ContextMenu>
   )

@@ -1,4 +1,4 @@
-import type { CredentialType, CredentialData } from "../../../services/CredentialService";
+import type { CredentialType, CredentialData } from "../../services/CredentialService";
 
 export const MicrosoftOAuth2Credentials: CredentialType = {
   name: "microsoftOAuth2",

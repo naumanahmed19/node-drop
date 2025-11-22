@@ -101,7 +101,7 @@ export function ScheduledExecutionsList() {
     }
   }
 
-  const deleteJob = async (workflowId: string, triggerId: string, workflowName: string) => {
+  const deleteJob = async (_workflowId: string, triggerId: string, workflowName: string) => {
     const confirmed = await showConfirm({
       title: 'Delete Trigger',
       message: `Are you sure you want to delete the trigger for "${workflowName}"?`,

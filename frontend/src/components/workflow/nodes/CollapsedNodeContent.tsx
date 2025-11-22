@@ -114,7 +114,6 @@ export function CollapsedNodeContent({
   handleToggleExpandClick,
   handleExecuteNode,
   handleRetryNode,
-  handleToggleDisabled,
   nodeExecutionState,
   executionStatus,
   customContent,

@@ -6,7 +6,7 @@
  * <Route path="/teams-demo" element={<TeamsDemo />} />
  */
 
-import * as React from "react"
+
 import { TeamSwitcher, TeamBadge, TeamShareBadges, ExampleWorkflowCards } from "@/components/team"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
