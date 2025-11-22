@@ -3,8 +3,7 @@
  * This demonstrates the visual design - not meant for production use
  */
 
-import * as React from "react"
-import { Workflow, MoreVertical, Play, Clock } from "lucide-react"
+import { Workflow, MoreVertical, Clock } from "lucide-react"
 import { TeamBadge, TeamShareBadges } from "./TeamBadge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"

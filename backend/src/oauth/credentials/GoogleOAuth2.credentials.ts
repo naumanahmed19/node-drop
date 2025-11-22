@@ -1,4 +1,4 @@
-import { CredentialType, CredentialData } from "../../../services/CredentialService";
+import { CredentialType, CredentialData } from "../../services/CredentialService";
 
 /**
  * Generic Google OAuth2 Credential

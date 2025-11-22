@@ -9,7 +9,7 @@ import {
   Download,
   ExternalLink
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 
 interface NodeMarketplaceProps {

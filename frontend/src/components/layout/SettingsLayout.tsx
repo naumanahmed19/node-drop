@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { User, Webhook } from 'lucide-react'
+import { Webhook } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
 interface SettingsLayoutProps {

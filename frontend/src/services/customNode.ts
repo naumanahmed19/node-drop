@@ -160,8 +160,7 @@ export class CustomNodeService {
     if (filters.author) params.set("author", filters.author);
     if (filters.verified !== undefined)
       params.set("verified", filters.verified.toString());
-    if (filters.minRating)
-      params.set("minRating", filters.minRating.toString());
+
     if (filters.tags) params.set("tags", filters.tags.join(","));
     if (filters.sortBy) params.set("sortBy", filters.sortBy);
     if (filters.sortOrder) params.set("sortOrder", filters.sortOrder);

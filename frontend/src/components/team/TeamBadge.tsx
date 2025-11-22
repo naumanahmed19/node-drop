@@ -1,4 +1,4 @@
-import * as React from "react"
+
 import { Users, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
