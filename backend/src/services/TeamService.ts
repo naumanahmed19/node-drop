@@ -57,7 +57,7 @@ export class TeamService {
             select: { id: true, name: true, email: true },
           },
           _count: {
-            select: { members: true, workflows: true, credentials: true },
+            select: { members: true, workflows: true, sharedCredentials: true },
           },
         },
       });
@@ -104,7 +104,7 @@ export class TeamService {
             },
           },
           _count: {
-            select: { workflows: true, credentials: true },
+            select: { workflows: true, sharedCredentials: true },
           },
         },
         orderBy: { createdAt: "desc" },
@@ -145,7 +145,7 @@ export class TeamService {
             },
           },
           _count: {
-            select: { workflows: true, credentials: true },
+            select: { workflows: true, sharedCredentials: true },
           },
         },
       });
@@ -204,7 +204,7 @@ export class TeamService {
             select: { id: true, name: true, email: true },
           },
           _count: {
-            select: { members: true, workflows: true, credentials: true },
+            select: { members: true, workflows: true, sharedCredentials: true },
           },
         },
       });
@@ -513,12 +513,10 @@ export class TeamService {
       }
 
       // Check if already shared
-      const existingShare = await prisma.teamCredentialShare.findUnique({
+      const existingShare = await prisma.credentialShare.findFirst({
         where: {
-          credentialId_teamId: {
-            credentialId,
-            teamId,
-          },
+          credentialId,
+          sharedWithTeamId: teamId,
         },
       });
 
@@ -527,16 +525,18 @@ export class TeamService {
       }
 
       // Create share
-      const share = await prisma.teamCredentialShare.create({
+      const share = await prisma.credentialShare.create({
         data: {
           credentialId,
-          teamId,
+          ownerUserId: userId,
+          sharedWithUserId: null,
+          sharedWithTeamId: teamId,
           permission,
-          sharedBy: userId,
+          sharedByUserId: userId,
         },
         include: {
-          team: {
-            select: { id: true, name: true, slug: true },
+          sharedWithTeam: {
+            select: { id: true, name: true, slug: true, color: true },
           },
           credential: {
             select: { id: true, name: true, type: true },
@@ -574,10 +574,10 @@ export class TeamService {
       }
 
       // Delete share
-      const deleted = await prisma.teamCredentialShare.deleteMany({
+      const deleted = await prisma.credentialShare.deleteMany({
         where: {
           credentialId,
-          teamId,
+          sharedWithTeamId: teamId,
         },
       });
 
@@ -605,8 +605,8 @@ export class TeamService {
         throw new AppError("Access denied to team", 403);
       }
 
-      const shares = await prisma.teamCredentialShare.findMany({
-        where: { teamId },
+      const shares = await prisma.credentialShare.findMany({
+        where: { sharedWithTeamId: teamId },
         include: {
           credential: {
             select: {
@@ -619,7 +619,7 @@ export class TeamService {
               expiresAt: true,
             },
           },
-          sharer: {
+          sharedBy: {
             select: { id: true, name: true, email: true },
           },
         },
@@ -647,10 +647,13 @@ export class TeamService {
         throw new AppError("Credential not found or access denied", 404);
       }
 
-      const shares = await prisma.teamCredentialShare.findMany({
-        where: { credentialId },
+      const shares = await prisma.credentialShare.findMany({
+        where: { 
+          credentialId,
+          sharedWithTeamId: { not: null }
+        },
         include: {
-          team: {
+          sharedWithTeam: {
             select: { id: true, name: true, slug: true, color: true },
           },
         },
@@ -683,10 +686,10 @@ export class TeamService {
         throw new AppError("Credential not found or access denied", 404);
       }
 
-      const updated = await prisma.teamCredentialShare.updateMany({
+      const updated = await prisma.credentialShare.updateMany({
         where: {
           credentialId,
-          teamId,
+          sharedWithTeamId: teamId,
         },
         data: {
           permission: newPermission,
@@ -702,16 +705,14 @@ export class TeamService {
       );
 
       // Return updated share
-      return await prisma.teamCredentialShare.findUnique({
+      return await prisma.credentialShare.findFirst({
         where: {
-          credentialId_teamId: {
-            credentialId,
-            teamId,
-          },
+          credentialId,
+          sharedWithTeamId: teamId,
         },
         include: {
-          team: {
-            select: { id: true, name: true, slug: true },
+          sharedWithTeam: {
+            select: { id: true, name: true, slug: true, color: true },
           },
         },
       });

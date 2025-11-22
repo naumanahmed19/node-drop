@@ -9,26 +9,25 @@ datasource db {
 }
 
 model User {
-  id                       String                @id @default(cuid())
-  email                    String                @unique
+  id                       String            @id @default(cuid())
+  email                    String            @unique
   password                 String
   name                     String?
-  role                     UserRole              @default(USER)
-  active                   Boolean               @default(true)
-  preferences              Json?                 @default("{}")
+  role                     UserRole          @default(USER)
+  active                   Boolean           @default(true)
+  preferences              Json?             @default("{}")
   resetToken               String?
   resetTokenExpiry         DateTime?
-  createdAt                DateTime              @default(now())
-  updatedAt                DateTime              @updatedAt
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
   credentials              Credential[]
   workflows                Workflow[]
   variables                Variable[]
-  ownedCredentialShares    CredentialShare[]     @relation("CredentialOwner")
-  receivedCredentialShares CredentialShare[]     @relation("CredentialSharedWith")
-  performedShares          CredentialShare[]     @relation("CredentialSharedBy")
-  ownedTeams               Team[]                @relation("TeamOwner")
+  ownedCredentialShares    CredentialShare[] @relation("CredentialOwner")
+  receivedCredentialShares CredentialShare[] @relation("CredentialSharedWith")
+  performedShares          CredentialShare[] @relation("CredentialSharedBy")
+  ownedTeams               Team[]            @relation("TeamOwner")
   teamMemberships          TeamMember[]
-  teamCredentialShares     TeamCredentialShare[] @relation("TeamCredentialSharer")
 
   @@map("users")
 }
@@ -194,17 +193,16 @@ model NodeExecution {
 }
 
 model Credential {
-  id         String                @id @default(cuid())
-  name       String
-  type       String
-  userId     String
-  data       String
-  createdAt  DateTime              @default(now())
-  updatedAt  DateTime              @updatedAt
-  expiresAt  DateTime?
-  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shares     CredentialShare[]
-  teamShares TeamCredentialShare[]
+  id        String            @id @default(cuid())
+  name      String
+  type      String
+  userId    String
+  data      String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  expiresAt DateTime?
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares    CredentialShare[]
 
   @@unique([userId, name])
   @@map("credentials")
@@ -214,18 +212,22 @@ model CredentialShare {
   id               String          @id @default(cuid())
   credentialId     String
   ownerUserId      String
-  sharedWithUserId String
+  sharedWithUserId String?
+  sharedWithTeamId String?
   permission       SharePermission @default(USE)
   sharedAt         DateTime        @default(now())
   sharedByUserId   String?
   credential       Credential      @relation(fields: [credentialId], references: [id], onDelete: Cascade)
   owner            User            @relation("CredentialOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  sharedWith       User            @relation("CredentialSharedWith", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedWithUser   User?           @relation("CredentialSharedWith", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedWithTeam   Team?           @relation("CredentialSharedWithTeam", fields: [sharedWithTeamId], references: [id], onDelete: Cascade)
   sharedBy         User?           @relation("CredentialSharedBy", fields: [sharedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([credentialId, sharedWithUserId])
+  @@unique([credentialId, sharedWithTeamId])
   @@index([credentialId])
   @@index([sharedWithUserId])
+  @@index([sharedWithTeamId])
   @@index([ownerUserId])
   @@map("credential_shares")
 }
@@ -237,19 +239,19 @@ enum SharePermission {
 }
 
 model Team {
-  id          String                @id @default(cuid())
-  name        String
-  slug        String                @unique
-  description String?
-  ownerId     String
-  color       String                @default("#3b82f6")
-  settings    Json                  @default("{}")
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
-  owner       User                  @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members     TeamMember[]
-  workflows   Workflow[]
-  credentials TeamCredentialShare[]
+  id                String            @id @default(cuid())
+  name              String
+  slug              String            @unique
+  description       String?
+  ownerId           String
+  color             String            @default("#3b82f6")
+  settings          Json              @default("{}")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  owner             User              @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members           TeamMember[]
+  workflows         Workflow[]
+  sharedCredentials CredentialShare[] @relation("CredentialSharedWithTeam")
 
   @@index([ownerId])
   @@map("teams")
@@ -274,23 +276,6 @@ enum TeamRole {
   OWNER
   MEMBER
   VIEWER
-}
-
-model TeamCredentialShare {
-  id           String          @id @default(cuid())
-  credentialId String
-  teamId       String
-  permission   SharePermission @default(USE)
-  sharedAt     DateTime        @default(now())
-  sharedBy     String?
-  credential   Credential      @relation(fields: [credentialId], references: [id], onDelete: Cascade)
-  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  sharer       User?           @relation("TeamCredentialSharer", fields: [sharedBy], references: [id], onDelete: SetNull)
-
-  @@unique([credentialId, teamId])
-  @@index([credentialId])
-  @@index([teamId])
-  @@map("team_credential_shares")
 }
 
 model Variable {
