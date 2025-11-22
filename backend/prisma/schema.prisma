@@ -9,23 +9,26 @@ datasource db {
 }
 
 model User {
-  id                       String            @id @default(cuid())
-  email                    String            @unique
+  id                       String                @id @default(cuid())
+  email                    String                @unique
   password                 String
   name                     String?
-  role                     UserRole          @default(USER)
-  active                   Boolean           @default(true)
-  preferences              Json?             @default("{}")
+  role                     UserRole              @default(USER)
+  active                   Boolean               @default(true)
+  preferences              Json?                 @default("{}")
   resetToken               String?
   resetTokenExpiry         DateTime?
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
   credentials              Credential[]
   workflows                Workflow[]
   variables                Variable[]
-  ownedCredentialShares    CredentialShare[] @relation("CredentialOwner")
-  receivedCredentialShares CredentialShare[] @relation("CredentialSharedWith")
-  performedShares          CredentialShare[] @relation("CredentialSharedBy")
+  ownedCredentialShares    CredentialShare[]     @relation("CredentialOwner")
+  receivedCredentialShares CredentialShare[]     @relation("CredentialSharedWith")
+  performedShares          CredentialShare[]     @relation("CredentialSharedBy")
+  ownedTeams               Team[]                @relation("TeamOwner")
+  teamMemberships          TeamMember[]
+  teamCredentialShares     TeamCredentialShare[] @relation("TeamCredentialSharer")
 
   @@map("users")
 }
@@ -45,47 +48,50 @@ model Category {
 }
 
 model Workflow {
-  id               String                  @id @default(cuid())
+  id               String                @id @default(cuid())
   name             String
   description      String?
   category         String?
-  tags             String[]                @default([])
+  tags             String[]              @default([])
   userId           String
-  nodes            Json                    @default("[]")
-  connections      Json                    @default("[]")
-  triggers         Json                    @default("[]")
-  settings         Json                    @default("{}")
-  active           Boolean                 @default(false)
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  teamId           String? // NULL = personal, value = team
+  nodes            Json                  @default("[]")
+  connections      Json                  @default("[]")
+  triggers         Json                  @default("[]")
+  settings         Json                  @default("{}")
+  active           Boolean               @default(false)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   executionHistory ExecutionHistory[]
   executions       Execution[]
   variables        Variable[]
   environments     WorkflowEnvironment[]
   triggerJobs      TriggerJob[]
-  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team             Team?                 @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
+  @@index([userId, teamId])
   @@map("workflows")
 }
 
 model WorkflowEnvironment {
-  id             String                       @id @default(cuid())
+  id             String                          @id @default(cuid())
   workflowId     String
-  environment    EnvironmentType              @default(DEVELOPMENT)
-  version        String                       @default("1.0.0")
-  nodes          Json                         @default("[]")
-  connections    Json                         @default("[]")
-  triggers       Json                         @default("[]")
-  settings       Json                         @default("{}")
-  variables      Json                         @default("{}")
-  active         Boolean                      @default(false)
+  environment    EnvironmentType                 @default(DEVELOPMENT)
+  version        String                          @default("1.0.0")
+  nodes          Json                            @default("[]")
+  connections    Json                            @default("[]")
+  triggers       Json                            @default("[]")
+  settings       Json                            @default("{}")
+  variables      Json                            @default("{}")
+  active         Boolean                         @default(false)
   deployedAt     DateTime?
   deployedBy     String?
   deploymentNote String?
-  status         EnvironmentStatus            @default(DRAFT)
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
-  workflow       Workflow                     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status         EnvironmentStatus               @default(DRAFT)
+  createdAt      DateTime                        @default(now())
+  updatedAt      DateTime                        @updatedAt
+  workflow       Workflow                        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   deployments    WorkflowEnvironmentDeployment[]
 
   @@unique([workflowId, environment])
@@ -103,9 +109,9 @@ model WorkflowEnvironmentDeployment {
   deployedAt        DateTime            @default(now())
   sourceEnvironment EnvironmentType?
   deploymentNote    String?
-  snapshot          Json                // Complete snapshot of workflow state
+  snapshot          Json // Complete snapshot of workflow state
   status            DeploymentStatus    @default(SUCCESS)
-  rollbackFrom      String?             // ID of deployment this rolled back from
+  rollbackFrom      String? // ID of deployment this rolled back from
   createdAt         DateTime            @default(now())
   environment       WorkflowEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
@@ -152,9 +158,9 @@ model Execution {
   pausedAt            DateTime?
   progress            Int?                 @default(0)
   resumedAt           DateTime?
-  workflowSnapshot    Json?                // Workflow state at execution time (nodes, connections, settings)
-  snapshotVersion     String?              // Snapshot version for tracking
-  snapshotHash        String?              // Hash of workflow structure for quick comparison
+  workflowSnapshot    Json? // Workflow state at execution time (nodes, connections, settings)
+  snapshotVersion     String? // Snapshot version for tracking
+  snapshotHash        String? // Hash of workflow structure for quick comparison
   executionHistory    ExecutionHistory[]
   workflow            Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   flowExecutionStates FlowExecutionState[]
@@ -188,16 +194,17 @@ model NodeExecution {
 }
 
 model Credential {
-  id        String            @id @default(cuid())
-  name      String
-  type      String
-  userId    String
-  data      String
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  expiresAt DateTime?
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shares    CredentialShare[]
+  id         String                @id @default(cuid())
+  name       String
+  type       String
+  userId     String
+  data       String
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  expiresAt  DateTime?
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares     CredentialShare[]
+  teamShares TeamCredentialShare[]
 
   @@unique([userId, name])
   @@map("credentials")
@@ -224,9 +231,66 @@ model CredentialShare {
 }
 
 enum SharePermission {
-  USE  // Can use in workflows
+  USE // Can use in workflows
   VIEW // Can see credential details
   EDIT // Can modify credential
+}
+
+model Team {
+  id          String                @id @default(cuid())
+  name        String
+  slug        String                @unique
+  description String?
+  ownerId     String
+  color       String                @default("#3b82f6")
+  settings    Json                  @default("{}")
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  owner       User                  @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  workflows   Workflow[]
+  credentials TeamCredentialShare[]
+
+  @@index([ownerId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  OWNER
+  MEMBER
+  VIEWER
+}
+
+model TeamCredentialShare {
+  id           String          @id @default(cuid())
+  credentialId String
+  teamId       String
+  permission   SharePermission @default(USE)
+  sharedAt     DateTime        @default(now())
+  sharedBy     String?
+  credential   Credential      @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  sharer       User?           @relation("TeamCredentialSharer", fields: [sharedBy], references: [id], onDelete: SetNull)
+
+  @@unique([credentialId, teamId])
+  @@index([credentialId])
+  @@index([teamId])
+  @@map("team_credential_shares")
 }
 
 model Variable {
@@ -264,17 +328,17 @@ model NodeType {
   defaults           Json     @default("{}")
   inputs             String[]
   outputs            String[]
-  inputsConfig       Json?    // Configuration for input positioning (left, right, top, bottom)
+  inputsConfig       Json? // Configuration for input positioning (left, right, top, bottom)
   properties         Json     @default("[]")
-  credentials        Json?    // Credential type definitions
-  credentialSelector Json?    // Unified credential selector configuration
+  credentials        Json? // Credential type definitions
+  credentialSelector Json? // Unified credential selector configuration
   icon               String?
   color              String?
-  outputComponent    String?  // Custom output component identifier for dynamic rendering
+  outputComponent    String? // Custom output component identifier for dynamic rendering
   active             Boolean  @default(true)
   isTemplate         Boolean  @default(false) // Flag to identify template nodes
-  templateData       Json?    // Template structure (nodes and connections)
-  nodeCategory       String?  // Category for execution control: 'service' or 'tool'
+  templateData       Json? // Template structure (nodes and connections)
+  nodeCategory       String? // Category for execution control: 'service' or 'tool'
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -365,11 +429,11 @@ enum NodeExecutionStatus {
 model TriggerJob {
   id             String    @id @default(cuid())
   workflowId     String
-  triggerId      String    // References trigger.id in workflow.triggers JSON
+  triggerId      String // References trigger.id in workflow.triggers JSON
   type           String    @default("schedule") // 'schedule' or 'polling'
   jobKey         String    @unique // Bull queue job key (for schedule) or trigger ID (for polling)
-  cronExpression String?   // Only for schedule type
-  pollInterval   Int?      // Only for polling type (in seconds)
+  cronExpression String? // Only for schedule type
+  pollInterval   Int? // Only for polling type (in seconds)
   timezone       String    @default("UTC")
   description    String?
   active         Boolean   @default(true)
@@ -391,22 +455,22 @@ model TriggerJob {
 model WebhookRequestLog {
   id           String   @id @default(cuid())
   type         String   @default("webhook") // 'webhook', 'form', 'chat'
-  webhookId    String   // The webhook/form/chat identifier (path or UUID)
-  workflowId   String   // For filtering by workflow
-  userId       String   // For access control
+  webhookId    String // The webhook/form/chat identifier (path or UUID)
+  workflowId   String // For filtering by workflow
+  userId       String // For access control
   timestamp    DateTime @default(now())
-  method       String   // GET, POST, PUT, DELETE, PATCH
-  path         String   // Full path including query
-  headers      Json     // Sanitized headers (no auth tokens)
-  body         Json?    // Request body (truncated if large)
-  query        Json?    // Query parameters
+  method       String // GET, POST, PUT, DELETE, PATCH
+  path         String // Full path including query
+  headers      Json // Sanitized headers (no auth tokens)
+  body         Json? // Request body (truncated if large)
+  query        Json? // Query parameters
   ip           String
   userAgent    String?
-  status       String   // 'success', 'rejected', 'failed'
-  reason       String?  // Why rejected (e.g., "Authentication failed")
-  executionId  String?  // Link to execution if created
-  responseCode Int      // HTTP response code (200, 401, 500, etc.)
-  responseTime Int      // Response time in milliseconds
+  status       String // 'success', 'rejected', 'failed'
+  reason       String? // Why rejected (e.g., "Authentication failed")
+  executionId  String? // Link to execution if created
+  responseCode Int // HTTP response code (200, 401, 500, etc.)
+  responseTime Int // Response time in milliseconds
   testMode     Boolean  @default(false)
   createdAt    DateTime @default(now())
 

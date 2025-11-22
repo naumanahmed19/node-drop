@@ -15,6 +15,7 @@ import {
 import { WorkflowsHeader } from '@/components/workflow/WorkflowsHeader'
 import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { useSidebarContext } from '@/contexts'
+import { useTeam } from '@/contexts/TeamContext'
 import { workflowService } from '@/services'
 import type { Workflow } from '@/types'
 import {
@@ -34,6 +35,7 @@ interface WorkflowsListProps { }
 export function WorkflowsList({ }: WorkflowsListProps) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { currentTeamId } = useTeam()
   const {
     workflowsData: workflows,
     setWorkflowsData: setWorkflows,
@@ -94,17 +96,32 @@ export function WorkflowsList({ }: WorkflowsListProps) {
   }
 
   useEffect(() => {
+    console.log('fetch workflows for team:', currentTeamId)
+    fetchWorkflows(true) // Force refresh when team changes
+  }, [currentTeamId])
+
+  useEffect(() => {
     console.log('fetch workflows')
     fetchWorkflows()
   }, [isWorkflowsLoaded, setWorkflows, setIsWorkflowsLoaded, setError])
 
-  // Filter workflows based on search term
+  // Filter workflows based on team and search term
   const filteredWorkflows = useMemo(() => {
-    if (!searchTerm) return workflows
+    // First filter by team
+    let teamFilteredWorkflows = workflows.filter(workflow => {
+      // If currentTeamId is null, show only personal workflows (teamId is null)
+      // If currentTeamId is set, show only workflows for that team
+      if (currentTeamId === null) {
+        return workflow.teamId === null || workflow.teamId === undefined
+      }
+      return workflow.teamId === currentTeamId
+    })
 
+    // Then filter by search term
+    if (!searchTerm) return teamFilteredWorkflows
 
-    console.log('workflows workflows', workflows)
-    return workflows.filter(workflow =>
+    console.log('workflows workflows', teamFilteredWorkflows)
+    return teamFilteredWorkflows.filter(workflow =>
       workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       workflow.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       workflow.category?.toLowerCase().includes(searchTerm.toLowerCase())

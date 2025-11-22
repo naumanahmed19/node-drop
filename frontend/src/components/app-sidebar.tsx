@@ -3,6 +3,12 @@ import { CredentialsList } from "@/components/credential/CredentialsList"
 import { ExecutionsList, ScheduledExecutionsList } from "@/components/execution"
 import { NavUser } from "@/components/nav-user"
 import { NodeTypesList } from "@/components/node/NodeTypesList"
+import { TeamSwitcher } from "@/components/team/TeamSwitcher"
+import { TeamsList } from "@/components/team/TeamsList"
+import { CreateTeamModal } from "@/components/team/CreateTeamModal"
+import { AddMemberModal } from "@/components/team/AddMemberModal"
+import { ManageMembersDialog } from "@/components/team/ManageMembersDialog"
+import { TeamSettingsModal } from "@/components/team/TeamSettingsModal"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/components/ui/ConfirmDialog"
 import {
@@ -21,7 +27,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { VariablesList } from "@/components/variable/VariablesList"
 import { WorkflowsList } from "@/components/workflow/WorkflowsList"
-import { useSidebarContext, useTheme } from "@/contexts"
+import { useSidebarContext, useTheme, useTeam } from "@/contexts"
 import { useAuthStore, useReactFlowUIStore, useWorkflowStore } from "@/stores"
 import {
     Activity,
@@ -36,6 +42,7 @@ import {
     Plus,
     Settings,
     Sun,
+    Users,
     Variable,
     Workflow,
     ZoomIn,
@@ -95,6 +102,12 @@ const data = {
   ],
   bottomItems: [
     {
+      title: "Teams",
+      url: "#",
+      icon: Users,
+      isActive: false,
+    },
+    {
       title: "Active Triggers",
       url: "#",
       icon: CalendarClock,
@@ -131,10 +144,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   
   // Theme hook
   const { theme, setTheme } = useTheme()
+  
+  // Team hook
+  const { teams } = useTeam()
 
   // Get workflow state to check for unsaved changes
   const { isDirty, isTitleDirty } = useWorkflowStore()
   const { showConfirm, ConfirmDialog } = useConfirmDialog()
+
+  // Team modals state
+  const [isCreateTeamModalOpen, setIsCreateTeamModalOpen] = React.useState(false)
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = React.useState(false)
+  const [isManageMembersDialogOpen, setIsManageMembersDialogOpen] = React.useState(false)
+  const [isTeamSettingsModalOpen, setIsTeamSettingsModalOpen] = React.useState(false)
+  const [selectedTeam, setSelectedTeam] = React.useState<{ id: string; name: string; userRole: string } | null>(null)
+  const [selectedTeamForSettings, setSelectedTeamForSettings] = React.useState<{ id: string; name: string; description?: string; color: string } | null>(null)
 
   const handleNavigation = async (url: string) => {
     // Check if navigating to "New Workflow" and there are unsaved changes
@@ -322,6 +346,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarHeader>
         ) : (
           <SidebarHeader className="gap-3.5 border-b p-4">
+            {/* Team Switcher - Only show for context-aware views and when user has teams */}
+            {teams.length > 0 && (activeWorkflowItem?.title === "All Workflows" || 
+              activeWorkflowItem?.title === "All Credentials") && (
+              <TeamSwitcher 
+                onTeamChange={(teamId) => {
+                  console.log("Team changed to:", teamId)
+                  // TODO: Update context and reload data
+                }}
+              />
+            )}
+            
             <div className="flex w-full items-center justify-between">
               <div className="text-foreground text-base font-medium">
                 {activeWorkflowItem?.title}
@@ -358,6 +393,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   
                   {activeWorkflowItem?.title === "Executions" && (
                     <ExecutionsList />
+                  )}
+                  
+                  {activeWorkflowItem?.title === "Teams" && (
+                    <TeamsList 
+                      onTeamSelect={(team) => {
+                        setSelectedTeam(team)
+                        setIsManageMembersDialogOpen(true)
+                      }}
+                      onCreateTeam={() => {
+                        setIsCreateTeamModalOpen(true)
+                      }}
+                      onTeamSettings={(team) => {
+                        setSelectedTeamForSettings(team)
+                        setIsTeamSettingsModalOpen(true)
+                      }}
+                    />
                   )}
                   
                   {activeWorkflowItem?.title === "Active Triggers" && (
@@ -445,6 +496,58 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </Sidebar>
       </div>
       <ConfirmDialog />
+      <CreateTeamModal 
+        open={isCreateTeamModalOpen}
+        onOpenChange={setIsCreateTeamModalOpen}
+        onSuccess={(teamId) => {
+          console.log("Team created:", teamId)
+        }}
+      />
+      {selectedTeam && (
+        <>
+          <AddMemberModal 
+            open={isAddMemberModalOpen}
+            onOpenChange={setIsAddMemberModalOpen}
+            teamId={selectedTeam.id}
+            teamName={selectedTeam.name}
+            onSuccess={() => {
+              // Refresh members list
+              setIsManageMembersDialogOpen(true)
+            }}
+          />
+          <ManageMembersDialog 
+            open={isManageMembersDialogOpen}
+            onOpenChange={setIsManageMembersDialogOpen}
+            teamId={selectedTeam.id}
+            teamName={selectedTeam.name}
+            userRole={selectedTeam.userRole as any}
+            onAddMember={() => {
+              setIsManageMembersDialogOpen(false)
+              setIsAddMemberModalOpen(true)
+            }}
+          />
+        </>
+      )}
+      {selectedTeamForSettings && (
+        <TeamSettingsModal 
+          open={isTeamSettingsModalOpen}
+          onOpenChange={setIsTeamSettingsModalOpen}
+          teamId={selectedTeamForSettings.id}
+          initialData={{
+            name: selectedTeamForSettings.name,
+            description: selectedTeamForSettings.description,
+            color: selectedTeamForSettings.color,
+          }}
+          onSuccess={() => {
+            // Team updated successfully
+          }}
+          onDelete={() => {
+            // Team deleted, close modal
+            setIsTeamSettingsModalOpen(false)
+            setSelectedTeamForSettings(null)
+          }}
+        />
+      )}
     </Sidebar>
   )
 }

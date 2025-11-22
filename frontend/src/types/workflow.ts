@@ -81,6 +81,7 @@ export interface Workflow {
   name: string;
   description?: string;
   userId: string;
+  teamId?: string | null;
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   settings: WorkflowSettings;

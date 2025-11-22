@@ -15,6 +15,7 @@ export interface CreateWorkflowRequest {
   description?: string;
   category?: string;
   tags?: string[];
+  teamId?: string;
 }
 
 export interface UpdateWorkflowRequest {
@@ -27,6 +28,7 @@ export interface UpdateWorkflowRequest {
   tags?: string[];
   category?: string;
   isPublic?: boolean;
+  teamId?: string | null;
 }
 
 export interface WorkflowFilters {

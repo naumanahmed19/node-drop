@@ -485,4 +485,30 @@ router.delete(
   })
 );
 
+// ============================================
+// CREDENTIAL TEAM SHARING ROUTES
+// ============================================
+
+// Get teams a credential is shared with
+router.get(
+  "/:id/teams",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+
+    // Import TeamService
+    const { TeamService } = await import("../services/TeamService");
+    
+    const shares = await TeamService.getCredentialTeamShares(
+      id,
+      req.user!.id
+    );
+
+    res.json({
+      success: true,
+      data: shares,
+    });
+  })
+);
+
 export default router;

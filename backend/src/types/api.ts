@@ -33,6 +33,7 @@ export const CreateWorkflowSchema = z.object({
     .nullish()
     .transform((val) => val || undefined),
   tags: z.array(z.string()).default([]),
+  teamId: z.string().nullable().optional(),
   nodes: z
     .array(
       z.object({

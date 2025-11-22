@@ -2,7 +2,7 @@ import { Layout, ProtectedRoute, WorkflowEditorLayout } from '@/components'
 import { GlobalToastProvider } from '@/components/providers/GlobalToastProvider'
 import { Toaster } from '@/components/ui/sonner'
 
-import { SidebarContextProvider, ThemeProvider } from '@/contexts'
+import { SidebarContextProvider, TeamProvider, ThemeProvider } from '@/contexts'
 import {
     CustomNodesPage,
     ExecutionsPage,
@@ -28,7 +28,8 @@ function App() {
       >
         <ThemeProvider>
           <SidebarContextProvider>
-          <Routes>
+            <TeamProvider>
+              <Routes>
           {/* Public routes */}
           <Route
             path="/login"
@@ -115,10 +116,11 @@ function App() {
 
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-          <Toaster />
-          <GlobalToastProvider />
-        </SidebarContextProvider>
+              </Routes>
+              <Toaster />
+              <GlobalToastProvider />
+            </TeamProvider>
+          </SidebarContextProvider>
         </ThemeProvider>
       </Router>
     </>

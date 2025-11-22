@@ -24,6 +24,7 @@ import oauthGenericRoutes from "./routes/oauth-generic";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
 import aiMemoryRoutes from "./routes/ai-memory.routes";
+import teamRoutes from "./routes/teams";
 import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
 import variableRoutes from "./routes/variables";
@@ -424,6 +425,7 @@ app.get("/", (req, res) => {
       nodeTypes: "/api/node-types",
       credentials: "/api/credentials",
       variables: "/api/variables",
+      teams: "/api/teams",
       triggers: "/api/triggers",
       webhooks: "/webhook/{webhookId}",
       webhookTest: "/webhook/{webhookId}/test",
@@ -457,6 +459,7 @@ app.use("/api/nodes", nodeRoutes);
 app.use("/api/node-types", nodeTypeRoutes);
 app.use("/api/credentials", credentialRoutes);
 app.use("/api/variables", variableRoutes);
+app.use("/api/teams", teamRoutes);
 app.use("/api/triggers", triggerRoutes);
 app.use("/api/custom-nodes", customNodeRoutes);
 app.use("/api/flow-execution", flowExecutionRoutes);

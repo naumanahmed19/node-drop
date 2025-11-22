@@ -149,6 +149,7 @@ export class WorkflowService {
           category: data.category,
           tags: data.tags || [],
           userId,
+          teamId: data.teamId,
           nodes: data.nodes as any,
           connections: data.connections,
           triggers: normalizedTriggers,
@@ -261,6 +262,7 @@ export class WorkflowService {
           }),
           ...(data.category !== undefined && { category: data.category }),
           ...(data.tags !== undefined && { tags: data.tags }),
+          ...(data.teamId !== undefined && { teamId: data.teamId }),
           ...(data.nodes && { nodes: data.nodes as any }),
           ...(data.connections && { connections: data.connections as any }),
           ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
@@ -370,6 +372,7 @@ export class WorkflowService {
             category: true,
             tags: true,
             active: true,
+            teamId: true,
             createdAt: true,
             updatedAt: true,
             _count: {
@@ -465,6 +468,7 @@ export class WorkflowService {
             createdAt: true,
             updatedAt: true,
             userId: true,
+            teamId: true,
             category: true,
             tags: true,
             _count: {

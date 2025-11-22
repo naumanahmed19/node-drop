@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { CategorySelect } from './CategorySelect'
+import { TeamSwitcher } from '@/components/team/TeamSwitcher'
+import { useTeam } from '@/contexts/TeamContext'
 import { Database } from 'lucide-react'
 import React, { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -24,6 +26,7 @@ interface WorkflowOnboardingDialogProps {
     name: string
     category: string
     saveExecutionHistory: boolean
+    teamId?: string | null
   }) => void
   onClose: () => void
   defaultName?: string
@@ -42,6 +45,9 @@ export function WorkflowOnboardingDialog({
   const [name, setName] = useState(defaultName)
   const [category, setCategory] = useState(defaultCategory)
   const [saveExecutionHistory, setSaveExecutionHistory] = useState(defaultSaveExecutionHistory)
+  
+  // Get teams and current team selection
+  const { teams, currentTeamId } = useTeam()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,6 +56,7 @@ export function WorkflowOnboardingDialog({
         name: name.trim(),
         category,
         saveExecutionHistory,
+        teamId: currentTeamId, // Pass the selected team ID
       })
     }
   }
@@ -86,6 +93,17 @@ export function WorkflowOnboardingDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6 mt-2">
+          {/* Team Switcher - Only show if user has teams */}
+          {teams.length > 0 && (
+            <div className="space-y-2">
+              <Label>Workspace</Label>
+              <TeamSwitcher />
+              <p className="text-xs text-muted-foreground">
+                Choose whether this workflow is personal or belongs to a team
+              </p>
+            </div>
+          )}
+
           {/* Workflow Name */}
           <div className="space-y-2">
             <Label htmlFor="workflow-name">
