@@ -118,3 +118,4 @@ prisma/migrations/
 # Custom nodes - keep folder only
 backend/custom-nodes/*
 !backend/custom-nodes/.gitkeep
+.kiro
