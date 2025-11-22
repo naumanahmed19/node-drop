@@ -9,6 +9,7 @@ import {
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSidebarContext } from '@/contexts'
 import { useAuthStore } from '@/stores'
+import { env } from '@/config/env'
 import { Calendar, Clock, MoreVertical, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -66,7 +67,7 @@ export function ScheduledExecutionsList() {
     try {
       setLoading(true)
       // Fetch all active triggers (schedule + polling) from unified endpoint
-      const response = await fetch('http://localhost:4000/api/triggers/active-triggers', {
+      const response = await fetch(`${env.API_BASE_URL}/triggers/active-triggers`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       
@@ -119,7 +120,7 @@ export function ScheduledExecutionsList() {
 
     setDeleting(true)
     try {
-      const response = await fetch(`http://localhost:4000/api/triggers/active-triggers/${triggerId}`, {
+      const response = await fetch(`${env.API_BASE_URL}/triggers/active-triggers/${triggerId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
