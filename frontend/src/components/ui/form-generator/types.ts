@@ -36,7 +36,8 @@ export interface FormFieldConfig {
   | "custom"
   | "conditionRow"
   | "keyValueRow"
-  | "columnsMap";
+  | "columnsMap"
+  | "hidden";
   required?: boolean;
   default?: any;
   description?: string;

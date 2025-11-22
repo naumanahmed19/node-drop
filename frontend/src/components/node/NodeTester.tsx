@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Play, Loader2, CheckCircle, XCircle, AlertTriangle, RotateCcw, Copy, Download } from 'lucide-react'
+import { Play, Loader2, CheckCircle, XCircle, AlertTriangle, RotateCcw, Copy, Download, Info } from 'lucide-react'
 import { WorkflowNode, NodeType } from '@/types'
 import { nodeService } from '@/services'
+import { isServiceOrToolNode } from '@/utils/nodeTypeUtils'
 
 interface NodeTesterProps {
     node: WorkflowNode
@@ -139,66 +140,100 @@ export function NodeTester({ node, nodeType, onTestComplete }: NodeTesterProps) 
         setTestData(JSON.stringify(sampleData, null, 2))
     }
 
+    // Check if this is a service or tool node
+    const isNonExecutable = isServiceOrToolNode(nodeType)
+
     return (
         <div className="space-y-4">
-            {/* Test input */}
-            <div>
-                <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium">
-                        Test Input Data
-                    </label>
-                    <div className="flex space-x-2">
-                        <button
-                            onClick={loadSampleData}
-                            className="text-xs text-primary hover:text-primary/80 transition-colors"
-                        >
-                            Load Sample
-                        </button>
-                        <button
-                            onClick={resetTest}
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                            Reset
-                        </button>
+            {/* Show info message for service/tool nodes */}
+            {isNonExecutable && (
+                <div className="border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 rounded-md p-4">
+                    <div className="flex items-start space-x-3">
+                        <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                {nodeType.identifier === 'service' ? 'Service Node' : 'Tool Node'}
+                            </p>
+                            <p className="text-sm text-blue-700 dark:text-blue-300">
+                                This node cannot be executed directly. It is designed to be called by other nodes in your workflow.
+                            </p>
+                            {nodeType.identifier === 'service' && (
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                                    Service nodes (like AI models) provide functionality to other nodes and are not standalone executables.
+                                </p>
+                            )}
+                            {nodeType.identifier === 'tool' && (
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                                    Tool nodes are called by AI Agent nodes to perform specific tasks.
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
-                <textarea
-                    value={testData}
-                    onChange={(e) => setTestData(e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-ring focus:border-transparent font-mono text-sm resize-y bg-background"
-                    placeholder="Enter JSON test data..."
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                    Enter JSON data to test the node with. Use "Load Sample" for example data.
-                </p>
-            </div>
+            )}
 
-            {/* Test controls */}
-            <div className="flex space-x-2">
-                <button
-                    onClick={handleTest}
-                    disabled={isLoading}
-                    className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    {isLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                        <Play className="w-4 h-4" />
-                    )}
-                    <span>{isLoading ? 'Testing...' : 'Test Node'}</span>
-                </button>
-                
-                {testHistory.length > 0 && (
+            {/* Test input - hidden for service/tool nodes */}
+            {!isNonExecutable && (
+                <div>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium">
+                            Test Input Data
+                        </label>
+                        <div className="flex space-x-2">
+                            <button
+                                onClick={loadSampleData}
+                                className="text-xs text-primary hover:text-primary/80 transition-colors"
+                            >
+                                Load Sample
+                            </button>
+                            <button
+                                onClick={resetTest}
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                    <textarea
+                        value={testData}
+                        onChange={(e) => setTestData(e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-ring focus:border-transparent font-mono text-sm resize-y bg-background"
+                        placeholder="Enter JSON test data..."
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Enter JSON data to test the node with. Use "Load Sample" for example data.
+                    </p>
+                </div>
+            )}
+
+            {/* Test controls - hidden for service/tool nodes */}
+            {!isNonExecutable && (
+                <div className="flex space-x-2">
                     <button
-                        onClick={() => setShowHistory(!showHistory)}
-                        className="px-3 py-2 border rounded-md hover:bg-accent transition-colors"
-                        title="View test history"
+                        onClick={handleTest}
+                        disabled={isLoading}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <RotateCcw className="w-4 h-4" />
+                        {isLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Play className="w-4 h-4" />
+                        )}
+                        <span>{isLoading ? 'Testing...' : 'Test Node'}</span>
                     </button>
-                )}
-            </div>
+                    
+                    {testHistory.length > 0 && (
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="px-3 py-2 border rounded-md hover:bg-accent transition-colors"
+                            title="View test history"
+                        >
+                            <RotateCcw className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Test result */}
             {testResult && (

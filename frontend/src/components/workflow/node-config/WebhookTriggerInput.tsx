@@ -90,7 +90,12 @@ export function WebhookTriggerInput({ node }: { node: WorkflowNode }) {
     window.open(webhookUrl, '_blank')
   }
   
-  const hasWebhookConfig = webhookUrl && webhookUrl !== `${import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:4000'}/webhook?test=true`
+  // Check if webhook URL was successfully built (not just the base URL)
+  // This updates whenever webhookUrl changes
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+  const baseUrl = apiUrl.replace(/\/api$/, '')
+  const baseWebhookUrl = `${baseUrl}/webhook?test=true`
+  const hasWebhookConfig = webhookUrl && webhookUrl !== baseWebhookUrl
   
   return (
     <div className="flex flex-col items-center justify-center text-center space-y-4 min-h-[300px]">
@@ -120,8 +125,9 @@ export function WebhookTriggerInput({ node }: { node: WorkflowNode }) {
           onOpenUrl={openUrl}
         />
       ) : (
-        <div className="text-xs text-gray-500 px-4">
-          Configure webhook path in settings to test
+        <div className="text-xs text-gray-500 px-4 space-y-2">
+          <p>💡 Save the workflow to enable testing</p>
+          <p className="text-[10px]">The webhook URL will be available after saving</p>
         </div>
       )}
     </div>

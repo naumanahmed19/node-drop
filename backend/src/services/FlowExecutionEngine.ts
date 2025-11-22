@@ -45,7 +45,7 @@ export enum FlowNodeStatus {
 }
 
 export interface NodeExecutionState {
-  nodeId: string;
+  identifier: string;
   status: FlowNodeStatus;
   startTime?: number;
   endTime?: number;
@@ -70,7 +70,7 @@ export interface FlowExecutionResult {
 }
 
 export interface NodeExecutionResult {
-  nodeId: string;
+  identifier: string;
   status: FlowNodeStatus;
   data?: StandardizedNodeOutput; // Changed from NodeOutputData[] to StandardizedNodeOutput
   error?: any;
@@ -484,7 +484,7 @@ export class FlowExecutionEngine extends EventEmitter {
       });
 
       const nodeState: NodeExecutionState = {
-        nodeId: node.id,
+        identifier: node.id,
         status: FlowNodeStatus.IDLE,
         dependencies: reachableDependencies, // Use filtered dependencies
         dependents,
@@ -575,7 +575,7 @@ export class FlowExecutionEngine extends EventEmitter {
 
           // Mark node as failed instead of continuing to retry
           const failedResult: NodeExecutionResult = {
-            nodeId,
+            identifier: nodeId,
             status: FlowNodeStatus.FAILED,
             error: new Error(
               `Node dependencies could not be satisfied after ${maxRetries} attempts. This may indicate a configuration issue with multiple triggers connecting to the same node.`
@@ -615,11 +615,17 @@ export class FlowExecutionEngine extends EventEmitter {
       // Log execution start
       const nodeName =
         workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+      const node = workflow.nodes.find((n) => n.id === nodeId);
+      
       this.executionHistoryService.addExecutionLog(
         context.executionId,
         "info",
         `Starting execution of node: ${nodeName}`,
-        nodeId
+        nodeId,
+        {
+          parameters: node?.parameters,
+          nodeType: node?.type,
+        }
       );
 
       try {
@@ -639,11 +645,18 @@ export class FlowExecutionEngine extends EventEmitter {
           // Log execution completion
           const nodeName =
             workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const nodeState = context.nodeStates.get(nodeId);
+          
           this.executionHistoryService.addExecutionLog(
             context.executionId,
             "info",
             `Node execution completed successfully: ${nodeName}`,
-            nodeId
+            nodeId,
+            {
+              inputData: nodeState?.inputData,
+              outputData: result.data,
+              duration: result.duration,
+            }
           );
 
           await this.queueDependentNodes(nodeId, context, workflow);
@@ -667,6 +680,7 @@ export class FlowExecutionEngine extends EventEmitter {
           // Log execution failure
           const nodeName =
             workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const nodeState = context.nodeStates.get(nodeId);
           const errorMessage =
             result.error instanceof Error
               ? result.error.message
@@ -675,7 +689,12 @@ export class FlowExecutionEngine extends EventEmitter {
             context.executionId,
             "error",
             `Node execution failed: ${nodeName} - ${errorMessage}`,
-            nodeId
+            nodeId,
+            {
+              inputData: nodeState?.inputData,
+              error: result.error,
+              duration: result.duration,
+            }
           );
         }
 
@@ -697,7 +716,7 @@ export class FlowExecutionEngine extends EventEmitter {
         failedNodes.push(nodeId);
 
         const result: NodeExecutionResult = {
-          nodeId,
+          identifier: nodeId,
           status: FlowNodeStatus.FAILED,
           error,
           duration: 0,
@@ -780,7 +799,7 @@ export class FlowExecutionEngine extends EventEmitter {
 
       // Get all node types and find the one we need
       const allNodeTypes = await this.nodeService.getNodeTypes();
-      const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === node.type);
+      const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
 
       if (nodeTypeInfo && nodeTypeInfo.properties) {
         credentialsMapping = {};
@@ -800,9 +819,24 @@ export class FlowExecutionEngine extends EventEmitter {
             const credentialId = node.parameters?.[property.name];
 
             if (credentialId && typeof credentialId === "string") {
-              // Map credential type to ID
-              // property.allowedTypes[0] is the credential type (e.g., "mongoDb")
-              credentialsMapping[property.allowedTypes[0]] = credentialId;
+              // Verify credential exists and get its actual type
+              const cred = await this.prisma.credential.findUnique({
+                where: { id: credentialId },
+                select: { type: true, userId: true }
+              });
+
+              if (cred) {
+                if (cred.userId !== context.userId) {
+                  logger.warn(`Credential ${credentialId} does not belong to user ${context.userId}`);
+                  continue;
+                }
+                // Map the actual credential type from the database to the credential ID
+                // This ensures the node can request credentials by their actual type
+                credentialsMapping[cred.type] = credentialId;
+                logger.info(`[FlowExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
+              } else {
+                logger.warn(`[FlowExecution] Credential ${credentialId} not found in database`);
+              }
             }
           }
         }
@@ -827,7 +861,7 @@ export class FlowExecutionEngine extends EventEmitter {
       const outputData = nodeResult.data; // StandardizedNodeOutput | undefined
 
       const result: NodeExecutionResult = {
-        nodeId,
+        identifier: nodeId,
         status: FlowNodeStatus.COMPLETED,
         data: outputData,
         duration: Date.now() - nodeState.startTime!,
@@ -836,7 +870,7 @@ export class FlowExecutionEngine extends EventEmitter {
       return result;
     } catch (error) {
       const result: NodeExecutionResult = {
-        nodeId,
+        identifier: nodeId,
         status: FlowNodeStatus.FAILED,
         error,
         duration: Date.now() - nodeState.startTime!,

@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, Copy, Globe, TestTube, Sparkles, Info } from "lucide-react";
+import { Check, Copy, Globe, TestTube, Sparkles, Info, Play, Square, Loader2, Radio } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { executionWebSocket } from "@/services/ExecutionWebSocket";
 
 interface UrlGeneratorProps {
   value?: string; // webhookId, formPath, or chatId (UUID or path string)
@@ -44,6 +45,8 @@ export function UrlGenerator({
   const [copiedTest, setCopiedTest] = useState(false);
   const [copiedProd, setCopiedProd] = useState(false);
   const [activeTab, setActiveTab] = useState<"test" | "production">(mode);
+  const [isListening, setIsListening] = useState(() => executionWebSocket.isConnected());
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Notify parent of auto-generated ID (skip for forms)
   useEffect(() => {
@@ -52,18 +55,31 @@ export function UrlGenerator({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Check WebSocket connection status
+  useEffect(() => {
+    const checkConnection = () => {
+      setIsListening(executionWebSocket.isConnected());
+    };
+    
+    checkConnection();
+    const interval = setInterval(checkConnection, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // Get base URLs from environment or use defaults
-  // Production and test use the same base URL for all types
+  // All webhook-based triggers now use /webhook prefix for consistency
   const getBaseUrl = () => {
     if (urlType === "form") {
-      // For forms, use frontend URL
+      // For forms, use frontend URL for the user-facing page
       return import.meta.env.VITE_APP_URL || "http://localhost:3000";
     } else if (urlType === "chat") {
-      // For chats, use API URL (add /api if not present)
+      // For chats, use backend /webhook/chats
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
-      return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
+      const baseUrl = apiUrl.replace(/\/api$/, '');
+      return `${baseUrl}/webhook/chats`;
     } else {
-      // For webhooks, use same base URL for both test and production
+      // For webhooks, use /webhook prefix
       if (import.meta.env.VITE_WEBHOOK_URL) {
         return import.meta.env.VITE_WEBHOOK_URL;
       }
@@ -105,13 +121,13 @@ export function UrlGenerator({
     const baseUrl = getBaseUrl();
     
     if (urlType === "form") {
-      // Form URLs: http://localhost:3000/form/{formPath}
+      // Form URLs: http://localhost:3000/form/{formPath} (frontend page)
       // Use the value directly as the form path
       const formPath = webhookId?.trim().replace(/^\/+/, "") || "";
       return formPath ? `${baseUrl}/form/${formPath}` : baseUrl;
     } else if (urlType === "chat") {
-      // Chat URLs: http://localhost:4000/api/public/chats/{chatId}
-      return `${baseUrl}/public/chats/${webhookId}`;
+      // Chat URLs: http://localhost:4000/webhook/chats/{chatId}
+      return `${baseUrl}/${webhookId}`;
     } else {
       // Webhook URLs: [uuid/]path (uuid is optional)
       const cleanPath = webhookPath?.trim().replace(/^\/+/, "") || "";
@@ -133,8 +149,44 @@ export function UrlGenerator({
     }
   };
 
+  // Construct backend API URL for forms (for developers)
+  const constructFormApiUrl = () => {
+    if (urlType !== "form") return null;
+    
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+    const baseUrl = apiUrl.replace(/\/api$/, '');
+    const formPath = webhookId?.trim().replace(/^\/+/, "") || "";
+    
+    return formPath ? `${baseUrl}/webhook/forms/${formPath}` : null;
+  };
+
   const webhookUrl = constructWebhookUrl();
   const testWebhookUrlWithVisualization = `${webhookUrl}?test=true`;
+  const formApiUrl = constructFormApiUrl();
+  const formApiTestUrl = formApiUrl ? `${formApiUrl}?test=true` : null;
+
+  // Listen mode handlers
+  const startListening = async () => {
+    setIsConnecting(true);
+    try {
+      await executionWebSocket.connect();
+      setIsListening(true);
+    } catch (error) {
+      console.error('Failed to start listening:', error);
+      setIsListening(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+  
+  const stopListening = () => {
+    try {
+      executionWebSocket.disconnect();
+      setIsListening(false);
+    } catch (error) {
+      console.error('Failed to stop listening:', error);
+    }
+  };
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: "test" | "production") => {
@@ -302,6 +354,53 @@ export function UrlGenerator({
                   <Info className="w-2.5 h-2.5 shrink-0" />
                   Includes <code className="font-mono bg-muted px-1 rounded">?test=true</code> for debugging
                 </p>
+                
+                {/* Listen for Test Event Button - Only show for webhooks */}
+                {urlType === "webhook" && webhookId && (
+                  <>
+                    <div className="border-t -mx-3 my-2" />
+                    <div className="space-y-2">
+                      <Button
+                        type="button"
+                        variant={isListening ? "default" : "outline"}
+                        size="sm"
+                        onClick={isListening ? stopListening : startListening}
+                        disabled={disabled || isConnecting}
+                        className="w-full h-8 text-xs"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                            Connecting...
+                          </>
+                        ) : isListening ? (
+                          <>
+                            <Square className="w-3 h-3 mr-1.5" />
+                            Stop Listening
+                            <Radio className="w-3 h-3 ml-1.5 animate-pulse" />
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 mr-1.5" />
+                            Listen for Test Event
+                          </>
+                        )}
+                      </Button>
+                      
+                      {isListening ? (
+                        <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Radio className="w-2.5 h-2.5 text-green-500 animate-pulse" />
+                          Waiting for webhook call...
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Info className="w-2.5 h-2.5 shrink-0" />
+                          Save workflow to activate webhook
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -334,6 +433,40 @@ export function UrlGenerator({
               </>
             )}
           </div>
+
+          {/* Backend API URL for Forms */}
+          {urlType === "form" && formApiUrl && (
+            <>
+              <div className="border-t -mx-3" />
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  Backend API URL (for developers)
+                </Label>
+                <div className="flex gap-1.5">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={activeTab === "test" ? formApiTestUrl || "" : formApiUrl}
+                      readOnly
+                      disabled={disabled}
+                      className="font-mono text-[11px] h-8 pr-8 bg-muted/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(activeTab === "test" ? formApiTestUrl || "" : formApiUrl, activeTab)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted transition-colors cursor-pointer"
+                      title="Copy API URL"
+                    >
+                      <Copy className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Use this URL for direct API integration (GET to fetch config, POST to /submit)
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

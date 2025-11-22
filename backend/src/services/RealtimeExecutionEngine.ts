@@ -38,6 +38,7 @@ interface ExecutionContext {
     triggerData: any;
     nodeOutputs: Map<string, any>;
     connections: WorkflowConnection[]; // Store connections for branch checking
+    nodes: any[]; // Store nodes for service input resolution
     status: "running" | "completed" | "failed" | "cancelled";
     startTime: number;
     currentNodeId?: string;
@@ -77,7 +78,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // This is how FlowExecutionEngine does it and is the correct approach
         try {
             const allNodeTypes = await this.nodeService.getNodeTypes();
-            const nodeTypeInfo = allNodeTypes.find((nt) => nt.type === node.type);
+            const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
 
             if (nodeTypeInfo && nodeTypeInfo.properties) {
                 const properties = Array.isArray(nodeTypeInfo.properties)
@@ -106,10 +107,10 @@ export class RealtimeExecutionEngine extends EventEmitter {
                                     logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${userId}`);
                                     continue;
                                 }
-                                // Map credential type to ID
-                                // property.allowedTypes[0] is the credential type (e.g., "postgresDb")
-                                credentialsMapping[property.allowedTypes[0]] = credentialId;
-                                logger.info(`[RealtimeExecution] Mapped credential type '${property.allowedTypes[0]}' to ID '${credentialId}' from parameter '${property.name}'`);
+                                // Map the actual credential type from the database to the credential ID
+                                // This ensures the node can request credentials by their actual type
+                                credentialsMapping[cred.type] = credentialId;
+                                logger.info(`[RealtimeExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
                             } else {
                                 logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
                             }
@@ -229,6 +230,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
             triggerData,
             nodeOutputs: new Map(),
             connections, // Store connections for branch checking
+            nodes, // Store nodes for service input resolution
             status: "running",
             startTime: Date.now(),
             saveToDatabase, // Store in context for later use
@@ -306,6 +308,97 @@ export class RealtimeExecutionEngine extends EventEmitter {
     }
 
     /**
+     * Check if a node is a service node (has no inputs)
+     * Service nodes include model, memory, and tool nodes
+     * Excludes trigger nodes (like chat, webhook) which have no inputs but should execute
+     */
+    // TODO: We want change types, (dont do it automatically)
+    private async isServiceNode(nodeType: string): Promise<boolean> {
+        try {
+            const allNodeTypes = await this.nodeService.getNodeTypes();
+            const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === nodeType);
+            
+            if (!nodeTypeInfo) {
+                return false;
+            }
+            
+            // Trigger nodes (executionCapability: "trigger") should not be treated as service nodes
+            // even if they have no inputs
+            if (nodeTypeInfo.executionCapability === "trigger") {
+                return false;
+            }
+            
+            // Service nodes have no inputs (inputs: [])
+            return Array.isArray(nodeTypeInfo.inputs) && nodeTypeInfo.inputs.length === 0;
+        } catch (error) {
+            logger.error(`[RealtimeExecution] Failed to check if node is service node`, { nodeType, error });
+            return false;
+        }
+    }
+
+    /**
+     * Validate a service node (model, memory, tool)
+     */
+    private validateServiceNode(
+        serviceNode: any,
+        nodeDefinition: any,
+        inputName: string
+    ): { valid: boolean; errors: string[] } {
+        const errors: string[] = [];
+        
+        // Validate that the service node has no inputs (is actually a service node)
+        if (nodeDefinition && Array.isArray(nodeDefinition.inputs) && nodeDefinition.inputs.length > 0) {
+            errors.push(
+                `Invalid service node: ${serviceNode.type} has inputs and cannot be used as a service node`
+            );
+        }
+        
+        // Validate required parameters
+        if (nodeDefinition && nodeDefinition.properties) {
+            const properties = Array.isArray(nodeDefinition.properties) 
+                ? nodeDefinition.properties 
+                : [];
+            
+            for (const property of properties) {
+                if (property.required && !serviceNode.parameters?.[property.name]) {
+                    errors.push(
+                        `${serviceNode.type}: Missing required parameter '${property.displayName || property.name}'`
+                    );
+                }
+            }
+        }
+        
+        // Check if node has credential-type properties that are required
+        if (nodeDefinition && nodeDefinition.properties) {
+            const properties = Array.isArray(nodeDefinition.properties) 
+                ? nodeDefinition.properties 
+                : [];
+            
+            for (const property of properties) {
+                if (property.type === 'credential' && property.required) {
+                    const hasCredentials = serviceNode.credentials && Object.keys(serviceNode.credentials).length > 0;
+                    const hasCredentialInParams = serviceNode.parameters && 
+                        Object.values(serviceNode.parameters).some((v: any) => 
+                            typeof v === 'string' && v.startsWith('cred_')
+                        );
+                    
+                    if (!hasCredentials && !hasCredentialInParams) {
+                        errors.push(
+                            `${serviceNode.type}: Missing required credentials. Please configure API credentials.`
+                        );
+                        break; // Only report once per node
+                    }
+                }
+            }
+        }
+        
+        return {
+            valid: errors.length === 0,
+            errors,
+        };
+    }
+
+    /**
      * Execute a single node and its downstream nodes
      */
     private async executeNode(
@@ -324,6 +417,23 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // Skip disabled nodes
         if (node.disabled) {
             logger.info(`[RealtimeExecution] Skipping disabled node ${nodeId}`);
+            return;
+        }
+        
+        // Skip service nodes (they are called by other nodes, not executed directly)
+        // Service nodes are identified by having no inputs (inputs: [])
+        // This includes model nodes, memory nodes, and tool nodes
+        const isServiceNode = await this.isServiceNode(node.type);
+        
+        if (isServiceNode) {
+            logger.info(`[RealtimeExecution] Skipping service node ${nodeId} (${node.type}) - will be called by parent node`);
+            
+            // Still execute downstream nodes
+            const downstreamNodes = graph.get(nodeId) || [];
+            for (const downstreamNodeId of downstreamNodes) {
+                await this.executeNode(executionId, downstreamNodeId, nodeMap, graph, context);
+            }
+            
             return;
         }
 
@@ -367,7 +477,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
         try {
             // Get input data from connected nodes
-            const inputData = this.getNodeInputData(nodeId, graph, context);
+            const inputData = await this.getNodeInputData(nodeId, graph, context);
 
             // Execute the node
             const startTime = Date.now();
@@ -614,7 +724,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
 
             try {
                 // Get input data
-                const inputData = this.getNodeInputData(nodeId, graph, context);
+                const inputData = await this.getNodeInputData(nodeId, graph, context);
 
                 // Execute the loop node
                 const startTime = Date.now();
@@ -842,11 +952,11 @@ export class RealtimeExecutionEngine extends EventEmitter {
     /**
      * Get input data for a node from its upstream nodes
      */
-    private getNodeInputData(
+    private async getNodeInputData(
         nodeId: string,
         graph: Map<string, string[]>,
         context: ExecutionContext
-    ): any {
+    ): Promise<any> {
         // Find connections targeting this node
         const incomingConnections = context.connections.filter(
             (conn) => conn.targetNodeId === nodeId
@@ -859,57 +969,327 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 : { main: [[]] };
         }
 
-        // Collect output from upstream nodes based on connections
-        // Keep data from each connection separate for multi-input support (like Merge node)
-        const inputsPerConnection: any[][] = [];
-
+        // Group connections by target input name (for nodes with multiple named inputs like AI Agent)
+        const connectionsByInput = new Map<string, typeof incomingConnections>();
+        
         for (const connection of incomingConnections) {
-            const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
-            const connectionData: any[] = [];
+            const targetInput = connection.targetInput || 'main';
+            if (!connectionsByInput.has(targetInput)) {
+                connectionsByInput.set(targetInput, []);
+            }
+            connectionsByInput.get(targetInput)!.push(connection);
+        }
 
-            if (sourceOutput) {
-                const outputBranch = connection.sourceOutput || "main";
+        const inputData: any = {};
 
-                logger.info(`[RealtimeExecution] Collecting input for ${nodeId} from ${connection.sourceNodeId}`, {
-                    outputBranch,
-                    hasBranches: !!sourceOutput.branches,
-                });
+        // Process each named input
+        for (const [inputName, connections] of connectionsByInput.entries()) {
+            // Check if this is a service input (model, memory, tools, etc.)
+            // Service inputs should receive node references, not data
+            const isServiceInput = inputName !== 'main' && inputName !== 'done';
+            
+            if (isServiceInput && connections.length > 0) {
+                // For service inputs, store references to the connected nodes
+                const serviceNodes: any[] = [];
+                const validationErrors: string[] = [];
+                
+                for (const connection of connections) {
+                    const sourceNode = context.nodes.find((n: any) => n.id === connection.sourceNodeId);
+                    if (sourceNode) {
+                        logger.info(`[RealtimeExecution] Processing service node for input '${inputName}'`, {
+                            sourceNodeId: sourceNode.id,
+                            sourceNodeType: sourceNode.type,
+                            hasParameters: !!sourceNode.parameters,
+                            hasCredentials: !!sourceNode.credentials,
+                            parametersKeys: sourceNode.parameters ? Object.keys(sourceNode.parameters) : [],
+                            credentialsKeys: sourceNode.credentials ? Object.keys(sourceNode.credentials) : [],
+                        });
+                        
+                        // Store full node configuration including parameters and credentials
+                        // Credentials can be stored in:
+                        // 1. A separate credentials field (legacy)
+                        // 2. In parameters (for nodes with credential-type properties)
+                        const nodeParameters = sourceNode.parameters || {};
+                        const nodeCredentials = sourceNode.credentials || {};
+                        
+                        // Build credentials mapping from parameters
+                        // We need to map credential types to credential IDs
+                        // For example: { "apiKey": "cred_123" } instead of { "authentication": "cred_123" }
+                        const credentialsMapping: Record<string, string> = { ...nodeCredentials };
+                        
+                        logger.info(`[RealtimeExecution] Initial credentials mapping`, {
+                            sourceNodeType: sourceNode.type,
+                            credentialsMapping,
+                            nodeParameters,
+                        });
+                        
+                        // Get node definition from registry (synchronous access)
+                        const nodeDefinition = this.nodeService['nodeRegistry']?.get(sourceNode.type);
+                        
+                        logger.info(`[RealtimeExecution] Node definition lookup`, {
+                            sourceNodeType: sourceNode.type,
+                            hasNodeDefinition: !!nodeDefinition,
+                            hasProperties: !!(nodeDefinition && nodeDefinition.properties),
+                            propertiesCount: nodeDefinition && nodeDefinition.properties ? (Array.isArray(nodeDefinition.properties) ? nodeDefinition.properties.length : 0) : 0,
+                        });
+                        
+                        if (nodeDefinition && nodeDefinition.properties) {
+                            const properties = Array.isArray(nodeDefinition.properties) 
+                                ? nodeDefinition.properties 
+                                : [];
+                            
+                            logger.info(`[RealtimeExecution] Scanning ${properties.length} properties for credentials`, {
+                                sourceNodeType: sourceNode.type,
+                                propertyNames: properties.map((p: any) => p.name),
+                            });
+                            
+                            // Find credential properties and map their types to IDs
+                            for (const property of properties) {
+                                logger.info(`[RealtimeExecution] Checking property`, {
+                                    propertyName: property.name,
+                                    propertyType: property.type,
+                                    isCredential: property.type === 'credential',
+                                    hasAllowedTypes: !!(property.allowedTypes && property.allowedTypes.length > 0),
+                                    allowedTypes: property.allowedTypes,
+                                });
+                                
+                                if (property.type === 'credential' && property.allowedTypes && property.allowedTypes.length > 0) {
+                                    const credentialId = nodeParameters[property.name];
+                                    
+                                    logger.info(`[RealtimeExecution] Found credential property`, {
+                                        propertyName: property.name,
+                                        allowedTypes: property.allowedTypes,
+                                        credentialId,
+                                        isValidCredentialId: credentialId && typeof credentialId === 'string',
+                                    });
+                                    
+                                    // Check if this is a valid credential ID (any non-empty string)
+                                    if (credentialId && typeof credentialId === 'string' && credentialId.trim().length > 0) {
+                                        // Verify credential exists and get its actual type
+                                        const cred = await this.prisma.credential.findUnique({
+                                            where: { id: credentialId },
+                                            select: { type: true, userId: true }
+                                        });
 
-                // Check if source has branches (like IfElse node)
-                if (sourceOutput.branches) {
-                    const branchData = sourceOutput.branches[outputBranch];
-                    if (Array.isArray(branchData) && branchData.length > 0) {
-                        logger.info(`[RealtimeExecution] Using branch '${outputBranch}' data with ${branchData.length} items`);
-                        connectionData.push(...branchData);
-                    } else {
-                        logger.info(`[RealtimeExecution] Branch '${outputBranch}' is empty`);
-                    }
-                } else {
-                    // For non-branching nodes, use main output
-                    const mainData = sourceOutput.main;
-                    if (Array.isArray(mainData) && mainData.length > 0) {
-                        logger.info(`[RealtimeExecution] Using main output with ${mainData.length} items`);
-                        connectionData.push(...mainData);
+                                        if (cred) {
+                                            if (cred.userId !== context.userId) {
+                                                logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${context.userId}`);
+                                            } else {
+                                                // Map the actual credential type from the database to the credential ID
+                                                credentialsMapping[cred.type] = credentialId;
+                                                
+                                                logger.info(`[RealtimeExecution] ✅ Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`, {
+                                                    nodeType: sourceNode.type,
+                                                    parameterName: property.name,
+                                                    credentialType: cred.type,
+                                                    credentialId,
+                                                });
+                                            }
+                                        } else {
+                                            logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Fallback: Also scan parameters for any credential IDs not yet mapped
+                        logger.info(`[RealtimeExecution] Scanning parameters for unmapped credentials`, {
+                            sourceNodeType: sourceNode.type,
+                            parameterKeys: Object.keys(nodeParameters),
+                        });
+                        
+                        for (const [key, value] of Object.entries(nodeParameters)) {
+                            if (typeof value === 'string' && value.startsWith('cred_')) {
+                                // Store with parameter name as key if not already mapped by type
+                                if (!Object.values(credentialsMapping).includes(value)) {
+                                    credentialsMapping[key] = value;
+                                    logger.info(`[RealtimeExecution] Added unmapped credential from parameter`, {
+                                        parameterName: key,
+                                        credentialId: value,
+                                    });
+                                }
+                            }
+                        }
+                        
+                        logger.info(`[RealtimeExecution] Final credentials mapping for service node`, {
+                            sourceNodeType: sourceNode.type,
+                            sourceNodeId: sourceNode.id,
+                            credentialsMapping,
+                            credentialsMappingKeys: Object.keys(credentialsMapping),
+                        });
+                        
+                        // FIX: Skip emitting validation events for tool nodes
+                        // Tool nodes should only show execution events when actually used (executeTool() call)
+                        // Not during validation phase (getDefinition() call)
+                        // This prevents UI from showing tool execution when just reading tool schemas
+                        const isToolNode = inputName === 'tools';
+                        
+                        if (!isToolNode) {
+                            // Emit node-started event for service node validation (Model, Memory, etc.)
+                            this.emit('node-started', {
+                                executionId: context.executionId,
+                                nodeId: sourceNode.id,
+                                nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                nodeType: sourceNode.type,
+                                timestamp: new Date(),
+                            });
+                        }
+                        
+                        // Validate service node based on type
+                        const validationResult = this.validateServiceNode(sourceNode, nodeDefinition, inputName);
+                        
+                        if (!validationResult.valid) {
+                            validationErrors.push(...validationResult.errors);
+                            logger.error(`[RealtimeExecution] Service node validation failed`, {
+                                sourceNodeType: sourceNode.type,
+                                sourceNodeId: sourceNode.id,
+                                inputName,
+                                errors: validationResult.errors,
+                            });
+                            
+                            // FIX: Skip emitting validation failure events for tool nodes
+                            // Tool nodes will emit their own failure events if executeTool() fails
+                            if (!isToolNode) {
+                                // Emit node-failed event for the service node itself (Model, Memory, etc.)
+                                this.emit('node-failed', {
+                                    executionId: context.executionId,
+                                    nodeId: sourceNode.id,
+                                    nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                    nodeType: sourceNode.type,
+                                    error: {
+                                        message: validationResult.errors.join(', '),
+                                        type: 'validation',
+                                    },
+                                    timestamp: new Date(),
+                                });
+                            }
+                        } else {
+                            // FIX: Skip emitting validation success events for tool nodes
+                            // Tool nodes will emit their own completion events after executeTool() succeeds
+                            if (!isToolNode) {
+                                // Emit node-completed event for successful validation (Model, Memory, etc.)
+                                this.emit('node-completed', {
+                                    executionId: context.executionId,
+                                    nodeId: sourceNode.id,
+                                    nodeName: sourceNode.parameters?.name || sourceNode.type,
+                                    nodeType: sourceNode.type,
+                                    timestamp: new Date(),
+                                });
+                            }
+                            
+                            serviceNodes.push({
+                                id: sourceNode.id,
+                                type: sourceNode.type,
+                                nodeId: connection.sourceNodeId,
+                                parameters: nodeParameters,
+                                credentials: credentialsMapping,
+                            });
+                        }
                     }
                 }
+                
+                // If there are validation errors, emit node-failed event and throw error
+                if (validationErrors.length > 0) {
+                    const errorMessage = `Service node validation failed for '${inputName}': ${validationErrors.join(', ')}`;
+                    
+                    // Get the target node from context
+                    const targetNode = context.nodes.find((n: any) => n.id === nodeId);
+                    
+                    logger.error(`[RealtimeExecution] ❌ Service validation failed`, {
+                        nodeId,
+                        inputName,
+                        errors: validationErrors,
+                    });
+                    
+                    // Emit node-failed event for the parent node
+                    this.emit('node-failed', {
+                        executionId: context.executionId,
+                        nodeId,
+                        nodeName: targetNode?.parameters?.name || targetNode?.type || 'Unknown',
+                        nodeType: targetNode?.type || 'unknown',
+                        error: {
+                            message: errorMessage,
+                            type: 'validation',
+                        },
+                        timestamp: new Date(),
+                    });
+                    
+                    throw new Error(errorMessage);
+                }
+                
+                // Store service node references
+                inputData[inputName] = serviceNodes;
+                
+                logger.info(`[RealtimeExecution] ✅ Prepared service input '${inputName}' for node ${nodeId}`, {
+                    serviceNodeCount: serviceNodes.length,
+                    serviceNodeTypes: serviceNodes.map((n: any) => n.type),
+                    serviceNodesDetails: serviceNodes.map((n: any) => ({
+                        type: n.type,
+                        nodeId: n.nodeId,
+                        credentialKeys: Object.keys(n.credentials || {}),
+                        credentials: n.credentials,
+                    })),
+                });
+            } else {
+                // Regular data input - process normally
+                const inputsPerConnection: any[][] = [];
+
+                for (const connection of connections) {
+                    const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+                    const connectionData: any[] = [];
+
+                    if (sourceOutput) {
+                        const outputBranch = connection.sourceOutput || "main";
+
+                        logger.info(`[RealtimeExecution] Collecting input for ${nodeId} from ${connection.sourceNodeId}`, {
+                            outputBranch,
+                            hasBranches: !!sourceOutput.branches,
+                        });
+
+                        // Check if source has branches (like IfElse node)
+                        if (sourceOutput.branches) {
+                            const branchData = sourceOutput.branches[outputBranch];
+                            if (Array.isArray(branchData) && branchData.length > 0) {
+                                logger.info(`[RealtimeExecution] Using branch '${outputBranch}' data with ${branchData.length} items`);
+                                connectionData.push(...branchData);
+                            } else {
+                                logger.info(`[RealtimeExecution] Branch '${outputBranch}' is empty`);
+                            }
+                        } else {
+                            // For non-branching nodes, use main output
+                            const mainData = sourceOutput.main;
+                            if (Array.isArray(mainData) && mainData.length > 0) {
+                                logger.info(`[RealtimeExecution] Using main output with ${mainData.length} items`);
+                                connectionData.push(...mainData);
+                            }
+                        }
+                    }
+
+                    // Add this connection's data as a separate array
+                    inputsPerConnection.push(connectionData);
+                }
+
+                // Store data for this named input
+                if (inputsPerConnection.length > 1) {
+                    // Multiple connections to same input: keep them separate (2D array)
+                    inputData[inputName] = inputsPerConnection;
+                } else if (inputsPerConnection.length === 1) {
+                    // Single connection: use existing format for backward compatibility
+                    inputData[inputName] = [inputsPerConnection[0]];
+                } else {
+                    // No connections with data
+                    inputData[inputName] = [[]];
+                }
             }
-
-            // Add this connection's data as a separate array
-            inputsPerConnection.push(connectionData);
         }
 
-        // For nodes with multiple inputs (like Merge), keep data from each connection separate
-        // For nodes with single input, flatten for backward compatibility
-        if (inputsPerConnection.length > 1) {
-            // Multiple connections: keep them separate (2D array)
-            return { main: inputsPerConnection };
-        } else if (inputsPerConnection.length === 1) {
-            // Single connection: use existing format for backward compatibility
-            return { main: [inputsPerConnection[0]] };
-        } else {
-            // No connections with data
-            return { main: [[]] };
+        // Ensure 'main' input exists for backward compatibility
+        if (!inputData.main) {
+            inputData.main = [[]];
         }
+
+        return inputData;
     }
 
     /**

@@ -60,7 +60,7 @@ export function getNodeExecutionStatus(
  * Creates a Map for faster node type lookups (O(1) instead of O(n))
  */
 function createNodeTypeMap(nodeTypes: NodeType[]): Map<string, NodeType> {
-  return new Map(nodeTypes.map((nt) => [nt.type, nt]));
+  return new Map(nodeTypes.map((nt) => [nt.identifier, nt]));
 }
 
 /**
@@ -99,8 +99,16 @@ function getNodeInputs(
   if (node.type === "chat" && node.parameters?.acceptInput === true) {
     return ["main"];
   }
+  
+  // If inputsConfig exists, extract all input names from it
+  if (nodeTypeDefinition?.inputsConfig) {
+    return Object.keys(nodeTypeDefinition.inputsConfig);
+  }
+  
   return nodeTypeDefinition?.inputs || [];
 }
+
+
 
 /**
  * Gets the custom style configuration for a node
@@ -176,8 +184,8 @@ export function transformWorkflowNodesToReactFlow(
         ? "image-preview"
         : node.type === "data-preview"
         ? "data-preview"
-        : node.type === "form-generator"
-        ? "form-generator"
+        : node.type === "forms"
+        ? "forms"
         : node.type === "annotation"
         ? "annotation"
         : "custom";
@@ -197,6 +205,7 @@ export function transformWorkflowNodesToReactFlow(
         status: nodeStatus,
         inputs: getNodeInputs(node, nodeTypeDefinition),
         outputs: getNodeOutputs(node, nodeTypeDefinition),
+        inputsConfig: nodeTypeDefinition?.inputsConfig,
         position: node.position,
         dimensions: { width: 64, height: 64 },
         customStyle: getNodeCustomStyle(node, nodeTypeDefinition),
@@ -230,17 +239,19 @@ export function transformWorkflowEdgesToReactFlow(
   connections: WorkflowConnection[],
   executionStateKey?: string
 ) {
-  return connections.map((conn) => ({
-    id: conn.id,
-    source: conn.sourceNodeId,
-    target: conn.targetNodeId,
-    sourceHandle: conn.sourceOutput,
-    targetHandle: conn.targetInput,
-    type: "smoothstep",
-    data: {
-      label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
-      // Add execution state key to force edge re-render when execution completes
-      executionStateKey,
-    },
-  }));
+  return connections.map((conn) => {
+    return {
+      id: conn.id,
+      source: conn.sourceNodeId,
+      target: conn.targetNodeId,
+      sourceHandle: conn.sourceOutput,
+      targetHandle: conn.targetInput,
+      type: "smoothstep",
+      data: {
+        label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
+        // Add execution state key to force edge re-render when execution completes
+        executionStateKey,
+      },
+    };
+  });
 }

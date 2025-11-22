@@ -74,13 +74,13 @@ export class ScheduleJobManager {
      */
     async initialize(): Promise<void> {
         try {
-            logger.info('Initializing ScheduleJobManager from database...');
+            // Initializing from database silently
 
             // Clear all existing jobs in Redis (fresh start)
             await this.clearAllRedisJobs();
 
             // Load active jobs from database
-            const scheduledJobs = await this.prisma.scheduledJob.findMany({
+            const triggerJobs = await this.prisma.triggerJob.findMany({
                 where: { active: true },
                 include: {
                     workflow: {
@@ -97,28 +97,28 @@ export class ScheduleJobManager {
 
             let jobCount = 0;
 
-            for (const scheduledJob of scheduledJobs) {
+            for (const triggerJob of triggerJobs) {
                 // Skip if workflow is not active
-                if (!scheduledJob.workflow.active) {
-                    logger.warn(`Skipping job ${scheduledJob.id} - workflow ${scheduledJob.workflowId} is inactive`);
+                if (!triggerJob.workflow.active) {
+                    logger.warn(`Skipping job ${triggerJob.id} - workflow ${triggerJob.workflowId} is inactive`);
                     continue;
                 }
 
                 // Find the trigger in workflow JSON
-                const triggers = (scheduledJob.workflow.triggers as any[]) || [];
-                const trigger = triggers.find((t) => t.id === scheduledJob.triggerId);
+                const triggers = (triggerJob.workflow.triggers as any[]) || [];
+                const trigger = triggers.find((t) => t.id === triggerJob.triggerId);
 
                 if (!trigger) {
-                    logger.warn(`Trigger ${scheduledJob.triggerId} not found in workflow ${scheduledJob.workflowId}`);
+                    logger.warn(`Trigger ${triggerJob.triggerId} not found in workflow ${triggerJob.workflowId}`);
                     continue;
                 }
 
                 // Create Bull job
-                await this.createBullJob(scheduledJob, trigger, scheduledJob.workflow);
+                await this.createBullJob(triggerJob, trigger, triggerJob.workflow);
                 jobCount++;
             }
 
-            logger.info(`ScheduleJobManager initialized with ${jobCount} scheduled jobs from database`);
+            // Initialized silently
         } catch (error) {
             logger.error('Error initializing ScheduleJobManager:', error);
             throw error;
@@ -134,7 +134,7 @@ export class ScheduleJobManager {
             for (const job of repeatableJobs) {
                 await this.scheduleQueue.removeRepeatableByKey(job.key);
             }
-            logger.info(`Cleared ${repeatableJobs.length} jobs from Redis`);
+            // Cleared jobs silently
         } catch (error) {
             logger.error('Error clearing Redis jobs:', error);
         }
@@ -144,30 +144,30 @@ export class ScheduleJobManager {
      * Create Bull job from database record
      */
     private async createBullJob(
-        scheduledJob: any,
+        triggerJob: any,
         trigger: any,
         workflow: any
     ): Promise<Job<ScheduleJobData>> {
         const job = await this.scheduleQueue.add(
             {
-                workflowId: scheduledJob.workflowId,
-                triggerId: scheduledJob.triggerId,
+                workflowId: triggerJob.workflowId,
+                triggerId: triggerJob.triggerId,
                 triggerNodeId: trigger.nodeId,
-                cronExpression: scheduledJob.cronExpression,
-                timezone: scheduledJob.timezone,
-                description: scheduledJob.description || 'Scheduled execution',
+                cronExpression: triggerJob.cronExpression,
+                timezone: triggerJob.timezone,
+                description: triggerJob.description || 'Scheduled execution',
                 userId: workflow.userId,
             },
             {
-                jobId: scheduledJob.jobKey,
+                jobId: triggerJob.jobKey,
                 repeat: {
-                    cron: scheduledJob.cronExpression,
-                    tz: scheduledJob.timezone,
+                    cron: triggerJob.cronExpression,
+                    tz: triggerJob.timezone,
                 },
             }
         );
 
-        logger.info(`Created Bull job: ${scheduledJob.jobKey} - ${scheduledJob.cronExpression}`);
+        logger.info(`Created Bull job: ${triggerJob.jobKey} - ${triggerJob.cronExpression}`);
         return job;
     }
 
@@ -191,7 +191,7 @@ export class ScheduleJobManager {
         const jobKey = `${workflowId}-${trigger.id}`;
 
         // Create or update database record
-        const scheduledJob = await this.prisma.scheduledJob.upsert({
+        const triggerJob = await this.prisma.triggerJob.upsert({
             where: {
                 workflowId_triggerId: {
                     workflowId,
@@ -230,7 +230,7 @@ export class ScheduleJobManager {
         await this.removeBullJob(jobKey);
 
         // Create new Bull job
-        const job = await this.createBullJob(scheduledJob, trigger, scheduledJob.workflow);
+        const job = await this.createBullJob(triggerJob, trigger, triggerJob.workflow);
 
         logger.info(`Added schedule job: ${jobKey} (${description}) - ${cronExpression}`);
 
@@ -276,10 +276,10 @@ export class ScheduleJobManager {
             const workflowId = jobId.substring(0, firstDashIndex);
             const triggerId = jobId.substring(firstDashIndex + 1);
 
-            logger.info(`Attempting to delete schedule job: ${jobId} (workflowId: ${workflowId}, triggerId: ${triggerId})`);
+            logger.info(`Attempting to delete trigger job: ${jobId} (workflowId: ${workflowId}, triggerId: ${triggerId})`);
 
             // Check if job exists before deleting
-            const existingJob = await this.prisma.scheduledJob.findFirst({
+            const existingJob = await this.prisma.triggerJob.findFirst({
                 where: {
                     workflowId,
                     triggerId,
@@ -287,10 +287,19 @@ export class ScheduleJobManager {
             });
 
             if (existingJob) {
-                logger.info(`Found existing job in database: ${existingJob.id}`);
+                logger.info(`Found existing job in database: ${existingJob.id} (type: ${existingJob.type})`);
+                
+                // If it's a polling trigger, deactivate it via TriggerService
+                if (existingJob.type === 'polling') {
+                    logger.info(`Deactivating polling trigger: ${triggerId}`);
+                    // Access the global trigger service to deactivate
+                    if (global.triggerService) {
+                        await global.triggerService.deactivateTrigger(triggerId);
+                    }
+                }
                 
                 // Delete from database
-                const deleteResult = await this.prisma.scheduledJob.deleteMany({
+                const deleteResult = await this.prisma.triggerJob.deleteMany({
                     where: {
                         workflowId,
                         triggerId,
@@ -302,10 +311,10 @@ export class ScheduleJobManager {
                 logger.warn(`No job found in database for ${jobId}`);
             }
 
-            // Remove from Redis
+            // Remove from Redis (for schedule type)
             await this.removeBullJob(jobId);
 
-            logger.info(`Successfully removed schedule job: ${jobId}`);
+            logger.info(`Successfully removed trigger job: ${jobId}`);
         } catch (error) {
             logger.error(`Error removing schedule job ${jobId}:`, error);
             throw error;
@@ -318,21 +327,21 @@ export class ScheduleJobManager {
     async removeWorkflowJobs(workflowId: string): Promise<void> {
         try {
             // Get all jobs for this workflow from database
-            const scheduledJobs = await this.prisma.scheduledJob.findMany({
+            const triggerJobs = await this.prisma.triggerJob.findMany({
                 where: { workflowId },
             });
 
             // Delete from database
-            await this.prisma.scheduledJob.deleteMany({
+            await this.prisma.triggerJob.deleteMany({
                 where: { workflowId },
             });
 
             // Remove from Redis
-            for (const job of scheduledJobs) {
+            for (const job of triggerJobs) {
                 await this.removeBullJob(job.jobKey);
             }
 
-            logger.info(`Removed ${scheduledJobs.length} schedule jobs for workflow ${workflowId}`);
+            logger.info(`Removed ${triggerJobs.length} schedule jobs for workflow ${workflowId}`);
         } catch (error) {
             logger.error(`Error removing workflow jobs for ${workflowId}:`, error);
             throw error;
@@ -369,7 +378,7 @@ export class ScheduleJobManager {
             });
 
             // Get existing scheduled jobs from database
-            const existingJobs = await this.prisma.scheduledJob.findMany({
+            const existingJobs = await this.prisma.triggerJob.findMany({
                 where: { workflowId },
             });
 
@@ -390,7 +399,7 @@ export class ScheduleJobManager {
                 }
             } else {
                 // If workflow is inactive, mark all jobs as inactive
-                await this.prisma.scheduledJob.updateMany({
+                await this.prisma.triggerJob.updateMany({
                     where: { workflowId },
                     data: { active: false },
                 });
@@ -413,7 +422,10 @@ export class ScheduleJobManager {
      */
     async getAllScheduleJobs(): Promise<ScheduleJobInfo[]> {
         try {
-            const scheduledJobs = await this.prisma.scheduledJob.findMany({
+            const triggerJobs = await this.prisma.triggerJob.findMany({
+                where: {
+                    type: 'schedule',
+                },
                 include: {
                     workflow: {
                         select: {
@@ -426,7 +438,7 @@ export class ScheduleJobManager {
                 },
             });
 
-            return scheduledJobs.map((job: any) => ({
+            return triggerJobs.map((job: any) => ({
                 id: job.jobKey,
                 workflowId: job.workflowId,
                 workflowName: job.workflow.name,
@@ -450,8 +462,11 @@ export class ScheduleJobManager {
      */
     async getWorkflowScheduleJobs(workflowId: string): Promise<ScheduleJobInfo[]> {
         try {
-            const scheduledJobs = await this.prisma.scheduledJob.findMany({
-                where: { workflowId },
+            const triggerJobs = await this.prisma.triggerJob.findMany({
+                where: { 
+                    workflowId,
+                    type: 'schedule',
+                },
                 include: {
                     workflow: {
                         select: {
@@ -461,7 +476,7 @@ export class ScheduleJobManager {
                 },
             });
 
-            return scheduledJobs.map((job: any) => ({
+            return triggerJobs.map((job: any) => ({
                 id: job.jobKey,
                 workflowId: job.workflowId,
                 workflowName: job.workflow.name,
@@ -495,7 +510,7 @@ export class ScheduleJobManager {
             const triggerId = jobId.substring(firstDashIndex + 1);
 
             // Update database
-            await this.prisma.scheduledJob.updateMany({
+            await this.prisma.triggerJob.updateMany({
                 where: {
                     workflowId,
                     triggerId,
@@ -548,7 +563,7 @@ export class ScheduleJobManager {
             }
 
             // Update database
-            await this.prisma.scheduledJob.updateMany({
+            await this.prisma.triggerJob.updateMany({
                 where: {
                     workflowId,
                     triggerId,
@@ -590,7 +605,7 @@ export class ScheduleJobManager {
                 updateData.lastError = error ? JSON.parse(JSON.stringify(error)) : null;
             }
 
-            await this.prisma.scheduledJob.updateMany({
+            await this.prisma.triggerJob.updateMany({
                 where: {
                     workflowId,
                     triggerId,

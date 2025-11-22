@@ -81,6 +81,7 @@ export interface Workflow {
   name: string;
   description?: string;
   userId: string;
+  teamId?: string | null;
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   settings: WorkflowSettings;
@@ -148,7 +149,7 @@ export interface WorkflowImportExport {
 }
 
 export interface NodeType {
-  type: string;
+  identifier: string; // Unique identifier for the node type (was 'type')
   displayName: string;
   name: string;
   group: string[];
@@ -157,6 +158,11 @@ export interface NodeType {
   defaults: Record<string, any>;
   inputs: string[];
   outputs: string[];
+  inputsConfig?: Record<string, {
+    position?: 'left' | 'right' | 'top' | 'bottom';
+    displayName?: string;
+    required?: boolean;
+  }>;
   icon?: string;
   color?: string;
   outputComponent?: string; // Optional custom output component identifier
@@ -173,6 +179,10 @@ export interface NodeType {
   id?: string; // Optional database ID for custom nodes
   createdAt?: string; // Optional timestamp for custom nodes
   updatedAt?: string; // Optional timestamp for custom nodes
+  // Node category for high-level organization and execution control
+  nodeCategory?: 'trigger' | 'action' | 'service' | 'tool' | 'condition' | 'transform';
+  // Trigger-specific metadata (only for trigger nodes)
+  triggerType?: "manual" | "webhook" | "schedule" | "polling" | "workflow-called";
   // Execution metadata from backend
   executionCapability?: "trigger" | "action" | "transform" | "condition";
   canExecuteIndividually?: boolean;

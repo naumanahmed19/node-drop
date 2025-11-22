@@ -1,4 +1,4 @@
-﻿import {
+import {
   BuiltInNodeTypes,
   NodeDefinition,
   NodeInputData,
@@ -6,7 +6,7 @@
 } from "../../types/node.types";
 
 export const JsonNode: NodeDefinition = {
-  type: BuiltInNodeTypes.JSON,
+  identifier: BuiltInNodeTypes.JSON,
   displayName: "JSON",
   name: "json",
   group: ["transform"],

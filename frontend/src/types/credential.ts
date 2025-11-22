@@ -20,6 +20,7 @@ export interface CredentialType {
   properties: CredentialProperty[];
   icon?: string;
   color?: string;
+  oauthProvider?: string; // OAuth provider name (google, microsoft, github, etc.)
 }
 
 export interface CredentialProperty {

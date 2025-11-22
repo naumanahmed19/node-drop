@@ -74,6 +74,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
       set({
         error: error?.message || "Failed to load node types",
         isLoading: false,
+        hasFetched: true, // Set hasFetched to true even on error to prevent infinite loops
       });
     }
   },
@@ -105,6 +106,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
       set({
         error: error?.message || "Failed to reload node types",
         isRefetching: false,
+        hasFetched: true, // Set hasFetched to true even on error to prevent infinite loops
       });
     }
   },
@@ -118,7 +120,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
   updateNodeType: (updatedNodeType: ExtendedNodeType) => {
     set((state) => {
       const updatedTypes = state.nodeTypes.map((nodeType) =>
-        nodeType.type === updatedNodeType.type ? updatedNodeType : nodeType
+        nodeType.identifier === updatedNodeType.identifier ? updatedNodeType : nodeType
       );
       // Update the classification cache
       updateNodeTypesCache(updatedTypes);
@@ -129,7 +131,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
   removeNodeType: (nodeTypeId: string) => {
     set((state) => {
       const updatedTypes = state.nodeTypes.filter(
-        (nodeType) => nodeType.type !== nodeTypeId && nodeType.id !== nodeTypeId
+        (nodeType) => nodeType.identifier !== nodeTypeId && nodeType.id !== nodeTypeId
       );
       // Update the classification cache
       updateNodeTypesCache(updatedTypes);
@@ -152,7 +154,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
   getNodeTypeById: (id: string) => {
     const { nodeTypes } = get();
     return nodeTypes.find(
-      (nodeType) => nodeType.type === id || nodeType.id === id
+      (nodeType) => nodeType.identifier === id || nodeType.id === id
     );
   },
 
@@ -166,7 +168,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
         if (!groups[categoryKey]) {
           groups[categoryKey] = [];
         }
-        if (!groups[categoryKey].find((nt) => nt.type === nodeType.type)) {
+        if (!groups[categoryKey].find((nt) => nt.identifier === nodeType.identifier)) {
           groups[categoryKey].push(nodeType);
         }
       });
@@ -205,7 +207,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
 
     Object.entries(allCategories).forEach(([category, nodeTypes]) => {
       const activeInCategory = nodeTypes.filter((nodeType) =>
-        activeNodeTypes.find((active) => active.type === nodeType.type)
+        activeNodeTypes.find((active) => active.identifier === nodeType.identifier)
       );
       if (activeInCategory.length > 0) {
         activeCategories[category] = activeInCategory;

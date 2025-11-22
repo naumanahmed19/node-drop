@@ -1,21 +1,24 @@
-﻿import {
+import {
   NodeDefinition,
   NodeInputData,
   NodeOutputData,
 } from "../../types/node.types";
 
 export const ScheduleTriggerNode: NodeDefinition = {
-  type: "schedule-trigger",
+  identifier: "schedule-trigger",
   displayName: "Schedule Trigger",
   name: "scheduleTrigger",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "schedule",
   version: 1,
   description:
     "Triggers workflow execution on a schedule using cron expressions or specific date/time",
-  icon: "⏰",
+  icon: "?",
   color: "#9C27B0",
   defaults: {
-    scheduleMode: "cron",
+    scheduleMode: "simple",
+    interval: "hour",
     cronExpression: "0 0 * * *",
     timezone: "UTC",
   },
@@ -27,12 +30,12 @@ export const ScheduleTriggerNode: NodeDefinition = {
       name: "scheduleMode",
       type: "options",
       required: true,
-      default: "cron",
+      default: "simple",
       description: "Choose how to define the schedule",
       options: [
-        { name: "Cron Expression", value: "cron" },
         { name: "Simple Schedule", value: "simple" },
         { name: "Specific Date/Time", value: "datetime" },
+        { name: "Cron Expression", value: "cron" },
       ],
     },
     // Cron Expression Mode
@@ -61,10 +64,16 @@ export const ScheduleTriggerNode: NodeDefinition = {
       description: "How often to trigger",
       options: [
         { name: "Every Minute", value: "minute" },
+        { name: "Every 2 Minutes", value: "2minutes" },
         { name: "Every 5 Minutes", value: "5minutes" },
+        { name: "Every 10 Minutes", value: "10minutes" },
         { name: "Every 15 Minutes", value: "15minutes" },
         { name: "Every 30 Minutes", value: "30minutes" },
         { name: "Every Hour", value: "hour" },
+        { name: "Every 2 Hours", value: "2hours" },
+        { name: "Every 3 Hours", value: "3hours" },
+        { name: "Every 6 Hours", value: "6hours" },
+        { name: "Every 12 Hours", value: "12hours" },
         { name: "Every Day", value: "day" },
         { name: "Every Week", value: "week" },
         { name: "Every Month", value: "month" },
@@ -124,6 +133,20 @@ export const ScheduleTriggerNode: NodeDefinition = {
         show: {
           scheduleMode: ["simple"],
           interval: ["month"],
+        },
+      },
+    },
+    {
+      displayName: "Weekdays Only",
+      name: "weekdaysOnly",
+      type: "boolean",
+      required: false,
+      default: false,
+      description: "Only run on weekdays (Monday-Friday)",
+      displayOptions: {
+        show: {
+          scheduleMode: ["simple"],
+          interval: ["day"],
         },
       },
     },
@@ -219,6 +242,30 @@ export const ScheduleTriggerNode: NodeDefinition = {
       default: "",
       description: "Optional description for this schedule",
     },
+    {
+      displayName: "Schedule Preview",
+      name: "schedulePreview",
+      type: "custom",
+      component: "SchedulePreview",
+      default: "",
+      required: false,
+      description: "Preview of when this workflow will run",
+      componentProps: {
+        dependsOn: [
+          "scheduleMode",
+          "cronExpression",
+          "interval",
+          "timeOfDay",
+          "dayOfWeek",
+          "dayOfMonth",
+          "weekdaysOnly",
+          "timezone",
+          "startDate",
+          "repeat",
+          "repeatInterval",
+        ],
+      },
+    },
   ],
   execute: async function (
     _inputData: NodeInputData
@@ -242,14 +289,16 @@ export const ScheduleTriggerNode: NodeDefinition = {
       const timeOfDay = this.getNodeParameter("timeOfDay") as string;
       const dayOfWeek = this.getNodeParameter("dayOfWeek") as string;
       const dayOfMonth = this.getNodeParameter("dayOfMonth") as number;
+      const weekdaysOnly = this.getNodeParameter("weekdaysOnly") as boolean;
 
       cronExpression = convertSimpleToCron(
         interval,
         timeOfDay,
         dayOfWeek,
-        dayOfMonth
+        dayOfMonth,
+        weekdaysOnly
       );
-      scheduleInfo = { interval, timeOfDay, dayOfWeek, dayOfMonth };
+      scheduleInfo = { interval, timeOfDay, dayOfWeek, dayOfMonth, weekdaysOnly };
     } else if (scheduleMode === "datetime") {
       const startDate = this.getNodeParameter("startDate") as string;
       const repeat = this.getNodeParameter("repeat") as boolean;
@@ -291,23 +340,39 @@ function convertSimpleToCron(
   interval: string,
   timeOfDay?: string,
   dayOfWeek?: string,
-  dayOfMonth?: number
+  dayOfMonth?: number,
+  weekdaysOnly?: boolean
 ): string {
   const [hour, minute] = timeOfDay ? timeOfDay.split(":") : ["0", "0"];
 
   switch (interval) {
     case "minute":
       return "* * * * *";
+    case "2minutes":
+      return "*/2 * * * *";
     case "5minutes":
       return "*/5 * * * *";
+    case "10minutes":
+      return "*/10 * * * *";
     case "15minutes":
       return "*/15 * * * *";
     case "30minutes":
       return "*/30 * * * *";
     case "hour":
       return "0 * * * *";
+    case "2hours":
+      return "0 */2 * * *";
+    case "3hours":
+      return "0 */3 * * *";
+    case "6hours":
+      return "0 */6 * * *";
+    case "12hours":
+      return "0 */12 * * *";
     case "day":
-      return `${minute} ${hour} * * *`;
+      // If weekdays only, run Monday-Friday (1-5)
+      return weekdaysOnly
+        ? `${minute} ${hour} * * 1-5`
+        : `${minute} ${hour} * * *`;
     case "week":
       return `${minute} ${hour} * * ${dayOfWeek || "1"}`;
     case "month":

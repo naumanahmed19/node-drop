@@ -21,3 +21,6 @@ export { default as GroupNode } from "./GroupNode";
 
 // Annotation node
 export { default as AnnotationNode } from "./AnnotationNode";
+
+// AI Agent node
+export { AIAgentNode } from "./AIAgentNode";

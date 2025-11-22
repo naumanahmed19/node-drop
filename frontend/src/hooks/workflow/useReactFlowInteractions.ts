@@ -425,7 +425,7 @@ export function useReactFlowInteractions() {
         const nodeType: NodeType & { isTemplate?: boolean; templateData?: any } = JSON.parse(nodeTypeData);
 
         console.log('🎯 Node dropped:', {
-          type: nodeType.type,
+          type: nodeType.identifier,
           isTemplate: nodeType.isTemplate,
           hasTemplateData: !!nodeType.templateData,
           templateData: nodeType.templateData
@@ -457,7 +457,7 @@ export function useReactFlowInteractions() {
 
           const newNode: WorkflowNode = {
             id: `node-${Date.now()}`,
-            type: nodeType.type,
+            type: nodeType.identifier,
             name: nodeType.displayName,
             parameters,
             position,

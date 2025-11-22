@@ -850,6 +850,14 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const { progressTracker, executionState, flowExecutionState, executionManager } = get();
         const executionId = executionState.executionId || flowExecutionState.selectedExecution || "current";
 
+        console.log(`[updateNodeExecutionState] Updating node ${nodeId} to ${status}`, {
+          executionId,
+          nodeId,
+          status,
+          currentExecutionId: executionState.executionId,
+          selectedExecution: flowExecutionState.selectedExecution,
+        });
+
         // Update execution context manager
         switch (status) {
           case NodeExecutionStatus.QUEUED:
@@ -857,16 +865,28 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             break;
           case NodeExecutionStatus.RUNNING:
             executionManager.setNodeRunning(executionId, nodeId);
+            console.log(`[updateNodeExecutionState] Set node ${nodeId} to RUNNING in execution ${executionId}`);
             break;
           case NodeExecutionStatus.COMPLETED:
             executionManager.setNodeCompleted(executionId, nodeId);
             break;
           case NodeExecutionStatus.FAILED:
             executionManager.setNodeFailed(executionId, nodeId);
+            console.log(`[updateNodeExecutionState] Set node ${nodeId} to FAILED in execution ${executionId}`);
             break;
         }
 
-        set({ executionManager, executionStateVersion: get().executionStateVersion + 1 });
+        // Verify the state was set
+        const nodeStatus = executionManager.getNodeStatus(nodeId);
+        console.log(`[updateNodeExecutionState] Verified node status:`, {
+          nodeId,
+          status: nodeStatus.status,
+          executionId: nodeStatus.executionId,
+          isExecutingInCurrent: executionManager.isNodeExecutingInCurrent(nodeId),
+        });
+
+        // Increment version to trigger re-renders (executionManager is mutated in place)
+        set({ executionStateVersion: get().executionStateVersion + 1 });
 
         // Update ProgressTracker
         progressTracker.setCurrentExecution(executionId);
@@ -939,6 +959,10 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             .map((conn) => conn.sourceNodeId);
           dependencies.set(nodeId, nodeDeps);
         });
+
+        // ExecutionContextManager is already initialized in subscribeToExecution
+        // No need to initialize again here
+        console.log(`[initializeFlowExecution] Initializing progress tracker for execution ${executionId} with ${nodeIds.length} nodes`);
 
         // FIXED: Set this as the current execution context in ProgressTracker
         // This ensures that subsequent updates affect the correct execution's state
@@ -1563,7 +1587,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             try {
               const nodeTypes = await workflowService.getNodeTypes();
               nodeTypeDefinition = nodeTypes.find(
-                (nt) => nt.type === node.type
+                (nt) => nt.identifier === node.type
               );
 
               if (nodeTypeDefinition && nodeTypeDefinition.properties) {
@@ -2363,6 +2387,20 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             await executionWebSocket.connect();
           }
 
+          // CRITICAL: Initialize executionManager FIRST before any events arrive
+          const { workflow, executionManager } = get();
+          if (workflow) {
+            const nodeIds = workflow.nodes.map((node) => node.id);
+            // Find trigger node (first node with no incoming connections)
+            const triggerNode = workflow.nodes.find(node => 
+              !workflow.connections.some(conn => conn.targetNodeId === node.id)
+            );
+            const triggerNodeId = triggerNode?.id || nodeIds[0]; // Fallback to first node
+            
+            console.log(`🔵 Initializing executionManager for ${executionId} with ${nodeIds.length} nodes, trigger: ${triggerNodeId}`);
+            executionManager.startExecution(executionId, triggerNodeId, nodeIds);
+          }
+
           // CRITICAL: Add to activeExecutions BEFORE subscribing
           // This ensures isActiveExecution check passes when events arrive
           const currentFlowState = get().flowExecutionState;
@@ -2547,17 +2585,36 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         switch (data.type) {
           case "node-started":
             if (data.nodeId && data.executionId) {
+              console.log('🔵 [Frontend] node-started event received:', {
+                nodeId: data.nodeId,
+                nodeName,
+                nodeType: data.data?.nodeType,
+                executionId: data.executionId,
+                timestamp: data.timestamp,
+              });
+              
               get().progressTracker.setCurrentExecution(data.executionId);
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.RUNNING, {
                 startTime: Date.now(),
                 progress: 0,
               });
+              
+              console.log('✅ [Frontend] Updated node state to RUNNING for:', data.nodeId);
+              
+              // Get node details for logging
+              const workflow = get().workflow;
+              const node = workflow?.nodes.find(n => n.id === data.nodeId);
+              
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
                 level: "info",
                 nodeId: data.nodeId,
                 message: `Starting execution of node: ${nodeName}`,
-                data: data.data,
+                data: {
+                  nodeType: node?.type,
+                  parameters: node?.parameters,
+                  eventData: data.data,
+                },
               });
             }
             break;
@@ -2625,24 +2682,55 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: "info",
                 nodeId: data.nodeId,
                 message: `Node execution completed: ${nodeName}`,
-                data: data.data,
+                data: {
+                  outputData: actualOutputData,
+                  duration: nodeExecutionResult?.duration,
+                  eventData: data.data,
+                },
               });
             }
             break;
 
           case "node-failed":
             if (data.nodeId && data.executionId) {
+              const errorMessage = data.error?.message || "Node execution failed";
+              
+              console.log('🔴 [Frontend] node-failed event received:', {
+                nodeId: data.nodeId,
+                nodeName,
+                error: data.error,
+                executionId: data.executionId,
+                timestamp: data.timestamp,
+              });
+              
+              // Update node execution result with error message
+              get().updateNodeExecutionResult(data.nodeId, {
+                nodeId: data.nodeId,
+                nodeName,
+                status: "error",
+                endTime: timestamp,
+                error: errorMessage, // Store as string for display
+              });
+              
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.FAILED, {
                 endTime: timestamp,
                 error: data.error,
-                errorMessage: data.error?.message || "Node execution failed",
+                errorMessage: errorMessage,
               });
+              
+              console.log('✅ [Frontend] Updated node state to FAILED for:', data.nodeId);
+              
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
                 level: "error",
                 nodeId: data.nodeId,
-                message: `Node execution failed: ${nodeName} - ${data.error?.message || "Unknown error"}`,
-                data: data.data,
+                message: `Node execution failed: ${nodeName} - ${errorMessage}`,
+                data: {
+                  error: data.error,
+                  errorMessage: errorMessage,
+                  errorStack: data.error?.stack,
+                  eventData: data.data,
+                },
               });
             }
             break;
@@ -2814,9 +2902,13 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       },
 
       setupSocketListeners: () => {
+        console.log('[WorkflowStore] setupSocketListeners called');
+        
         const setupListeners = async () => {
           try {
+            console.log('[WorkflowStore] Importing socketService...');
             const { socketService } = await import("@/services/socket");
+            console.log('[WorkflowStore] socketService imported, registering listeners...');
 
             // Handle execution progress updates
             socketService.on("execution-progress", (progress: any) => {
@@ -2873,8 +2965,129 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 level: logEntry.level,
                 nodeId: logEntry.nodeId,
                 message: logEntry.message,
-                data: logEntry.data,
+                data: logEntry.metadata || logEntry.data, // Backend sends metadata, but keep data as fallback
               });
+            });
+
+            // Handle execution events (for service nodes and regular nodes)
+            console.log('[WorkflowStore] Registering execution-event listener');
+            socketService.on("execution-event", (event: any) => {
+              console.log('[WorkflowStore] Received execution-event:', event);
+              
+              const { executionState } = get();
+
+              // Only process events for the current execution
+              if (event.executionId !== executionState.executionId) {
+                console.log('[WorkflowStore] Ignoring event - wrong execution ID:', {
+                  eventExecutionId: event.executionId,
+                  currentExecutionId: executionState.executionId,
+                });
+                return;
+              }
+
+              const nodeName =
+                get().workflow?.nodes.find((n) => n.id === event.nodeId)
+                  ?.name || "Unknown";
+
+              console.log('[WorkflowStore] Processing execution-event:', {
+                type: event.type,
+                nodeId: event.nodeId,
+                nodeName,
+              });
+
+              switch (event.type) {
+                case "node-started":
+                  // Update node execution result
+                  get().updateNodeExecutionResult(event.nodeId, {
+                    nodeId: event.nodeId,
+                    nodeName,
+                    startTime: new Date(event.timestamp).getTime(),
+                  });
+
+                  // Update flow execution state for visual indicators
+                  get().updateNodeExecutionState(
+                    event.nodeId,
+                    NodeExecutionStatus.RUNNING,
+                    {
+                      startTime: new Date(event.timestamp).getTime(),
+                      inputData: event.data?.inputData,
+                    }
+                  );
+
+                  get().addExecutionLog({
+                    timestamp: new Date(event.timestamp).toISOString(),
+                    level: "info",
+                    nodeId: event.nodeId,
+                    message: `Node started: ${nodeName}`,
+                    data: { nodeId: event.nodeId, nodeName },
+                  });
+                  break;
+
+                case "node-completed":
+                  // Update node execution result
+                  get().updateNodeExecutionResult(event.nodeId, {
+                    nodeId: event.nodeId,
+                    nodeName,
+                    status: "success",
+                    endTime: new Date(event.timestamp).getTime(),
+                    data: event.data?.outputData || event.data,
+                    duration: event.data?.duration,
+                  });
+
+                  // Update flow execution state for visual indicators
+                  get().updateNodeExecutionState(
+                    event.nodeId,
+                    NodeExecutionStatus.COMPLETED,
+                    {
+                      endTime: new Date(event.timestamp).getTime(),
+                      outputData: event.data?.outputData || event.data,
+                      duration: event.data?.duration,
+                    }
+                  );
+
+                  get().addExecutionLog({
+                    timestamp: new Date(event.timestamp).toISOString(),
+                    level: "info",
+                    nodeId: event.nodeId,
+                    message: `Node completed: ${nodeName}`,
+                    data: { nodeId: event.nodeId, nodeName },
+                  });
+                  break;
+
+                case "node-failed":
+                  // Extract error message from error object
+                  const errorMessage = typeof event.error === 'string' 
+                    ? event.error 
+                    : event.error?.message || "Node execution failed";
+                  
+                  // Update node execution result
+                  get().updateNodeExecutionResult(event.nodeId, {
+                    nodeId: event.nodeId,
+                    nodeName,
+                    status: "error",
+                    endTime: new Date(event.timestamp).getTime(),
+                    error: errorMessage, // Store as string for display
+                  });
+
+                  // Update flow execution state for visual indicators
+                  get().updateNodeExecutionState(
+                    event.nodeId,
+                    NodeExecutionStatus.FAILED,
+                    {
+                      endTime: new Date(event.timestamp).getTime(),
+                      error: event.error,
+                    }
+                  );
+
+                  get().addExecutionLog({
+                    timestamp: new Date(event.timestamp).toISOString(),
+                    level: "error",
+                    nodeId: event.nodeId,
+                    message: `Node failed: ${nodeName} - ${errorMessage}`,
+                    data: { nodeId: event.nodeId, nodeName, error: event.error },
+                  });
+                  break;
+              }
             });
 
             // Handle node execution events (enhanced for flow execution)

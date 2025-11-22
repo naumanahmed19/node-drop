@@ -42,7 +42,7 @@ import {
  *    Get orders → Split (By Field: status) → Process by status
  */
 export const SplitNode: NodeDefinition = {
-    type: "split",
+    identifier: "split",
     displayName: "Split",
     name: "split",
     group: ["transform"],

@@ -1,3 +1,21 @@
+/**
+ * OpenAI Node
+ * 
+ * Integrates with OpenAI's API to provide access to GPT models.
+ * Supports conversation memory, template expressions, and advanced parameters.
+ * 
+ * Features:
+ * - Multiple GPT models (GPT-4o, GPT-4 Turbo, GPT-3.5, etc.)
+ * - Conversation memory with Redis persistence
+ * - Template expressions in messages ({{json.field}})
+ * - JSON mode for structured outputs
+ * - Advanced parameters (temperature, top_p, penalties, etc.)
+ * - Automatic retry logic with exponential backoff
+ * - Cost estimation per request
+ * 
+ * @module nodes/OpenAI
+ */
+
 import OpenAI from "openai";
 import { AIMessage, OPENAI_MODELS } from "../../types/ai.types";
 import {
@@ -7,8 +25,14 @@ import {
 } from "../../types/node.types";
 import { MemoryManager } from "../../utils/ai/MemoryManager";
 
+/**
+ * OpenAI Node Definition
+ * 
+ * Provides integration with OpenAI's chat completion API.
+ * Supports all major GPT models with configurable parameters.
+ */
 export const OpenAINode: NodeDefinition = {
-  type: "openai",
+  identifier: "openai",
   displayName: "OpenAI",
   name: "openai",
   group: ["ai", "transform"],
@@ -125,39 +149,100 @@ export const OpenAINode: NodeDefinition = {
       description:
         "Enable JSON mode for structured outputs (GPT-4 Turbo and newer)",
     },
+    {
+      displayName: "Options",
+      name: "options",
+      type: "collection",
+      placeholder: "Add Option",
+      default: {},
+      description: "Additional OpenAI configuration options",
+      options: [
+        {
+          name: "topP",
+          displayName: "Top P",
+          type: "number",
+          default: 1,
+          description:
+            "Nucleus sampling parameter. Alternative to temperature. Range: 0.0 to 1.0",
+          placeholder: "1",
+        },
+        {
+          name: "frequencyPenalty",
+          displayName: "Frequency Penalty",
+          type: "number",
+          default: 0,
+          description:
+            "Penalize tokens based on their frequency. Range: -2.0 to 2.0. Positive values reduce repetition",
+          placeholder: "0",
+        },
+        {
+          name: "presencePenalty",
+          displayName: "Presence Penalty",
+          type: "number",
+          default: 0,
+          description:
+            "Penalize tokens based on their presence. Range: -2.0 to 2.0. Positive values encourage new topics",
+          placeholder: "0",
+        },
+        {
+          name: "stop",
+          displayName: "Stop Sequences",
+          type: "string",
+          default: "",
+          description:
+            "Comma-separated list of sequences where the API will stop generating (max 4)",
+          placeholder: "\\n\\n, END, ---",
+        },
+        {
+          name: "seed",
+          displayName: "Seed",
+          type: "number",
+          default: undefined,
+          description:
+            "Random seed for deterministic sampling. Use same seed for reproducible outputs",
+          placeholder: "12345",
+        },
+        {
+          name: "user",
+          displayName: "User Identifier",
+          type: "string",
+          default: "",
+          description:
+            "Unique identifier for the end-user (helps OpenAI monitor and detect abuse)",
+          placeholder: "user-123",
+        },
+        {
+          name: "timeout",
+          displayName: "Timeout (ms)",
+          type: "number",
+          default: 60000,
+          description: "Request timeout in milliseconds",
+          placeholder: "60000",
+        },
+        {
+          name: "maxRetries",
+          displayName: "Max Retries",
+          type: "number",
+          default: 2,
+          description: "Number of retry attempts for failed requests",
+          placeholder: "2",
+        },
+      ] as any,
+    },
   ],
   execute: async function (
     inputData: NodeInputData
   ): Promise<NodeOutputData[]> {
-    // Get parameters - getNodeParameter automatically resolves {{...}} expressions
-    const model = await this.getNodeParameter("model") as string;
-    const systemPrompt = await this.getNodeParameter("systemPrompt") as string;
-    const temperature = await this.getNodeParameter("temperature") as number;
-    const maxTokens = await this.getNodeParameter("maxTokens") as number;
-    const enableMemory = await this.getNodeParameter("enableMemory") as boolean;
-    const sessionId = await this.getNodeParameter("sessionId") as string;
-    const jsonMode = await this.getNodeParameter("jsonMode") as boolean;
-
-    // Get user message - check input data first, then fall back to parameter
-    let userMessage = "";
-
-    // Check if we have input data from a previous node
-    if (inputData?.main?.[0]?.length && inputData.main[0].length > 0) {
-      const inputItem = inputData.main[0][0];
-      if (inputItem?.json) {
-        // Try to get message from various possible fields
-        userMessage = inputItem.json.message ||
-          inputItem.json.userMessage ||
-          inputItem.json.text ||
-          inputItem.json.content ||
-          "";
-      }
-    }
-
-    // If no message from input data, get from parameter
-    if (!userMessage) {
-      userMessage = await this.getNodeParameter("userMessage") as string;
-    }
+    // Get parameters
+    const model = this.getNodeParameter("model") as string;
+    const systemPrompt = this.getNodeParameter("systemPrompt") as string;
+    const temperature = this.getNodeParameter("temperature") as number;
+    const maxTokens = this.getNodeParameter("maxTokens") as number;
+    const enableMemory = this.getNodeParameter("enableMemory") as boolean;
+    const sessionId = this.getNodeParameter("sessionId") as string;
+    const jsonMode = this.getNodeParameter("jsonMode") as boolean;
+    const userMessageParam = this.getNodeParameter("userMessage") as string;
+    const options = (this.getNodeParameter("options") ?? {}) as any;
 
     // Get credentials
     const credentials = await this.getCredentials("apiKey");
@@ -173,6 +258,15 @@ export const OpenAINode: NodeDefinition = {
       apiKey: credentials.apiKey as string,
     });
 
+    // Resolve user message with input data (supports {{json.field}} expressions)
+    const items = this.extractJsonData(
+      this.normalizeInputItems(inputData.main || [])
+    );
+    const userMessage =
+      items.length > 0
+        ? this.resolveValue(userMessageParam, items[0])
+        : userMessageParam;
+
     // Validate user message
     if (!userMessage || userMessage.trim() === "") {
       throw new Error("User message cannot be empty");
@@ -186,7 +280,7 @@ export const OpenAINode: NodeDefinition = {
 
     // Add conversation history if memory is enabled
     if (enableMemory) {
-      const memory = memoryManager.getMemory(sessionId);
+      const memory = await memoryManager.getMemory(sessionId);
 
       // Add system prompt if this is the first message
       if (memory.messages.length === 0 && systemPrompt) {
@@ -195,7 +289,7 @@ export const OpenAINode: NodeDefinition = {
           content: systemPrompt,
           timestamp: Date.now(),
         };
-        memoryManager.addMessage(sessionId, systemMessage);
+        await memoryManager.addMessage(sessionId, systemMessage);
         messages.push(systemMessage);
       } else {
         // Use existing messages
@@ -222,7 +316,7 @@ export const OpenAINode: NodeDefinition = {
 
     // Save user message to memory if enabled
     if (enableMemory) {
-      memoryManager.addMessage(sessionId, currentUserMessage);
+      await memoryManager.addMessage(sessionId, currentUserMessage);
     }
 
     this.logger.info("Sending request to OpenAI", {
@@ -250,8 +344,35 @@ export const OpenAINode: NodeDefinition = {
         requestOptions.response_format = { type: "json_object" };
       }
 
-      // Make API call
-      const completion = await openai.chat.completions.create(requestOptions);
+      // Add advanced options if provided
+      if (options.topP !== undefined && options.topP !== 1) {
+        requestOptions.top_p = options.topP;
+      }
+      if (options.frequencyPenalty !== undefined && options.frequencyPenalty !== 0) {
+        requestOptions.frequency_penalty = options.frequencyPenalty;
+      }
+      if (options.presencePenalty !== undefined && options.presencePenalty !== 0) {
+        requestOptions.presence_penalty = options.presencePenalty;
+      }
+      if (options.stop) {
+        requestOptions.stop = options.stop.split(",").map((s: string) => s.trim()).filter((s: string) => s);
+      }
+      if (options.seed !== undefined) {
+        requestOptions.seed = options.seed;
+      }
+      if (options.user) {
+        requestOptions.user = options.user;
+      }
+
+      // Configure timeout and retries
+      const timeout = options.timeout || 60000;
+      const maxRetries = options.maxRetries !== undefined ? options.maxRetries : 2;
+
+      // Make API call with retry logic
+      const completion = await openai.chat.completions.create(requestOptions, {
+        timeout,
+        maxRetries,
+      });
 
       const response = completion.choices[0];
       const assistantMessage = response.message.content || "";
@@ -263,7 +384,7 @@ export const OpenAINode: NodeDefinition = {
           content: assistantMessage,
           timestamp: Date.now(),
         };
-        memoryManager.addMessage(sessionId, assistantAIMessage);
+        await memoryManager.addMessage(sessionId, assistantAIMessage);
       }
 
       // Calculate estimated cost
@@ -302,7 +423,7 @@ export const OpenAINode: NodeDefinition = {
                 finishReason: response.finish_reason,
                 sessionId: enableMemory ? sessionId : null,
                 conversationLength: enableMemory
-                  ? memoryManager.getMemory(sessionId).messages.length
+                  ? (await memoryManager.getMemory(sessionId)).messages.length
                   : messages.length,
               },
             },

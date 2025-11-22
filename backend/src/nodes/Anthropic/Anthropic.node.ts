@@ -8,7 +8,7 @@ import {
 import { MemoryManager } from "../../utils/ai/MemoryManager";
 
 export const AnthropicNode: NodeDefinition = {
-  type: "anthropic",
+  identifier: "anthropic",
   displayName: "Anthropic (Claude)",
   name: "anthropic",
   group: ["ai", "transform"],
@@ -162,7 +162,7 @@ export const AnthropicNode: NodeDefinition = {
 
     // Add conversation history if memory is enabled
     if (enableMemory) {
-      const memory = memoryManager.getMemory(sessionId);
+      const memory = await memoryManager.getMemory(sessionId);
 
       // Filter out system messages and convert to Anthropic format
       const conversationMessages = memory.messages
@@ -189,7 +189,7 @@ export const AnthropicNode: NodeDefinition = {
         content: resolvedMessage,
         timestamp: Date.now(),
       };
-      memoryManager.addMessage(sessionId, aiMessage);
+      await memoryManager.addMessage(sessionId, aiMessage);
     }
 
     this.logger.info("Sending request to Anthropic", {
@@ -223,7 +223,7 @@ export const AnthropicNode: NodeDefinition = {
           content: assistantMessage,
           timestamp: Date.now(),
         };
-        memoryManager.addMessage(sessionId, assistantAIMessage);
+        await memoryManager.addMessage(sessionId, assistantAIMessage);
       }
 
       // Calculate estimated cost
@@ -263,7 +263,7 @@ export const AnthropicNode: NodeDefinition = {
                 stopReason: response.stop_reason,
                 sessionId: enableMemory ? sessionId : null,
                 conversationLength: enableMemory
-                  ? memoryManager.getMemory(sessionId).messages.length
+                  ? (await memoryManager.getMemory(sessionId)).messages.length
                   : messages.length,
               },
             },

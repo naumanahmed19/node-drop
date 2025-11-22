@@ -14,7 +14,7 @@ import {
 
 export interface TriggerExecutionRequest {
   triggerId: string;
-  triggerType: "webhook" | "schedule" | "manual" | "workflow-called";
+  triggerType: "webhook" | "schedule" | "manual" | "workflow-called" | "polling";
   workflowId: string;
   userId: string;
   triggerNodeId: string;

@@ -48,7 +48,7 @@ class NodeCLI {
       for (const [dirName, nodes] of Object.entries(nodesByDir)) {
         console.log(`📁 ${dirName}/`);
         nodes.forEach((node) => {
-          console.log(`   └─ ${node.displayName} (${node.type})`);
+          console.log(`   └─ ${node.displayName} (${node.identifier})`);
           if (node.description) {
             console.log(`      ${node.description}`);
           }
@@ -157,7 +157,7 @@ export const ${nodeName}Node: NodeDefinition = {
           console.log(`\n📁 ${dirName}/`);
           nodes.forEach((node) => {
             console.log(`   ✅ ${node.displayName}`);
-            console.log(`      Type: ${node.type}`);
+            console.log(`      Type: ${node.identifier}`);
             console.log(`      Group: ${node.group.join(", ")}`);
             if (node.description) {
               console.log(`      Description: ${node.description}`);
@@ -269,7 +269,7 @@ export const ${nodeName}Node: NodeDefinition = {
       // Direct database query without triggering node registration
       const nodes = await this.prisma.nodeType.findMany({
         select: {
-          type: true,
+          identifier: true,
           displayName: true,
           active: true,
           group: true,
@@ -295,7 +295,7 @@ export const ${nodeName}Node: NodeDefinition = {
       console.log(`\n🟢 Active Nodes (${activeNodes.length}):`);
       if (activeNodes.length > 0) {
         activeNodes.forEach((node) => {
-          console.log(`  ✅ ${node.displayName} (${node.type})`);
+          console.log(`  ✅ ${node.displayName} (${node.identifier})`);
           console.log(`     ${node.description || "No description"}`);
           console.log("");
         });
@@ -306,7 +306,7 @@ export const ${nodeName}Node: NodeDefinition = {
       console.log(`\n🔴 Inactive Nodes (${inactiveNodes.length}):`);
       if (inactiveNodes.length > 0) {
         inactiveNodes.forEach((node) => {
-          console.log(`  ❌ ${node.displayName} (${node.type})`);
+          console.log(`  ❌ ${node.displayName} (${node.identifier})`);
           console.log(`     ${node.description || "No description"}`);
           console.log("");
         });
@@ -327,7 +327,7 @@ export const ${nodeName}Node: NodeDefinition = {
     try {
       const nodeService = await this.getNodeService();
       const allNodes = await nodeService.getNodesWithStatus();
-      const nodeTypes = allNodes.map((node) => node.type);
+      const nodeTypes = allNodes.map((node) => node.identifier);
 
       if (nodeTypes.length === 0) {
         console.log("📭 No nodes found to activate");
@@ -351,7 +351,7 @@ export const ${nodeName}Node: NodeDefinition = {
     try {
       const nodeService = await this.getNodeService();
       const allNodes = await nodeService.getNodesWithStatus();
-      const nodeTypes = allNodes.map((node) => node.type);
+      const nodeTypes = allNodes.map((node) => node.identifier);
 
       if (nodeTypes.length === 0) {
         console.log("📭 No nodes found to deactivate");

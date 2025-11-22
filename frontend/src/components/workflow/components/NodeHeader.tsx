@@ -32,6 +32,8 @@ interface NodeHeaderProps {
   showBorder?: boolean
   /** Whether the node is currently executing */
   isExecuting?: boolean
+  /** Force hide label (for service nodes in compact mode) */
+  hideLabel?: boolean
 }
 
 /**
@@ -61,7 +63,8 @@ export const NodeHeader = memo(function NodeHeader({
   canExpand = true,
   onToggleExpand,
   showBorder = false,
-  isExecuting = false
+  isExecuting = false,
+  hideLabel = false
 }: NodeHeaderProps) {
   const { compactMode } = useReactFlowUIStore()
   
@@ -71,7 +74,7 @@ export const NodeHeader = memo(function NodeHeader({
   }
   
   return (
-    <div className={`flex items-center ${compactMode && !isExpanded && (!canExpand || !onToggleExpand) ? 'justify-center' : 'justify-between'} ${compactMode && !isExpanded ? 'p-2' : 'p-3'} ${showBorder ? 'border-b border-border' : ''}`}>
+    <div className={`flex items-center ${compactMode && !isExpanded && (!canExpand || !onToggleExpand) ? 'justify-center' : 'justify-between'} ${compactMode && !isExpanded ? 'p-2' : isExpanded ? 'p-3' : 'p-2'} ${showBorder ? 'border-b border-border' : ''}`}>
       <div className={`flex items-center ${compactMode && !isExpanded ? 'gap-0' : 'gap-2'} ${!compactMode || isExpanded ? 'flex-1' : ''} min-w-0`}>
         {/* Icon Component */}
         {icon && (
@@ -83,8 +86,8 @@ export const NodeHeader = memo(function NodeHeader({
           />
         )}
         
-        {/* Label Section - Hidden in compact mode ONLY when collapsed */}
-        {(!compactMode || isExpanded) && (
+        {/* Label Section - Hidden in compact mode ONLY when collapsed, or when hideLabel is true */}
+        {(!compactMode || isExpanded) && !hideLabel && (
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-sm font-medium truncate">{label}</span>
             {headerInfo && (

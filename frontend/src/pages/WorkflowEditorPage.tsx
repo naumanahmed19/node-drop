@@ -55,6 +55,7 @@ export function WorkflowEditorPage() {
     name: string
     category: string
     saveExecutionHistory: boolean
+    teamId?: string | null
   }) => {
     if (!workflow) return
 
@@ -65,6 +66,7 @@ export function WorkflowEditorPage() {
         description: '',
         category: data.category || undefined,
         tags: [],
+        teamId: data.teamId !== null ? data.teamId : undefined, // Send teamId if it's a string, undefined if null
       })
 
       // Update the workflow settings with execution history preference

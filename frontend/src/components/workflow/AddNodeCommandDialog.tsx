@@ -73,23 +73,43 @@ export function AddNodeCommandDialog({
   const nodeSearchGetter = useCallback((node: NodeType) => [
     node.displayName,
     node.description,
-    node.type,
+    node.identifier,
     ...node.group
   ], [])
+
+  // Filter nodes by service type if connecting to service inputs
+  const serviceFilteredNodes = useMemo(() => {
+    const targetInput = insertionContext?.targetInput
+    
+    // If connecting to a service input, filter by output type
+    if (targetInput === 'model') {
+      // Only show nodes with 'model' output
+      return activeNodeTypes.filter(node => node.outputs.includes('model'))
+    } else if (targetInput === 'memory') {
+      // Only show nodes with 'memory' output
+      return activeNodeTypes.filter(node => node.outputs.includes('memory'))
+    } else if (targetInput === 'tools') {
+      // Only show nodes with 'tool' output
+      return activeNodeTypes.filter(node => node.outputs.includes('tool'))
+    }
+    
+    // No service filter, return all nodes
+    return activeNodeTypes
+  }, [activeNodeTypes, insertionContext?.targetInput])
 
   // Filter nodes using fuzzy search when there's a search query
   const filteredNodeTypes = useMemo(() => {
     if (!debouncedSearchQuery.trim()) {
-      return activeNodeTypes
+      return serviceFilteredNodes
     }
 
     // Use fuzzy search to filter and sort nodes
     return fuzzyFilter(
-      activeNodeTypes,
+      serviceFilteredNodes,
       debouncedSearchQuery,
       nodeSearchGetter
     )
-  }, [activeNodeTypes, debouncedSearchQuery, nodeSearchGetter])
+  }, [serviceFilteredNodes, debouncedSearchQuery, nodeSearchGetter])
 
   // Group nodes by category - only filtered nodes will be shown
   const groupedNodes = useMemo(() => {
@@ -208,10 +228,32 @@ export function AddNodeCommandDialog({
     let sourceNodeIdForConnection: string | undefined = undefined
 
     if (insertionContext) {
-      // Check if this is a connection drop (source but no target)
-      const isConnectionDrop = insertionContext.sourceNodeId && !insertionContext.targetNodeId
+      // Check if this is a service input connection (clicking on model/memory/tools input)
+      const isServiceInputConnection = insertionContext.targetNodeId && !insertionContext.sourceNodeId
+      
+      if (isServiceInputConnection) {
+        // Service input connection - position new node below the target node
+        const targetNode = reactFlowInstance.getNode(insertionContext.targetNodeId)
+        
+        if (targetNode && targetNode.parentId) {
+          // Check if target node is in a group
+          parentGroupId = targetNode.parentId
+        }
 
-      if (isConnectionDrop) {
+        if (targetNode) {
+          const targetHeight = targetNode.height || 100
+          const gap = 80
+
+          // Initial position: below the target node
+          const initialPosition = {
+            x: targetNode.position.x,
+            y: targetNode.position.y + targetHeight + gap
+          }
+
+          // Find non-overlapping position
+          nodePosition = findNonOverlappingPosition(initialPosition, 200, 100, parentGroupId)
+        }
+      } else if (insertionContext.sourceNodeId && !insertionContext.targetNodeId) {
         // Connection was dropped on canvas - position to the right of source node
         const sourceNode = reactFlowInstance.getNode(insertionContext.sourceNodeId)
         sourceNodeIdForConnection = insertionContext.sourceNodeId
@@ -371,7 +413,7 @@ export function AddNodeCommandDialog({
 
     const newNode: WorkflowNode = {
       id: `node-${Date.now()}`,
-      type: nodeType.type,
+      type: nodeType.identifier,
       name: nodeType.displayName,
       parameters,
       position: nodePosition,
@@ -390,58 +432,94 @@ export function AddNodeCommandDialog({
     // Add the node first
     addNode(newNode)
 
-    // Create connection if we have a source node
-    // Either from insertionContext (drag from connector) or sourceNodeIdForConnection (selected node)
-    const effectiveSourceNodeId = insertionContext?.sourceNodeId || sourceNodeIdForConnection
+    // Create connection based on insertion context
+    // Check if this is a service input connection (new node as SOURCE → target node as TARGET)
+    const isServiceInputConnection = insertionContext?.targetNodeId && !insertionContext?.sourceNodeId
 
-    if (effectiveSourceNodeId) {
-      // Check if this is inserting between nodes (only possible with insertionContext)
-      const isInsertingBetweenNodes = insertionContext?.targetNodeId && insertionContext.targetNodeId !== ''
-
-      if (isInsertingBetweenNodes && insertionContext) {
-        // First, find and remove the existing connection between source and target
-        const existingConnection = workflow?.connections.find(
-          conn =>
-            conn.sourceNodeId === insertionContext.sourceNodeId &&
-            conn.targetNodeId === insertionContext.targetNodeId &&
-            (conn.sourceOutput === insertionContext.sourceOutput || (!conn.sourceOutput && !insertionContext.sourceOutput)) &&
-            (conn.targetInput === insertionContext.targetInput || (!conn.targetInput && !insertionContext.targetInput))
+    if (isServiceInputConnection && insertionContext) {
+      // Service input connection: new node provides service to target node
+      // Example: Memory node (new) → AI Agent (target)
+      
+      // Determine the output handle for the new node
+      // Use the sourceOutput from context (which indicates the service type: model, memory, tool)
+      let newNodeOutput = insertionContext.sourceOutput || 'main'
+      
+      // If the node type has specific outputs, use the first matching one
+      if (nodeType.outputs && nodeType.outputs.length > 0) {
+        // Try to find an output that matches the service type
+        const matchingOutput = nodeType.outputs.find(output => 
+          output === insertionContext.sourceOutput
         )
-
-        if (existingConnection) {
-          removeConnection(existingConnection.id)
+        if (matchingOutput) {
+          newNodeOutput = matchingOutput
+        } else {
+          // Use first available output
+          newNodeOutput = nodeType.outputs[0]
         }
       }
 
-      // Create connection from source node to new node
-      const sourceConnection: WorkflowConnection = {
-        id: `${effectiveSourceNodeId}-${newNode.id}-${Date.now()}`,
-        sourceNodeId: effectiveSourceNodeId,
-        sourceOutput: insertionContext?.sourceOutput || 'main',
-        targetNodeId: newNode.id,
-        targetInput: 'main',
+      const serviceConnection: WorkflowConnection = {
+        id: `${newNode.id}-${insertionContext.targetNodeId}-${Date.now()}`,
+        sourceNodeId: newNode.id,
+        sourceOutput: newNodeOutput,
+        targetNodeId: insertionContext.targetNodeId,
+        targetInput: insertionContext.targetInput || 'main',
       }
 
-      addConnection(sourceConnection)
+      addConnection(serviceConnection)
+    } else {
+      // Regular connection: source node → new node
+      const effectiveSourceNodeId = insertionContext?.sourceNodeId || sourceNodeIdForConnection
 
-      // If there's a target node specified (inserting between nodes), wire the new node to it
-      if (isInsertingBetweenNodes && insertionContext?.targetNodeId) {
-        // Determine the appropriate output handle for the new node
-        // Use the first available output from the node type, or 'main' as fallback
-        let newNodeOutput = 'main'
-        if (nodeType.outputs && nodeType.outputs.length > 0) {
-          newNodeOutput = nodeType.outputs[0] // outputs is string[], not object[]
+      if (effectiveSourceNodeId) {
+        // Check if this is inserting between nodes (only possible with insertionContext)
+        const isInsertingBetweenNodes = insertionContext?.targetNodeId && insertionContext.targetNodeId !== ''
+
+        if (isInsertingBetweenNodes && insertionContext) {
+          // First, find and remove the existing connection between source and target
+          const existingConnection = workflow?.connections.find(
+            conn =>
+              conn.sourceNodeId === insertionContext.sourceNodeId &&
+              conn.targetNodeId === insertionContext.targetNodeId &&
+              (conn.sourceOutput === insertionContext.sourceOutput || (!conn.sourceOutput && !insertionContext.sourceOutput)) &&
+              (conn.targetInput === insertionContext.targetInput || (!conn.targetInput && !insertionContext.targetInput))
+          )
+
+          if (existingConnection) {
+            removeConnection(existingConnection.id)
+          }
         }
 
-        const targetConnection: WorkflowConnection = {
-          id: `${newNode.id}-${insertionContext.targetNodeId}-${Date.now() + 1}`,
-          sourceNodeId: newNode.id,
-          sourceOutput: newNodeOutput,
-          targetNodeId: insertionContext.targetNodeId,
-          targetInput: insertionContext.targetInput || 'main',
+        // Create connection from source node to new node
+        const sourceConnection: WorkflowConnection = {
+          id: `${effectiveSourceNodeId}-${newNode.id}-${Date.now()}`,
+          sourceNodeId: effectiveSourceNodeId,
+          sourceOutput: insertionContext?.sourceOutput || 'main',
+          targetNodeId: newNode.id,
+          targetInput: 'main',
         }
 
-        addConnection(targetConnection)
+        addConnection(sourceConnection)
+
+        // If there's a target node specified (inserting between nodes), wire the new node to it
+        if (isInsertingBetweenNodes && insertionContext?.targetNodeId) {
+          // Determine the appropriate output handle for the new node
+          // Use the first available output from the node type, or 'main' as fallback
+          let newNodeOutput = 'main'
+          if (nodeType.outputs && nodeType.outputs.length > 0) {
+            newNodeOutput = nodeType.outputs[0] // outputs is string[], not object[]
+          }
+
+          const targetConnection: WorkflowConnection = {
+            id: `${newNode.id}-${insertionContext.targetNodeId}-${Date.now() + 1}`,
+            sourceNodeId: newNode.id,
+            sourceOutput: newNodeOutput,
+            targetNodeId: insertionContext.targetNodeId,
+            targetInput: insertionContext.targetInput || 'main',
+          }
+
+          addConnection(targetConnection)
+        }
       }
     }
 
@@ -476,25 +554,25 @@ export function AddNodeCommandDialog({
               <CommandGroup>
                 {group.nodes.map((node) => {
                   // Skip if this node has already been rendered in a previous group
-                  if (renderedNodeTypes.has(node.type)) {
+                  if (renderedNodeTypes.has(node.identifier)) {
                     return null
                   }
-                  renderedNodeTypes.add(node.type)
+                  renderedNodeTypes.add(node.identifier)
 
                   return (
                     <CommandItem
-                      key={node.type}
+                      key={node.identifier}
                       value={`${node.displayName} ${node.description} ${node.group.join(' ')}`}
                       onSelect={() => handleSelectNode(node)}
                       className="flex items-center gap-3 p-3"
                     >
                       <NodeIconRenderer
                         icon={node.icon}
-                        nodeType={node.type}
+                        nodeType={node.identifier}
                         nodeGroup={node.group}
                         displayName={node.displayName}
                         backgroundColor={node.color || '#6b7280'}
-                        isTrigger={node.group.includes('trigger')}
+                        isTrigger={node.nodeCategory === 'trigger'}
                         size="md"
                         className="flex-shrink-0 shadow-sm"
                       />

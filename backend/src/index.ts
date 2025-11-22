@@ -20,14 +20,16 @@ import flowExecutionRoutes from "./routes/flow-execution";
 import googleRoutes from "./routes/google";
 import { nodeTypeRoutes } from "./routes/node-types";
 import { nodeRoutes } from "./routes/nodes";
-import oauthRoutes from "./routes/oauth";
+import oauthGenericRoutes from "./routes/oauth-generic";
 import { publicFormsRoutes } from "./routes/public-forms";
 import { publicChatsRoutes } from "./routes/public-chats";
-import { scheduleJobsRoutes } from "./routes/schedule-jobs";
+import aiMemoryRoutes from "./routes/ai-memory.routes";
+import teamRoutes from "./routes/teams";
 import triggerRoutes from "./routes/triggers";
 import userRoutes from "./routes/user.routes";
 import variableRoutes from "./routes/variables";
 import webhookRoutes from "./routes/webhook";
+import webhookLogsRoutes from "./routes/webhook-logs";
 import { workflowRoutes } from "./routes/workflows";
 
 // Import middleware
@@ -42,6 +44,7 @@ import { NodeLoader } from "./services/NodeLoader";
 import { NodeService } from "./services/NodeService";
 import { RealtimeExecutionEngine } from "./services/RealtimeExecutionEngine";
 import { SocketService } from "./services/SocketService";
+import { logger } from "./utils/logger";
 
 // Load environment variables
 dotenv.config();
@@ -63,8 +66,18 @@ const credentialService = new CredentialService();
 // Register core credentials (OAuth2, HTTP Basic Auth, API Key, etc.)
 try {
   credentialService.registerCoreCredentials();
+  logger.info("✅ Core credentials registered successfully");
 } catch (error) {
   console.error("❌ Failed to register core credentials:", error);
+}
+
+// Initialize OAuth providers (Google, Microsoft, Slack, GitHub)
+try {
+  const { initializeOAuthProviders } = require("./oauth");
+  initializeOAuthProviders();
+  logger.info("✅ OAuth providers initialized successfully");
+} catch (error) {
+  console.error("❌ Failed to initialize OAuth providers:", error);
 }
 
 const nodeLoader = new NodeLoader(nodeService, credentialService, prisma);
@@ -112,6 +125,13 @@ realtimeExecutionEngine.on("execution-started", (data) => {
 });
 
 realtimeExecutionEngine.on("node-started", (data) => {
+  logger.info('🔵 [RealtimeEngine] node-started event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-started",
@@ -119,9 +139,20 @@ realtimeExecutionEngine.on("node-started", (data) => {
     data: { nodeName: data.nodeName, nodeType: data.nodeType },
     timestamp: data.timestamp,
   });
+  
+  logger.info('✅ [RealtimeEngine] node-started event broadcast', {
+    nodeId: data.nodeId,
+  });
 });
 
 realtimeExecutionEngine.on("node-completed", (data) => {
+  logger.info('🟢 [RealtimeEngine] node-completed event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-completed",
@@ -133,15 +164,32 @@ realtimeExecutionEngine.on("node-completed", (data) => {
     },
     timestamp: data.timestamp,
   });
+  
+  logger.info('✅ [RealtimeEngine] node-completed event broadcast', {
+    nodeId: data.nodeId,
+  });
 });
 
 realtimeExecutionEngine.on("node-failed", (data) => {
+  logger.error('🔴 [RealtimeEngine] node-failed event received', {
+    executionId: data.executionId,
+    nodeId: data.nodeId,
+    nodeName: data.nodeName,
+    nodeType: data.nodeType,
+    error: data.error,
+  });
+  
   socketService.broadcastExecutionEvent(data.executionId, {
     executionId: data.executionId,
     type: "node-failed",
     nodeId: data.nodeId,
     error: data.error,
     timestamp: data.timestamp,
+  });
+  
+  logger.error('✅ [RealtimeEngine] node-failed event broadcast', {
+    nodeId: data.nodeId,
+    error: data.error,
   });
 });
 
@@ -181,6 +229,7 @@ declare global {
   var realtimeExecutionEngine: RealtimeExecutionEngine;
   var workflowService: WorkflowService;
   var scheduleJobManager: ScheduleJobManager;
+  var triggerService: any;
   var prisma: PrismaClient;
 }
 global.socketService = socketService;
@@ -201,26 +250,23 @@ async function initializeNodeSystems() {
 
     // Check if nodes were successfully registered
     const nodeTypes = await nodeService.getNodeTypes();
-    console.log(`📦 Found ${nodeTypes.length} registered node types`);
 
     if (nodeTypes.length === 0) {
-      console.log("🔄 No nodes found, attempting to register discovered nodes...");
       try {
         await nodeService.registerDiscoveredNodes();
         const newNodeTypes = await nodeService.getNodeTypes();
-        console.log(`✅ Successfully registered ${newNodeTypes.length} node types`);
+        console.log(`✅ Registered ${newNodeTypes.length} nodes`);
       } catch (registrationError) {
-        console.error("❌ Failed to register nodes:", registrationError);
+        console.error("Failed to register nodes:", registrationError);
       }
     } else {
-      console.log(`✅ Node types already registered: ${nodeTypes.length}`);
+      // Nodes already registered
 
       // Even if some nodes were found, try to register any missing ones
       try {
         // Import and use node discovery directly
         const { nodeDiscovery } = await import("./utils/NodeDiscovery");
         const allNodeDefinitions = await nodeDiscovery.getAllNodeDefinitions();
-        console.log(`🔍 Discovered ${allNodeDefinitions.length} node definitions`);
 
         let newRegistrations = 0;
         for (const nodeDefinition of allNodeDefinitions) {
@@ -235,16 +281,19 @@ async function initializeNodeSystems() {
         }
 
         if (newRegistrations > 0) {
-          console.log(`✅ Registered ${newRegistrations} additional nodes`);
+          console.log(`✅ Registered ${newRegistrations} nodes`);
         }
       } catch (registrationError) {
-        console.warn("⚠️ Failed to check for additional nodes:", registrationError);
+        console.warn("Failed to register additional nodes");
       }
     }
 
     // Then, load custom nodes
     await nodeLoader.initialize();
-    console.log("🔌 Custom node loader initialized");
+    
+    // Show total nodes loaded
+    const totalNodes = await nodeService.getNodeTypes();
+    console.log(`✅ Loaded ${totalNodes.length} nodes`);
   } catch (error) {
     console.error("❌ Failed to initialize node systems:", error);
     // Don't throw the error - allow the application to start
@@ -376,9 +425,14 @@ app.get("/", (req, res) => {
       nodeTypes: "/api/node-types",
       credentials: "/api/credentials",
       variables: "/api/variables",
+      teams: "/api/teams",
       triggers: "/api/triggers",
       webhooks: "/webhook/{webhookId}",
       webhookTest: "/webhook/{webhookId}/test",
+      forms: "/webhook/forms/{formId}",
+      formSubmit: "/webhook/forms/{formId}/submit",
+      chats: "/webhook/chats/{chatId}",
+      chatMessage: "/webhook/chats/{chatId}/message",
       customNodes: "/api/custom-nodes",
       flowExecution: "/api/flow-execution",
       executionControl: "/api/execution-control",
@@ -387,11 +441,13 @@ app.get("/", (req, res) => {
       oauth: "/api/oauth",
       google: "/api/google",
       health: "/health",
-      publicForms: "/api/public/forms/{formId}",
-      publicFormSubmit: "/api/public/forms/{formId}/submit",
     },
   });
 });
+
+// Debug routes (remove in production)
+import debugCredentialsRoutes from "./routes/debug-credentials";
+app.use("/api", debugCredentialsRoutes);
 
 // API routes
 app.use("/api/auth", authRoutes);
@@ -403,21 +459,23 @@ app.use("/api/nodes", nodeRoutes);
 app.use("/api/node-types", nodeTypeRoutes);
 app.use("/api/credentials", credentialRoutes);
 app.use("/api/variables", variableRoutes);
+app.use("/api/teams", teamRoutes);
 app.use("/api/triggers", triggerRoutes);
-app.use("/api/schedule-jobs", scheduleJobsRoutes);
 app.use("/api/custom-nodes", customNodeRoutes);
 app.use("/api/flow-execution", flowExecutionRoutes);
 app.use("/api/execution-control", executionControlRoutes);
 app.use("/api/execution-history", executionHistoryRoutes);
 app.use("/api/execution-recovery", executionRecoveryRoutes);
-app.use("/api/oauth", oauthRoutes);
+app.use("/api", oauthGenericRoutes);
 app.use("/api/google", googleRoutes);
-
-// Public API routes (no authentication required)
-app.use("/api/public/forms", publicFormsRoutes);
-app.use("/api/public/chats", publicChatsRoutes);
+app.use("/api/ai-memory", aiMemoryRoutes);
+app.use("/api", webhookLogsRoutes);
 
 // Webhook routes (public endpoints without /api prefix for easier external integration)
+// All webhook-based triggers are under /webhook for consistency
+// IMPORTANT: Register specific routes BEFORE generic webhook route
+app.use("/webhook/forms", publicFormsRoutes);
+app.use("/webhook/chats", publicChatsRoutes);
 app.use("/webhook", webhookRoutes);
 
 // 404 handler
@@ -449,7 +507,6 @@ httpServer.listen(PORT, async () => {
 
   // Initialize TriggerService singleton to load active triggers
   try {
-    console.log(`⏰ Initializing TriggerService...`);
     await initializeTriggerService(
       prisma,
       workflowService,
@@ -459,16 +516,16 @@ httpServer.listen(PORT, async () => {
       executionHistoryService,
       credentialService
     );
-    console.log(`✅ TriggerService initialized - active triggers loaded`);
+    global.triggerService = getTriggerService();
+    console.log(`✅ Initialized triggers & webhooks`);
   } catch (error) {
-    console.error(`❌ Failed to initialize TriggerService:`, error);
+    console.error(`Failed to initialize TriggerService:`, error);
   }
 
   // Initialize ScheduleJobManager for persistent schedule jobs
   try {
-    console.log(`📅 Initializing ScheduleJobManager...`);
     await scheduleJobManager.initialize();
-    console.log(`✅ ScheduleJobManager initialized - schedule jobs loaded from Redis`);
+    console.log(`✅ Initialized schedule jobs`);
   } catch (error) {
     console.error(`❌ Failed to initialize ScheduleJobManager:`, error);
   }
@@ -480,7 +537,7 @@ setInterval(() => {
   const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
   const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
   
-  console.log(`📊 Memory: ${heapUsedMB}MB / ${heapTotalMB}MB (RSS: ${Math.round(usage.rss / 1024 / 1024)}MB)`);
+  // Memory monitoring (silent)
   
   // Alert if memory usage is high
   if (heapUsedMB > 1024) { // 1GB threshold

@@ -49,7 +49,7 @@ router.get(
         (node) =>
           node.displayName.toLowerCase().includes(searchLower) ||
           node.description.toLowerCase().includes(searchLower) ||
-          node.type.toLowerCase().includes(searchLower)
+          node.identifier.toLowerCase().includes(searchLower)
       );
     }
 
@@ -112,7 +112,7 @@ router.get(
   "/:type",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const nodeSchema = await getNodeService().getNodeSchema(req.params.type);
+    const nodeSchema = await getNodeService().getNodeSchema(req.params.identifier);
 
     if (!nodeSchema) {
       const response: ApiResponse = {
@@ -146,7 +146,7 @@ router.post(
     } = req.body;
 
     const result = await getNodeService().executeNode(
-      req.params.type,
+      req.params.identifier,
       parameters,
       inputData,
       credentials

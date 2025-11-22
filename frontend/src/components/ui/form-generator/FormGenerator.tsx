@@ -161,13 +161,24 @@ export const FormGenerator = forwardRef<FormGeneratorRef, FormGeneratorProps>(({
       <div className={cn('space-y-6', className)}>
         {visibleFields.map((field) => (
           <FieldWrapper key={field.name} field={field} values={values} allFields={fields}>
-            <div className={cn('space-y-2', fieldClassName)}>
-              <FormFieldLabel 
+            {field.type === 'hidden' ? (
+              // Hidden fields: render without any wrapper, label, or description
+              <FieldRenderer
                 field={field}
-                showRequiredIndicator={showRequiredIndicator}
-                requiredIndicator={requiredIndicator}
+                value={values[field.name] ?? field.default ?? (Array.isArray(field.default) ? [] : undefined)}
+                error={allErrors[field.name]}
+                onChange={(value) => handleFieldChange(field.name, value)}
+                onBlur={(value) => handleFieldBlur(field.name, value)}
+                disabled={disabled}
+                allValues={values}
+                allFields={fields}
+                onFieldChange={handleFieldChange}
+                nodeId={nodeId}
+                nodeType={nodeType}
               />
-              <div>
+            ) : field.type === 'boolean' || field.type === 'switch' ? (
+              // Boolean/Switch fields: render without top label (they have inline labels)
+              <div className={cn('space-y-2', fieldClassName)}>
                 <FieldRenderer
                   field={field}
                   value={values[field.name] ?? field.default ?? (Array.isArray(field.default) ? [] : undefined)}
@@ -181,10 +192,36 @@ export const FormGenerator = forwardRef<FormGeneratorRef, FormGeneratorProps>(({
                   nodeId={nodeId}
                   nodeType={nodeType}
                 />
+                <FormFieldDescription field={field} />
+                <FormFieldError error={allErrors[field.name]} />
               </div>
-              <FormFieldDescription field={field} />
-              <FormFieldError error={allErrors[field.name]} />
-            </div>
+            ) : (
+              // Regular fields: render with label, description, and error
+              <div className={cn('space-y-2', fieldClassName)}>
+                <FormFieldLabel 
+                  field={field}
+                  showRequiredIndicator={showRequiredIndicator}
+                  requiredIndicator={requiredIndicator}
+                />
+                <div>
+                  <FieldRenderer
+                    field={field}
+                    value={values[field.name] ?? field.default ?? (Array.isArray(field.default) ? [] : undefined)}
+                    error={allErrors[field.name]}
+                    onChange={(value) => handleFieldChange(field.name, value)}
+                    onBlur={(value) => handleFieldBlur(field.name, value)}
+                    disabled={disabled}
+                    allValues={values}
+                    allFields={fields}
+                    onFieldChange={handleFieldChange}
+                    nodeId={nodeId}
+                    nodeType={nodeType}
+                  />
+                </div>
+                <FormFieldDescription field={field} />
+                <FormFieldError error={allErrors[field.name]} />
+              </div>
+            )}
           </FieldWrapper>
         ))}
       </div>
@@ -261,11 +298,6 @@ interface FormFieldDescriptionProps {
 }
 
 function FormFieldDescription({ field }: FormFieldDescriptionProps) {
-  // Don't show description for boolean and switch types as they use it as label text
-  if (field.type === 'boolean' || field.type === 'switch') {
-    return null
-  }
-
   if (!field.description) {
     return null
   }

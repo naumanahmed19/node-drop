@@ -1,5 +1,4 @@
 import { PrismaClient } from "@prisma/client";
-import axios from "axios";
 import * as crypto from "crypto";
 import { AppError } from "../utils/errors";
 import { logger } from "../utils/logger";
@@ -16,6 +15,7 @@ export interface CredentialType {
   icon?: string;
   color?: string;
   testable?: boolean;
+  oauthProvider?: string; // OAuth provider name (google, microsoft, github, etc.)
   test?: (
     data: CredentialData
   ) => Promise<{ success: boolean; message: string }>;
@@ -24,12 +24,17 @@ export interface CredentialType {
 export interface CredentialProperty {
   displayName: string;
   name: string;
-  type: "string" | "password" | "number" | "boolean" | "options";
+  type: "string" | "password" | "number" | "boolean" | "options" | "hidden";
   required?: boolean;
+  readonly?: boolean;
   default?: any;
   description?: string;
   options?: Array<{ name: string; value: any }>;
   placeholder?: string;
+  displayOptions?: {
+    show?: Record<string, any[]>;
+    hide?: Record<string, any[]>;
+  };
 }
 
 export interface CredentialWithData {
@@ -83,7 +88,7 @@ export class CredentialService {
 
     try {
       // Import core credentials
-      const { CoreCredentials } = require("../credentials");
+      const { CoreCredentials } = require("../oauth/credentials");
 
       // Register each core credential
       for (const credential of CoreCredentials) {
@@ -91,7 +96,7 @@ export class CredentialService {
       }
 
       this.coreCredentialsRegistered = true;
-      logger.info(`✅ Registered ${CoreCredentials.length} core credential types`);
+      // Core credentials registered silently
     } catch (error) {
       logger.error("Failed to register core credentials:", error);
       throw error;
@@ -103,10 +108,7 @@ export class CredentialService {
    */
   registerCredentialType(credentialType: CredentialType): void {
     this.credentialTypeRegistry.set(credentialType.name, credentialType);
-    logger.info("Registered credential type", {
-      name: credentialType.name,
-      displayName: credentialType.displayName,
-    });
+    // Silently registered - only log errors
   }
 
   /**
@@ -114,7 +116,7 @@ export class CredentialService {
    */
   unregisterCredentialType(credentialTypeName: string): void {
     this.credentialTypeRegistry.delete(credentialTypeName);
-    logger.info("Unregistered credential type", { name: credentialTypeName });
+    // Silently unregistered
   }
 
   /**
@@ -218,17 +220,40 @@ export class CredentialService {
 
   /**
    * Get credential by ID with decrypted data
+   * Checks both ownership and shared access
    */
   async getCredential(
     id: string,
     userId: string
   ): Promise<CredentialWithData | null> {
-    const credential = await this.prisma.credential.findFirst({
+    // First check if user owns the credential
+    let credential = await this.prisma.credential.findFirst({
       where: {
         id,
         userId,
       },
     });
+
+    let isOwner = !!credential;
+    let permission = "EDIT"; // Owner has full access
+
+    // If not owner, check if credential is shared with user
+    if (!credential) {
+      const share = await this.prisma.credentialShare.findFirst({
+        where: {
+          credentialId: id,
+          sharedWithUserId: userId,
+        },
+        include: {
+          credential: true,
+        },
+      });
+
+      if (share) {
+        credential = share.credential;
+        permission = share.permission;
+      }
+    }
 
     if (!credential) {
       return null;
@@ -244,7 +269,9 @@ export class CredentialService {
     return {
       ...credential,
       data: decryptedData,
-    };
+      isOwner,
+      permission,
+    } as any;
   }
 
   /**
@@ -275,15 +302,14 @@ export class CredentialService {
 
   /**
    * Get credentials for a user (without decrypted data)
+   * Includes: owned credentials, user-shared credentials, and team-shared credentials
    */
   async getCredentials(userId: string, type?: string) {
-    const whereClause: any = { userId };
-    if (type) {
-      whereClause.type = type;
-    }
+    const typeFilter = type ? { type } : {};
 
-    const credentials = await this.prisma.credential.findMany({
-      where: whereClause,
+    // Get user's own credentials
+    const ownCredentials = await this.prisma.credential.findMany({
+      where: { userId, ...typeFilter },
       select: {
         id: true,
         name: true,
@@ -293,12 +319,110 @@ export class CredentialService {
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: {
-        name: "asc",
+    });
+
+    // Get credentials shared directly with user
+    const userShares = await this.prisma.credentialShare.findMany({
+      where: { 
+        sharedWithUserId: userId,
+      },
+      include: {
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            userId: true,
+            expiresAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        owner: {
+          select: { id: true, name: true, email: true },
+        },
       },
     });
 
-    return credentials;
+    // Get credentials shared with teams user is a member of
+    const teamShares = await this.prisma.credentialShare.findMany({
+      where: {
+        sharedWithTeam: {
+          members: {
+            some: { userId },
+          },
+        },
+      },
+      include: {
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            userId: true,
+            expiresAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        sharedWithTeam: {
+          select: { id: true, name: true, slug: true, color: true },
+        },
+        sharedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    // Combine and deduplicate credentials
+    const credentialMap = new Map();
+
+    // Add own credentials
+    ownCredentials.forEach((cred) => {
+      credentialMap.set(cred.id, {
+        ...cred,
+        isOwner: true,
+        permission: "EDIT",
+      });
+    });
+
+    // Add user-shared credentials (if not already owned)
+    userShares.forEach((share) => {
+      const cred = share.credential;
+      if (type && cred.type !== type) return;
+      
+      if (!credentialMap.has(cred.id)) {
+        credentialMap.set(cred.id, {
+          ...cred,
+          isOwner: false,
+          permission: share.permission,
+          sharedBy: share.owner,
+          sharedVia: "user",
+        });
+      }
+    });
+
+    // Add team-shared credentials (if not already owned or user-shared)
+    teamShares.forEach((share) => {
+      const cred = share.credential;
+      if (type && cred.type !== type) return;
+      
+      if (!credentialMap.has(cred.id)) {
+        credentialMap.set(cred.id, {
+          ...cred,
+          isOwner: false,
+          permission: share.permission,
+          sharedBy: share.sharedBy,
+          sharedVia: "team",
+          team: share.sharedWithTeam,
+        });
+      }
+    });
+
+    // Convert to array and sort by name
+    return Array.from(credentialMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
   }
 
   /**
@@ -430,7 +554,7 @@ export class CredentialService {
       };
     }
 
-    // Check if credential type has a custom test method
+    // All credential types now have their test method in their definition
     if (credentialType.test && typeof credentialType.test === "function") {
       try {
         return await credentialType.test(data);
@@ -442,23 +566,8 @@ export class CredentialService {
       }
     }
 
-    // Perform type-specific testing for built-in types
-    switch (type) {
-      case "httpBasicAuth":
-        return this.testHttpBasicAuth(data);
-      case "apiKey":
-        return this.testApiKey(data);
-      case "oauth2":
-        return this.testOAuth2(data);
-      case "googleSheetsOAuth2":
-        return this.testGoogleSheetsOAuth2(data);
-      case "googleDriveOAuth2":
-        return this.testGoogleDriveOAuth2(data);
-      case "bearerToken":
-        return this.testBearerToken(data);
-      default:
-        return { success: true, message: "Credential format is valid" };
-    }
+    // If no test method is defined, just validate the format
+    return { success: true, message: "Credential format is valid" };
   }
 
   /**
@@ -525,394 +634,23 @@ export class CredentialService {
 
   /**
    * Get available credential types
+   * Returns all registered credential types (core + custom nodes)
    */
   getCredentialTypes(): CredentialType[] {
-    // Built-in credential types
-    const builtInTypes: CredentialType[] = [
-      {
-        name: "httpBasicAuth",
-        displayName: "HTTP Basic Auth",
-        description: "Username and password for HTTP Basic Authentication",
-        properties: [
-          {
-            displayName: "Username",
-            name: "username",
-            type: "string",
-            required: true,
-            description: "Username for authentication",
-            placeholder: "Enter username",
-          },
-          {
-            displayName: "Password",
-            name: "password",
-            type: "password",
-            required: true,
-            description: "Password for authentication",
-            placeholder: "Enter password",
-          },
-        ],
-        icon: "🔐",
-        color: "#4F46E5",
-        testable: true,
-      },
-      {
-        name: "apiKey",
-        displayName: "API Key",
-        description: "API key for service authentication",
-        properties: [
-          {
-            displayName: "API Key",
-            name: "apiKey",
-            type: "password",
-            required: true,
-            description: "Your API key",
-            placeholder: "Enter API key",
-          },
-          {
-            displayName: "Header Name",
-            name: "headerName",
-            type: "string",
-            required: false,
-            default: "Authorization",
-            description: "Header name for the API key",
-            placeholder: "Authorization",
-          },
-        ],
-        icon: "🔑",
-        color: "#059669",
-        testable: true,
-      },
-      {
-        name: "oauth2",
-        displayName: "OAuth2",
-        description: "OAuth2 authentication credentials",
-        properties: [
-          {
-            displayName: "Client ID",
-            name: "clientId",
-            type: "string",
-            required: true,
-            description: "OAuth2 client ID",
-            placeholder: "Enter client ID",
-          },
-          {
-            displayName: "Client Secret",
-            name: "clientSecret",
-            type: "password",
-            required: true,
-            description: "OAuth2 client secret",
-            placeholder: "Enter client secret",
-          },
-          {
-            displayName: "Access Token",
-            name: "accessToken",
-            type: "password",
-            required: false,
-            description: "OAuth2 access token",
-            placeholder: "Enter access token",
-          },
-          {
-            displayName: "Refresh Token",
-            name: "refreshToken",
-            type: "password",
-            required: false,
-            description: "OAuth2 refresh token",
-            placeholder: "Enter refresh token",
-          },
-        ],
-        icon: "🔒",
-        color: "#DC2626",
-        testable: true,
-      },
-      {
-        name: "bearerToken",
-        displayName: "Bearer Token",
-        description: "Bearer token for HTTP Authorization header",
-        properties: [
-          {
-            displayName: "Bearer Token",
-            name: "token",
-            type: "password",
-            required: true,
-            description: "Bearer token for authentication",
-            placeholder: "Enter bearer token",
-          },
-          {
-            displayName: "Token Prefix",
-            name: "tokenPrefix",
-            type: "string",
-            required: false,
-            default: "Bearer",
-            description: 'Prefix for the token (usually "Bearer")',
-            placeholder: "Bearer",
-          },
-        ],
-        icon: "🎫",
-        color: "#7C3AED",
-        testable: true,
-      },
-      {
-        name: "googleSheetsOAuth2",
-        displayName: "Google Sheets OAuth2",
-        description: "OAuth2 credentials for Google Sheets API",
-        properties: [
-          {
-            displayName: "OAuth Redirect URL",
-            name: "oauthCallbackUrl",
-            type: "string",
-            required: false,
-            description:
-              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-            placeholder: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-            default: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-          },
-          {
-            displayName: "Client ID",
-            name: "clientId",
-            type: "string",
-            required: true,
-            description: "OAuth2 Client ID from Google Cloud Console",
-            placeholder: "123456789-abc123.apps.googleusercontent.com",
-          },
-          {
-            displayName: "Client Secret",
-            name: "clientSecret",
-            type: "password",
-            required: true,
-            description: "OAuth2 Client Secret from Google Cloud Console",
-            placeholder: "GOCSPX-***",
-          },
-          // Note: accessToken and refreshToken are stored in the credential
-          // but not shown in the form - they're automatically filled via OAuth
-        ],
-        icon: "📊",
-        color: "#0F9D58",
-        testable: true,
-      },
-      {
-        name: "googleDriveOAuth2",
-        displayName: "Google Drive OAuth2",
-        description: "OAuth2 credentials for Google Drive API",
-        properties: [
-          {
-            displayName: "OAuth Redirect URL",
-            name: "oauthCallbackUrl",
-            type: "string",
-            required: false,
-            description:
-              "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-            placeholder: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-            default: `${
-              process.env.FRONTEND_URL || "http://localhost:3000"
-            }/oauth/callback`,
-          },
-          {
-            displayName: "Client ID",
-            name: "clientId",
-            type: "string",
-            required: true,
-            description: "OAuth2 Client ID from Google Cloud Console",
-            placeholder: "123456789-abc123.apps.googleusercontent.com",
-          },
-          {
-            displayName: "Client Secret",
-            name: "clientSecret",
-            type: "password",
-            required: true,
-            description: "OAuth2 Client Secret from Google Cloud Console",
-            placeholder: "GOCSPX-***",
-          },
-          // Note: accessToken and refreshToken are stored in the credential
-          // but not shown in the form - they're automatically filled via OAuth
-        ],
-        icon: "🗂️",
-        color: "#4285F4",
-        testable: true,
-      },
-      {
-        name: "postgresDb",
-        displayName: "PostgreSQL Database",
-        description: "PostgreSQL database connection credentials",
-        properties: [
-          {
-            displayName: "Host",
-            name: "host",
-            type: "string",
-            required: true,
-            default: "localhost",
-            description: "PostgreSQL server host",
-            placeholder: "localhost or IP address",
-          },
-          {
-            displayName: "Port",
-            name: "port",
-            type: "number",
-            required: true,
-            default: 5432,
-            description: "PostgreSQL server port",
-          },
-          {
-            displayName: "Database",
-            name: "database",
-            type: "string",
-            required: true,
-            default: "",
-            description: "Database name",
-            placeholder: "my_database",
-          },
-          {
-            displayName: "User",
-            name: "user",
-            type: "string",
-            required: true,
-            default: "",
-            description: "Database user",
-            placeholder: "postgres",
-          },
-          {
-            displayName: "Password",
-            name: "password",
-            type: "password",
-            required: true,
-            default: "",
-            description: "Database password",
-          },
-          {
-            displayName: "SSL",
-            name: "ssl",
-            type: "boolean",
-            default: false,
-            description: "Use SSL connection",
-          },
-        ],
-        icon: "🐘",
-        color: "#336791",
-        testable: true,
-        test: async (data: CredentialData) => {
-          // Validate required fields
-          if (!data.host || !data.database || !data.user || !data.password) {
-            return {
-              success: false,
-              message: "Host, database, user, and password are required",
-            };
-          }
-
-          // Try to connect to PostgreSQL
-          try {
-            const { Pool } = require("pg");
-
-            const pool = new Pool({
-              host: data.host,
-              port: data.port || 5432,
-              database: data.database,
-              user: data.user,
-              password: data.password,
-              ssl: data.ssl ? { rejectUnauthorized: false } : false,
-              connectionTimeoutMillis: 5000, // 5 second timeout
-              max: 1, // Only create 1 connection for testing
-            });
-
-            try {
-              // Test the connection with a simple query
-              const result = await pool.query(
-                "SELECT NOW() as current_time, version() as version"
-              );
-              await pool.end();
-
-              if (result.rows && result.rows.length > 0) {
-                const version = result.rows[0].version;
-                // Extract just the PostgreSQL version number
-                const versionMatch = version.match(/PostgreSQL ([\d.]+)/);
-                const versionStr = versionMatch ? versionMatch[1] : "Unknown";
-
-                return {
-                  success: true,
-                  message: `Connected successfully to PostgreSQL ${versionStr} at ${
-                    data.host
-                  }:${data.port || 5432}/${data.database}`,
-                };
-              }
-
-              await pool.end();
-              return {
-                success: true,
-                message: "Connection successful",
-              };
-            } catch (queryError) {
-              await pool.end();
-              throw queryError;
-            }
-          } catch (error: any) {
-            // Handle specific PostgreSQL error codes
-            if (error.code === "ECONNREFUSED") {
-              return {
-                success: false,
-                message: `Cannot connect to database server at ${data.host}:${
-                  data.port || 5432
-                }. Connection refused.`,
-              };
-            } else if (error.code === "ENOTFOUND") {
-              return {
-                success: false,
-                message: `Cannot resolve host: ${data.host}. Please check the hostname.`,
-              };
-            } else if (error.code === "ETIMEDOUT") {
-              return {
-                success: false,
-                message: `Connection timeout to ${data.host}:${
-                  data.port || 5432
-                }. Please check firewall and network settings.`,
-              };
-            } else if (error.code === "28P01") {
-              return {
-                success: false,
-                message: "Authentication failed. Invalid username or password.",
-              };
-            } else if (error.code === "3D000") {
-              return {
-                success: false,
-                message: `Database "${data.database}" does not exist.`,
-              };
-            } else if (error.code === "28000") {
-              return {
-                success: false,
-                message:
-                  "Authorization failed. User does not have access to this database.",
-              };
-            } else if (error.code === "08001") {
-              return {
-                success: false,
-                message:
-                  "Unable to establish connection. Please check server settings.",
-              };
-            } else {
-              return {
-                success: false,
-                message: `Connection failed: ${error.message || "Unknown error"}`,
-              };
-            }
-          }
-        },
-      },
-    ];
-
-    // Combine built-in types with registered types from custom nodes
-    const registeredTypes = Array.from(this.credentialTypeRegistry.values());
-    return [...builtInTypes, ...registeredTypes];
+    // All credential types are now registered via the registry
+    // Core credentials are registered in registerCoreCredentials()
+    // Custom node credentials are registered when nodes are loaded
+    return Array.from(this.credentialTypeRegistry.values());
   }
 
   /**
    * Get credential type definition
    */
   getCredentialType(type: string): CredentialType | null {
-    return this.getCredentialTypes().find((ct) => ct.name === type) || null;
+    return this.credentialTypeRegistry.get(type) || null;
   }
+
+
 
   /**
    * Check if a property should be visible based on displayOptions
@@ -1052,353 +790,7 @@ export class CredentialService {
     }
   }
 
-  /**
-   * Test HTTP Basic Auth credentials
-   */
-  private async testHttpBasicAuth(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    if (!data.username || !data.password) {
-      return { success: false, message: "Username and password are required" };
-    }
 
-    // In a real implementation, you might test against a specific endpoint
-    // For now, just validate the format
-    return { success: true, message: "HTTP Basic Auth credentials are valid" };
-  }
-
-  /**
-   * Test API Key credentials
-   */
-  private async testApiKey(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    if (!data.apiKey) {
-      return { success: false, message: "API key is required" };
-    }
-
-    // Basic format validation
-    if (data.apiKey.length < 10) {
-      return { success: false, message: "API key appears to be too short" };
-    }
-
-    return { success: true, message: "API key format is valid" };
-  }
-
-  /**
-   * Test OAuth2 credentials
-   */
-  private async testOAuth2(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    if (!data.clientId || !data.clientSecret) {
-      return {
-        success: false,
-        message: "Client ID and Client Secret are required",
-      };
-    }
-
-    // Check if access token is present
-    if (!data.accessToken) {
-      return {
-        success: false,
-        message:
-          "No access token found. Please complete the OAuth2 authorization flow.",
-      };
-    }
-
-    // Check if token is expired (if tokenObtainedAt and expiresIn are available)
-    if (data.tokenObtainedAt && data.expiresIn) {
-      const obtainedDate = new Date(data.tokenObtainedAt);
-      const expiresAt = new Date(
-        obtainedDate.getTime() + data.expiresIn * 1000
-      );
-
-      if (new Date() > expiresAt) {
-        if (!data.refreshToken) {
-          return {
-            success: false,
-            message:
-              "Access token has expired and no refresh token is available. Please re-authorize.",
-          };
-        }
-        return {
-          success: false,
-          message: "Access token has expired. Please refresh the token.",
-        };
-      }
-    }
-
-    return {
-      success: true,
-      message: "OAuth2 credentials are configured correctly",
-    };
-  }
-
-  /**
-   * Test Google Sheets OAuth2 credentials by making a real API call
-   */
-  private async testGoogleSheetsOAuth2(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    // First do basic validation
-    if (!data.clientId || !data.clientSecret) {
-      return {
-        success: false,
-        message: "Client ID and Client Secret are required",
-      };
-    }
-
-    // Check if access token is present
-    if (!data.accessToken) {
-      return {
-        success: false,
-        message:
-          "No access token found. Please complete the OAuth2 authorization flow first.",
-      };
-    }
-
-    // Check if token is expired
-    if (data.tokenObtainedAt && data.expiresIn) {
-      const obtainedDate = new Date(data.tokenObtainedAt);
-      const expiresAt = new Date(
-        obtainedDate.getTime() + data.expiresIn * 1000
-      );
-
-      if (new Date() > expiresAt) {
-        return {
-          success: false,
-          message:
-            "Access token has expired. Please refresh the token or re-authorize.",
-        };
-      }
-    }
-
-    // Test the token by making a real API call to Google
-    try {
-      // Test with Google Drive API to list files (lightweight call)
-      const response = await axios.get(
-        "https://www.googleapis.com/drive/v3/about?fields=user",
-        {
-          headers: {
-            Authorization: `Bearer ${data.accessToken}`,
-          },
-          timeout: 10000, // 10 second timeout
-        }
-      );
-
-      if (response.status === 200 && response.data.user) {
-        return {
-          success: true,
-          message: `Connected successfully as ${
-            response.data.user.emailAddress || "Google user"
-          }`,
-        };
-      }
-
-      return {
-        success: true,
-        message: "Connection successful",
-      };
-    } catch (error: any) {
-      // Handle specific error cases
-      if (error.response) {
-        const status = error.response.status;
-
-        if (status === 401) {
-          return {
-            success: false,
-            message: "Access token is invalid or expired. Please re-authorize.",
-          };
-        } else if (status === 403) {
-          return {
-            success: false,
-            message:
-              "Access forbidden. Please check OAuth2 scopes and permissions.",
-          };
-        } else if (status === 429) {
-          return {
-            success: false,
-            message: "Rate limit exceeded. Please try again later.",
-          };
-        } else {
-          return {
-            success: false,
-            message: `Google API error (${status}): ${
-              error.response.data?.error?.message || error.message
-            }`,
-          };
-        }
-      } else if (error.code === "ECONNABORTED") {
-        return {
-          success: false,
-          message: "Connection timeout. Please check your internet connection.",
-        };
-      } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
-        return {
-          success: false,
-          message:
-            "Cannot reach Google servers. Please check your internet connection.",
-        };
-      } else {
-        return {
-          success: false,
-          message: `Connection test failed: ${error.message}`,
-        };
-      }
-    }
-  }
-
-  /**
-   * Test Google Drive OAuth2 credentials by making a real API call
-   */
-  private async testGoogleDriveOAuth2(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    // First do basic validation
-    if (!data.clientId || !data.clientSecret) {
-      return {
-        success: false,
-        message: "Client ID and Client Secret are required",
-      };
-    }
-
-    // Check if access token is present
-    if (!data.accessToken) {
-      return {
-        success: false,
-        message:
-          "No access token found. Please complete the OAuth2 authorization flow first.",
-      };
-    }
-
-    // Check if token is expired
-    if (data.tokenObtainedAt && data.expiresIn) {
-      const obtainedDate = new Date(data.tokenObtainedAt);
-      const expiresAt = new Date(
-        obtainedDate.getTime() + data.expiresIn * 1000
-      );
-
-      if (new Date() > expiresAt) {
-        return {
-          success: false,
-          message:
-            "Access token has expired. Please refresh the token or re-authorize.",
-        };
-      }
-    }
-
-    // Test the token by making a real API call to Google Drive
-    try {
-      const response = await axios.get(
-        "https://www.googleapis.com/drive/v3/about?fields=user,storageQuota",
-        {
-          headers: {
-            Authorization: `Bearer ${data.accessToken}`,
-          },
-          timeout: 10000, // 10 second timeout
-        }
-      );
-
-      if (response.status === 200 && response.data.user) {
-        const user = response.data.user;
-        const quota = response.data.storageQuota;
-        
-        let message = `Connected successfully as ${user.displayName || user.emailAddress}`;
-        
-        if (quota && quota.limit) {
-          const usedGB = Math.round((parseInt(quota.usage) / (1024 * 1024 * 1024)) * 100) / 100;
-          const limitGB = Math.round((parseInt(quota.limit) / (1024 * 1024 * 1024)) * 100) / 100;
-          message += ` (${usedGB}GB / ${limitGB}GB used)`;
-        }
-
-        return {
-          success: true,
-          message
-        };
-      }
-
-      return {
-        success: true,
-        message: "Connection successful",
-      };
-    } catch (error: any) {
-      // Handle specific error cases
-      if (error.response) {
-        const status = error.response.status;
-
-        if (status === 401) {
-          return {
-            success: false,
-            message: "Access token is invalid or expired. Please re-authorize.",
-          };
-        } else if (status === 403) {
-          return {
-            success: false,
-            message:
-              "Access forbidden. Please check OAuth2 scopes and permissions.",
-          };
-        } else if (status === 429) {
-          return {
-            success: false,
-            message: "Rate limit exceeded. Please try again later.",
-          };
-        } else {
-          return {
-            success: false,
-            message: `Google Drive API error (${status}): ${
-              error.response.data?.error?.message || error.message
-            }`,
-          };
-        }
-      } else if (error.code === "ECONNABORTED") {
-        return {
-          success: false,
-          message: "Connection timeout. Please check your internet connection.",
-        };
-      } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
-        return {
-          success: false,
-          message:
-            "Cannot reach Google servers. Please check your internet connection.",
-        };
-      } else {
-        return {
-          success: false,
-          message: `Connection test failed: ${error.message}`,
-        };
-      }
-    }
-  }
-
-  /**
-   * Test Bearer Token credentials
-   */
-  private async testBearerToken(
-    data: CredentialData
-  ): Promise<{ success: boolean; message: string }> {
-    if (!data.token) {
-      return { success: false, message: "Bearer token is required" };
-    }
-
-    // Basic format validation
-    if (data.token.length < 10) {
-      return {
-        success: false,
-        message: "Bearer token appears to be too short",
-      };
-    }
-
-    // Check if tokenPrefix is provided and valid
-    if (data.tokenPrefix && data.tokenPrefix.trim().length === 0) {
-      return {
-        success: false,
-        message: "Token prefix cannot be empty if provided",
-      };
-    }
-
-    return { success: true, message: "Bearer token credentials are valid" };
-  }
 
   /**
    * Deep sanitize object to remove dangerous properties
@@ -1434,5 +826,416 @@ export class CredentialService {
     }
 
     return obj;
+  }
+
+  // ============================================
+  // CREDENTIAL SHARING METHODS
+  // ============================================
+
+  /**
+   * Share credential with another user
+   */
+  async shareCredential(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string,
+    permission: "USE" | "VIEW" | "EDIT" = "USE",
+    sharedByUserId?: string
+  ): Promise<any> {
+    // Verify owner has access to credential
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Prevent sharing with self
+    if (ownerUserId === shareWithUserId) {
+      throw new AppError("Cannot share credential with yourself", 400);
+    }
+
+    // Verify target user exists
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: shareWithUserId },
+    });
+
+    if (!targetUser) {
+      throw new AppError("Target user not found", 404);
+    }
+
+    // Check if already shared
+    const existingShare = await this.prisma.credentialShare.findFirst({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+    });
+
+    if (existingShare) {
+      throw new AppError("Credential already shared with this user", 400);
+    }
+
+    // Create share
+    const share = await this.prisma.credentialShare.create({
+      data: {
+        credentialId,
+        ownerUserId,
+        sharedWithUserId: shareWithUserId,
+        sharedWithTeamId: null, // Explicitly null for user shares
+        permission,
+        sharedByUserId: sharedByUserId || ownerUserId,
+      },
+      include: {
+        sharedWithUser: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    logger.info(
+      `Credential shared: ${credentialId} with user ${shareWithUserId} (permission: ${permission})`
+    );
+
+    // TODO: Send email notification to shareWithUserId
+    // await emailService.sendCredentialSharedNotification(...)
+
+    return share;
+  }
+
+  /**
+   * Share credential with a team
+   */
+  async shareCredentialWithTeam(
+    credentialId: string,
+    ownerUserId: string,
+    teamId: string,
+    permission: "USE" | "VIEW" | "EDIT" = "USE",
+    sharedByUserId?: string
+  ): Promise<any> {
+    // Verify owner has access to credential
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Verify team exists
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+    });
+
+    if (!team) {
+      throw new AppError("Team not found", 404);
+    }
+
+    // Check if already shared with team
+    const existingShare = await this.prisma.credentialShare.findFirst({
+      where: {
+        credentialId,
+        sharedWithTeamId: teamId,
+      },
+    });
+
+    if (existingShare) {
+      throw new AppError("Credential already shared with this team", 400);
+    }
+
+    // Create share
+    const share = await this.prisma.credentialShare.create({
+      data: {
+        credentialId,
+        ownerUserId,
+        sharedWithUserId: null, // Explicitly null for team shares
+        sharedWithTeamId: teamId,
+        permission,
+        sharedByUserId: sharedByUserId || ownerUserId,
+      },
+      include: {
+        sharedWithTeam: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            color: true,
+          },
+        },
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    logger.info(
+      `Credential shared: ${credentialId} with team ${teamId} (permission: ${permission})`
+    );
+
+    return share;
+  }
+
+  /**
+   * Unshare credential from user (revoke access)
+   */
+  async unshareCredential(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string
+  ): Promise<void> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Delete share
+    const deleted = await this.prisma.credentialShare.deleteMany({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+    });
+
+    if (deleted.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Credential unshared: ${credentialId} from user ${shareWithUserId}`
+    );
+
+    // TODO: Send email notification to shareWithUserId
+    // await emailService.sendAccessRevokedNotification(...)
+  }
+
+  /**
+   * Unshare credential from team (revoke access)
+   */
+  async unshareCredentialFromTeam(
+    credentialId: string,
+    ownerUserId: string,
+    teamId: string
+  ): Promise<void> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    // Delete share
+    const deleted = await this.prisma.credentialShare.deleteMany({
+      where: {
+        credentialId,
+        sharedWithTeamId: teamId,
+      },
+    });
+
+    if (deleted.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Credential unshared: ${credentialId} from team ${teamId}`
+    );
+  }
+
+  /**
+   * Get all shares for a credential (both user and team shares)
+   */
+  async getCredentialShares(
+    credentialId: string,
+    ownerUserId: string
+  ): Promise<any[]> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    const shares = await this.prisma.credentialShare.findMany({
+      where: { credentialId },
+      include: {
+        sharedWithUser: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+        sharedWithTeam: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            color: true,
+          },
+        },
+      },
+      orderBy: {
+        sharedAt: "desc",
+      },
+    });
+
+    // Add shareType field for easier frontend handling
+    return shares.map(share => ({
+      ...share,
+      shareType: share.sharedWithUserId ? 'user' : 'team',
+      sharedWith: share.sharedWithUserId ? share.sharedWithUser : share.sharedWithTeam,
+    }));
+  }
+
+  /**
+   * Update user share permission
+   */
+  async updateSharePermission(
+    credentialId: string,
+    ownerUserId: string,
+    shareWithUserId: string,
+    newPermission: "USE" | "VIEW" | "EDIT"
+  ): Promise<any> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    const updated = await this.prisma.credentialShare.updateMany({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+      data: {
+        permission: newPermission,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Share permission updated: ${credentialId} for user ${shareWithUserId} to ${newPermission}`
+    );
+
+    // Return updated share
+    return await this.prisma.credentialShare.findFirst({
+      where: {
+        credentialId,
+        sharedWithUserId: shareWithUserId,
+      },
+      include: {
+        sharedWithUser: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Update team share permission
+   */
+  async updateTeamSharePermission(
+    credentialId: string,
+    ownerUserId: string,
+    teamId: string,
+    newPermission: "USE" | "VIEW" | "EDIT"
+  ): Promise<any> {
+    // Verify owner has access
+    const credential = await this.getCredential(credentialId, ownerUserId);
+    if (!credential) {
+      throw new AppError("Credential not found or access denied", 404);
+    }
+
+    const updated = await this.prisma.credentialShare.updateMany({
+      where: {
+        credentialId,
+        sharedWithTeamId: teamId,
+      },
+      data: {
+        permission: newPermission,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new AppError("Share not found", 404);
+    }
+
+    logger.info(
+      `Team share permission updated: ${credentialId} for team ${teamId} to ${newPermission}`
+    );
+
+    // Return updated share
+    return await this.prisma.credentialShare.findFirst({
+      where: {
+        credentialId,
+        sharedWithTeamId: teamId,
+      },
+      include: {
+        sharedWithTeam: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            color: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get credentials shared WITH this user
+   */
+  async getSharedCredentials(userId: string): Promise<any[]> {
+    const shares = await this.prisma.credentialShare.findMany({
+      where: {
+        sharedWithUserId: userId,
+      },
+      include: {
+        credential: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            createdAt: true,
+            updatedAt: true,
+            expiresAt: true,
+          },
+        },
+        owner: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        sharedAt: "desc",
+      },
+    });
+
+    return shares.map((share) => ({
+      ...share.credential,
+      sharedBy: share.owner,
+      permission: share.permission,
+      sharedAt: share.sharedAt,
+      isShared: true,
+    }));
   }
 }

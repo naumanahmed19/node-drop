@@ -3,7 +3,9 @@ import {
     ContextMenuItem,
     ContextMenuSeparator,
 } from '@/components/ui/context-menu'
-import { Box, Clipboard, Copy, Lock, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { Box, Clipboard, Copy, Eye, EyeOff, Lock, Maximize2, Minimize2, PackagePlus, Play, Scissors, Settings, Trash2, Ungroup, Unlock } from 'lucide-react'
+import { isNodeExecutable } from '@/utils/nodeTypeUtils'
+import { NodeType } from '@/types'
 
 interface NodeContextMenuProps {
   onOpenProperties: () => void
@@ -11,6 +13,8 @@ interface NodeContextMenuProps {
   onDuplicate: () => void
   onDelete: () => void
   onToggleLock: () => void
+  onToggleCompact?: () => void
+  onToggleDisabled?: () => void
   onCopy?: () => void
   onCut?: () => void
   onPaste?: () => void
@@ -18,12 +22,15 @@ interface NodeContextMenuProps {
   onGroup?: () => void
   onCreateTemplate?: () => void
   isLocked: boolean
+  isDisabled?: boolean
+  isCompact?: boolean
   readOnly?: boolean
   canCopy?: boolean
   canPaste?: boolean
   isInGroup?: boolean
   canGroup?: boolean
   canCreateTemplate?: boolean
+  nodeType?: NodeType // Optional node type to check if executable
 }
 
 export function NodeContextMenu({
@@ -32,6 +39,8 @@ export function NodeContextMenu({
   onDuplicate,
   onDelete,
   onToggleLock,
+  onToggleCompact,
+  onToggleDisabled,
   onCopy,
   onCut,
   onPaste,
@@ -39,13 +48,19 @@ export function NodeContextMenu({
   onGroup,
   onCreateTemplate,
   isLocked,
+  isDisabled = false,
+  isCompact = false,
   readOnly = false,
   canCopy = false,
   canPaste = false,
   isInGroup = false,
   canGroup = false,
   canCreateTemplate = false,
+  nodeType,
 }: NodeContextMenuProps) {
+  // Check if node is executable (not service or tool type)
+  const canExecute = nodeType ? isNodeExecutable(nodeType) : true
+
   return (
     <ContextMenuContent className="w-48">
       <ContextMenuItem
@@ -56,14 +71,17 @@ export function NodeContextMenu({
         Properties
       </ContextMenuItem>
 
-      <ContextMenuItem
-        onClick={onExecute}
-        disabled={readOnly}
-        className="cursor-pointer"
-      >
-        <Play className="mr-2 h-4 w-4" />
-        Execute Node
-      </ContextMenuItem>
+      {/* Only show execute option for executable nodes */}
+      {canExecute && (
+        <ContextMenuItem
+          onClick={onExecute}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          <Play className="mr-2 h-4 w-4" />
+          Execute Node
+        </ContextMenuItem>
+      )}
 
       <ContextMenuSeparator />
 
@@ -84,6 +102,46 @@ export function NodeContextMenu({
           </>
         )}
       </ContextMenuItem>
+
+      {onToggleDisabled && (
+        <ContextMenuItem
+          onClick={onToggleDisabled}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          {isDisabled ? (
+            <>
+              <Eye className="mr-2 h-4 w-4" />
+              Enable Node
+            </>
+          ) : (
+            <>
+              <EyeOff className="mr-2 h-4 w-4" />
+              Disable Node
+            </>
+          )}
+        </ContextMenuItem>
+      )}
+
+      {onToggleCompact && (
+        <ContextMenuItem
+          onClick={onToggleCompact}
+          disabled={readOnly}
+          className="cursor-pointer"
+        >
+          {isCompact ? (
+            <>
+              <Maximize2 className="mr-2 h-4 w-4" />
+              Expand Node
+            </>
+          ) : (
+            <>
+              <Minimize2 className="mr-2 h-4 w-4" />
+              Compact Node
+            </>
+          )}
+        </ContextMenuItem>
+      )}
 
       {/* Ungroup option - only show if node is in a group */}
       {isInGroup && onUngroup && (

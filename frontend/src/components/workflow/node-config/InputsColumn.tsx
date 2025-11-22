@@ -25,6 +25,7 @@ import {
 import { useWorkflowStore } from '@/stores'
 import { WorkflowNode } from '@/types'
 import { getNodeExecutionCapability } from '@/utils/nodeTypeClassification'
+import { isNodeExecutable } from '@/utils/nodeTypeUtils'
 import {
   ArrowLeft,
   ChevronDown,
@@ -123,7 +124,7 @@ function UnifiedTreeNode({
   // Get node type definition for icon rendering
   const { nodeTypes } = useNodeTypes()
   const nodeTypeDefinition = useMemo(() => 
-    nodeTypes.find(nt => nt.type === inputNode.type),
+    nodeTypes.find(nt => nt.identifier === inputNode.type),
     [nodeTypes, inputNode.type]
   )
   
@@ -212,26 +213,29 @@ function UnifiedTreeNode({
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onExecuteNode(inputNode.id)
-                      }}
-                    >
-                      <Play className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Execute {inputNode.name}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              {/* Only show execute button for executable nodes */}
+              {nodeTypeDefinition && isNodeExecutable(nodeTypeDefinition) && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onExecuteNode(inputNode.id)
+                        }}
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Execute {inputNode.name}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
               {nodeExecutionResult && (
                 <div>
@@ -836,7 +840,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
               {nodeItems.map((item) => {
                 const { node: inputNode } = item
                 const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
-                const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                const nodeTypeDefinition = nodeTypes.find(nt => nt.identifier === inputNode.type)
                 const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
 
                 return (
@@ -887,7 +891,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
                     {nodeItems.map((item) => {
                       const { node: inputNode } = item
                       const nodeExecutionResult = getNodeExecutionResult(inputNode.id)
-                      const nodeTypeDefinition = nodeTypes.find(nt => nt.type === inputNode.type)
+                      const nodeTypeDefinition = nodeTypes.find(nt => nt.identifier === inputNode.type)
                       const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
 
                       return (

@@ -5,7 +5,7 @@ import {
 } from "../../types/node.types";
 
 export const ChatNode: NodeDefinition = {
-  type: "chat",
+  identifier: "chat",
   displayName: "Chat",
   name: "chat",
   group: ["communication", "ai"],
@@ -235,6 +235,15 @@ export const ChatNode: NodeDefinition = {
           aiService: ["openai", "anthropic"],
         },
       },
+    },
+    {
+      displayName: "Options",
+      name: "options",
+      type: "collection",
+      placeholder: "Add Option",
+      default: {},
+      description: "Additional chat configuration options",
+      options: require("../../config/webhookOptions").getWebhookOptions('chat'),
     },
   ],
 

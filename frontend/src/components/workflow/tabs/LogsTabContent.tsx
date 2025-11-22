@@ -258,11 +258,63 @@ export function LogsTabContent({ executionLogs, isActive, onClearLogs }: LogsTab
                   {log.data && (
                     <details className="mt-2">
                       <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                        View data
+                        View details
                       </summary>
-                      <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
-                        {JSON.stringify(log.data, null, 2)}
-                      </pre>
+                      <div className="mt-2 space-y-2">
+                        {/* Show parameters if available */}
+                        {log.data.parameters && (
+                          <div>
+                            <div className="text-xs font-medium text-foreground mb-1">Parameters:</div>
+                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
+                              {JSON.stringify(log.data.parameters, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        
+                        {/* Show input data if available */}
+                        {log.data.inputData && (
+                          <div>
+                            <div className="text-xs font-medium text-foreground mb-1">Input Data:</div>
+                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
+                              {JSON.stringify(log.data.inputData, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        
+                        {/* Show output data if available */}
+                        {log.data.outputData && (
+                          <div>
+                            <div className="text-xs font-medium text-foreground mb-1">Output Data:</div>
+                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
+                              {JSON.stringify(log.data.outputData, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        
+                        {/* Show duration if available */}
+                        {log.data.duration !== undefined && (
+                          <div className="text-xs text-muted-foreground">
+                            Duration: {log.data.duration}ms
+                          </div>
+                        )}
+                        
+                        {/* Show error details if available */}
+                        {log.data.error && (
+                          <div>
+                            <div className="text-xs font-medium text-destructive mb-1">Error Details:</div>
+                            <pre className="text-xs bg-destructive/10 p-2 rounded overflow-auto max-h-32 border border-destructive/20">
+                              {JSON.stringify(log.data.error, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        
+                        {/* Show full data if none of the above matched */}
+                        {!log.data.parameters && !log.data.inputData && !log.data.outputData && !log.data.error && (
+                          <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
+                            {JSON.stringify(log.data, null, 2)}
+                          </pre>
+                        )}
+                      </div>
                     </details>
                   )}
                 </div>

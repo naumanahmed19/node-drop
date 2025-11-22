@@ -21,6 +21,7 @@ import { ChevronDown, FolderOpen, Plus, Trash2 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { EnvironmentSelector } from '../environment/EnvironmentSelector'
 import { CreateCategoryModal } from './CreateCategoryModal'
+import { TeamSelectorBreadcrumb } from '../team/TeamSelectorBreadcrumb'
 
 interface WorkflowBreadcrumbProps {
   category?: string
@@ -28,6 +29,9 @@ interface WorkflowBreadcrumbProps {
   onCategoryChange: (category: string) => void
   onTitleChange: (title: string) => void
   className?: string
+  // Team props
+  teamId?: string | null
+  onTeamChange?: (teamId: string | null) => void
   // Environment props
   workflowId?: string
   showEnvironmentSelector?: boolean
@@ -41,6 +45,8 @@ export function WorkflowBreadcrumb({
   onCategoryChange,
   onTitleChange,
   className,
+  teamId,
+  onTeamChange,
   workflowId,
   showEnvironmentSelector = false,
   onEnvironmentChange,
@@ -137,6 +143,17 @@ export function WorkflowBreadcrumb({
       <div className={className}>
         <Breadcrumb>
         <BreadcrumbList>
+          {/* Team Selector - Change workflow ownership */}
+          <BreadcrumbItem>
+            <TeamSelectorBreadcrumb
+              currentTeamId={teamId}
+              workflowName={title}
+              onTeamChange={onTeamChange}
+            />
+          </BreadcrumbItem>
+
+          <BreadcrumbSeparator />
+
           <BreadcrumbItem>
             <DropdownMenu>
               <DropdownMenuTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">

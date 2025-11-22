@@ -66,7 +66,7 @@ export class NodeService {
    * All nodes should return data in this format for uniform processing
    */
   private standardizeNodeOutput(
-    nodeType: string,
+    identifier: string,
     outputs: NodeOutputData[],
     nodeDefinition?: NodeDefinition
   ): StandardizedNodeOutput {
@@ -91,7 +91,7 @@ export class NodeService {
         main: mainOutput,
         branches,
         metadata: {
-          nodeType,
+          nodeType: identifier,
           outputCount: outputs.length,
           hasMultipleBranches: true,
         },
@@ -124,7 +124,7 @@ export class NodeService {
         main: mainOutput,
         branches,
         metadata: {
-          nodeType,
+          nodeType: identifier,
           outputCount: outputs.length,
           hasMultipleBranches: true,
         },
@@ -142,7 +142,7 @@ export class NodeService {
     return {
       main: mainOutput,
       metadata: {
-        nodeType,
+        nodeType: identifier,
         outputCount: outputs.length,
         hasMultipleBranches: false,
       },
@@ -172,7 +172,7 @@ export class NodeService {
 
       // Use upsert to handle race conditions and avoid duplicate key errors
       await this.prisma.nodeType.upsert({
-        where: { type: nodeDefinition.type },
+        where: { identifier: nodeDefinition.identifier },
         update: {
           displayName: nodeDefinition.displayName,
           name: nodeDefinition.name,
@@ -182,14 +182,16 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          inputsConfig: (nodeDefinition as any).inputsConfig as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category
           // Don't update active status on update - preserve user's choice
         },
         create: {
-          type: nodeDefinition.type,
+          identifier: nodeDefinition.identifier,
           displayName: nodeDefinition.displayName,
           name: nodeDefinition.name,
           group: nodeDefinition.group,
@@ -198,36 +200,38 @@ export class NodeService {
           defaults: nodeDefinition.defaults as any,
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          inputsConfig: (nodeDefinition as any).inputsConfig as any,
           properties: resolvedProperties as any,
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category
           active: true,
         },
       });
 
       // Store in memory registry
-      this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
+      this.nodeRegistry.set(nodeDefinition.identifier, nodeDefinition);
 
       return {
         success: true,
-        nodeType: nodeDefinition.type,
+        identifier: nodeDefinition.identifier,
       };
     } catch (error) {
       // Handle duplicate key errors gracefully (race condition)
       if (error instanceof Error && error.message.includes('duplicate key')) {
-        logger.warn(`Node ${nodeDefinition.type} already registered (race condition), skipping`);
+        logger.warn(`Node ${nodeDefinition.identifier} already registered (race condition), skipping`);
         // Still store in memory registry
-        this.nodeRegistry.set(nodeDefinition.type, nodeDefinition);
+        this.nodeRegistry.set(nodeDefinition.identifier, nodeDefinition);
         return {
           success: true,
-          nodeType: nodeDefinition.type,
+          identifier: nodeDefinition.identifier,
         };
       }
 
       logger.error("Failed to register node", {
         error,
-        nodeType: nodeDefinition.type,
+        identifier: nodeDefinition.identifier,
       });
       return {
         success: false,
@@ -245,7 +249,7 @@ export class NodeService {
   async unregisterNode(nodeType: string): Promise<void> {
     try {
       await this.prisma.nodeType.update({
-        where: { type: nodeType },
+        where: { identifier: nodeType },
         data: { active: false },
       });
 
@@ -284,9 +288,9 @@ export class NodeService {
       const nodeTypesFromRegistry: NodeTypeInfo[] = [];
 
       // First, get live node definitions from in-memory registry
-      for (const [nodeType, nodeDefinition] of this.nodeRegistry.entries()) {
+      for (const [identifier, nodeDefinition] of this.nodeRegistry.entries()) {
         nodeTypesFromRegistry.push({
-          type: nodeDefinition.type,
+          identifier: nodeDefinition.identifier,
           displayName: nodeDefinition.displayName,
           name: nodeDefinition.name,
           description: nodeDefinition.description,
@@ -295,11 +299,17 @@ export class NodeService {
           defaults: nodeDefinition.defaults || {},
           inputs: nodeDefinition.inputs,
           outputs: nodeDefinition.outputs,
+          inputNames: nodeDefinition.inputNames, // Include input names for labeled inputs
+          outputNames: nodeDefinition.outputNames, // Include output names for labeled outputs
+          serviceInputs: nodeDefinition.serviceInputs, // Include service inputs for AI Agent and similar nodes
+          inputsConfig: nodeDefinition.inputsConfig, // Include input configuration for service inputs
           properties: this.resolveProperties(nodeDefinition.properties || []),
           credentials: nodeDefinition.credentials, // Include credentials
           credentialSelector: nodeDefinition.credentialSelector, // Include unified credential selector
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category for service/tool nodes
+          triggerType: nodeDefinition.triggerType, // Include trigger type for trigger nodes
           // Add execution metadata - use provided values or compute from group
           executionCapability:
             nodeDefinition.executionCapability ||
@@ -317,7 +327,7 @@ export class NodeService {
         const nodeTypes = await this.prisma.nodeType.findMany({
           where: { active: true },
           select: {
-            type: true,
+            identifier: true,
             displayName: true,
             name: true,
             description: true,
@@ -335,6 +345,7 @@ export class NodeService {
 
         return nodeTypes.map((node) => ({
           ...node,
+          identifier: node.identifier,
           icon: node.icon || undefined,
           color: node.color || undefined,
           properties: Array.isArray(node.properties)
@@ -354,9 +365,7 @@ export class NodeService {
         a.displayName.localeCompare(b.displayName)
       );
 
-      logger.info(
-        `Returning ${nodeTypesFromRegistry.length} node types from in-memory registry`
-      );
+      // Return from in-memory registry
       return nodeTypesFromRegistry;
     } catch (error) {
       logger.error("Failed to get node types", { error });
@@ -364,6 +373,43 @@ export class NodeService {
         `Failed to get node types: ${error instanceof Error ? error.message : "Unknown error"
         }`
       );
+    }
+  }
+
+  /**
+   * Get raw node definition by type from in-memory registry (synchronous)
+   * Use this when you need immediate access to node definition without async/await
+   */
+  getNodeDefinitionSync(nodeType: string): NodeDefinition | null {
+    try {
+      // Get from in-memory registry (synchronous)
+      const nodeDefinition = this.nodeRegistry.get(nodeType);
+      return nodeDefinition || null;
+    } catch (error) {
+      logger.error(`Failed to get node definition for ${nodeType}`, { error });
+      return null;
+    }
+  }
+
+  /**
+   * Get raw node definition by type from in-memory registry (async version)
+   */
+  async getNodeDefinition(nodeType: string): Promise<NodeDefinition | null> {
+    try {
+      // Wait for built-in nodes to be initialized before accessing registry
+      await this.waitForInitialization();
+
+      // Get from in-memory registry
+      const nodeDefinition = this.nodeRegistry.get(nodeType);
+
+      if (nodeDefinition) {
+        return nodeDefinition;
+      }
+
+      return null;
+    } catch (error) {
+      logger.error(`Failed to get node definition for ${nodeType}`, { error });
+      return null;
     }
   }
 
@@ -380,7 +426,7 @@ export class NodeService {
 
       if (nodeDefinition) {
         return {
-          type: nodeDefinition.type,
+          identifier: nodeDefinition.identifier,
           displayName: nodeDefinition.displayName,
           name: nodeDefinition.name,
           group: nodeDefinition.group,
@@ -394,6 +440,8 @@ export class NodeService {
           credentialSelector: nodeDefinition.credentialSelector, // Include unified credential selector
           icon: nodeDefinition.icon,
           color: nodeDefinition.color,
+          nodeCategory: nodeDefinition.nodeCategory, // Include node category for service/tool nodes
+          inputsConfig: nodeDefinition.inputsConfig, // Include input configuration
         };
       }
 
@@ -402,7 +450,7 @@ export class NodeService {
         `Node type ${nodeType} not found in registry, checking database`
       );
       const node = await this.prisma.nodeType.findUnique({
-        where: { type: nodeType, active: true },
+        where: { identifier: nodeType, active: true },
       });
 
       if (!node) {
@@ -410,7 +458,7 @@ export class NodeService {
       }
 
       return {
-        type: node.type,
+        identifier: node.identifier,
         displayName: node.displayName,
         name: node.name,
         group: node.group,
@@ -473,7 +521,7 @@ export class NodeService {
 
       // Create secure execution context
       // credentials is already a mapping of type -> id (e.g., { "googleSheetsOAuth2": "cred_123" })
-      const context = await this.secureExecutionService.createSecureContext(
+      const baseContext = await this.secureExecutionService.createSecureContext(
         parameters,
         inputValidation.sanitizedData!,
         credentials || {},
@@ -484,6 +532,11 @@ export class NodeService {
         settings,
         options?.nodeId // Pass nodeId for state management
       );
+
+      // Merge context with node definition methods (for nodes with private methods)
+      // This allows private methods to be called via this.methodName()
+      const context = Object.create(nodeDefinition);
+      Object.assign(context, baseContext);
 
       // Execute the node in secure context
       const result = await nodeDefinition.execute.call(
@@ -588,7 +641,7 @@ export class NodeService {
     const errors: NodeValidationError[] = [];
 
     // Required fields validation
-    if (!definition.type || typeof definition.type !== "string") {
+    if (!definition.identifier || typeof definition.identifier !== "string") {
       errors.push({
         property: "type",
         message: "Node type is required and must be a string",
@@ -827,7 +880,7 @@ export class NodeService {
     try {
       // Register built-in nodes
       await this.registerBuiltInNodes();
-      logger.info("Built-in nodes initialized");
+      // Built-in nodes initialized silently
     } catch (error) {
       logger.error("Failed to initialize built-in nodes", { error });
 
@@ -884,7 +937,7 @@ export class NodeService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const existingNode = await this.prisma.nodeType.findUnique({
-        where: { type: nodeType },
+        where: { identifier: nodeType },
       });
 
       if (!existingNode) {
@@ -902,7 +955,7 @@ export class NodeService {
       }
 
       await this.prisma.nodeType.update({
-        where: { type: nodeType },
+        where: { identifier: nodeType },
         data: { active: true, updatedAt: new Date() },
       });
 
@@ -929,7 +982,7 @@ export class NodeService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const existingNode = await this.prisma.nodeType.findUnique({
-        where: { type: nodeType },
+        where: { identifier: nodeType },
       });
 
       if (!existingNode) {
@@ -947,7 +1000,7 @@ export class NodeService {
       }
 
       await this.prisma.nodeType.update({
-        where: { type: nodeType },
+        where: { identifier: nodeType },
         data: { active: false, updatedAt: new Date() },
       });
 
@@ -971,7 +1024,7 @@ export class NodeService {
    */
   async getActiveNodes(): Promise<
     Array<{
-      type: string;
+      identifier: string;
       displayName: string;
       group: string[];
       description: string;
@@ -981,7 +1034,7 @@ export class NodeService {
       const nodes = await this.prisma.nodeType.findMany({
         where: { active: true },
         select: {
-          type: true,
+          identifier: true,
           displayName: true,
           group: true,
           description: true,
@@ -1001,7 +1054,7 @@ export class NodeService {
    */
   async getNodesWithStatus(): Promise<
     Array<{
-      type: string;
+      identifier: string;
       displayName: string;
       active: boolean;
       group: string[];
@@ -1011,7 +1064,7 @@ export class NodeService {
     try {
       const nodes = await this.prisma.nodeType.findMany({
         select: {
-          type: true,
+          identifier: true,
           displayName: true,
           active: true,
           group: true,
@@ -1040,7 +1093,7 @@ export class NodeService {
     try {
       const result = await this.prisma.nodeType.updateMany({
         where: {
-          type: { in: nodeTypes },
+          identifier: { in: nodeTypes },
         },
         data: {
           active,
@@ -1075,13 +1128,31 @@ export class NodeService {
   }
 
   /**
-   * Determine execution capability based on node group
+   * Determine execution capability based on nodeCategory
    */
   private getExecutionCapability(
     nodeDefinition: NodeDefinition
   ): "trigger" | "action" | "transform" | "condition" {
-    const group = nodeDefinition.group;
+    // Use nodeCategory (all nodes should have this now)
+    if (nodeDefinition.nodeCategory) {
+      // Map nodeCategory to executionCapability
+      switch (nodeDefinition.nodeCategory) {
+        case "trigger":
+          return "trigger";
+        case "condition":
+          return "condition";
+        case "transform":
+          return "transform";
+        case "action":
+        case "service":
+        case "tool":
+        default:
+          return "action";
+      }
+    }
 
+    // Legacy fallback for nodes without nodeCategory (should be rare)
+    const group = nodeDefinition.group;
     if (group.includes("trigger")) {
       return "trigger";
     } else if (group.includes("condition")) {
@@ -1094,9 +1165,16 @@ export class NodeService {
   }
 
   /**
-   * Determine if node can execute individually (only trigger nodes)
+   * Determine if node can execute individually
+   * Only triggers can execute individually, service/tool nodes cannot
    */
   private canExecuteIndividually(nodeDefinition: NodeDefinition): boolean {
+    // Use nodeCategory (all nodes should have this now)
+    if (nodeDefinition.nodeCategory) {
+      return nodeDefinition.nodeCategory === "trigger";
+    }
+    
+    // Legacy fallback for nodes without nodeCategory (should be rare)
     return nodeDefinition.group.includes("trigger");
   }
 
@@ -1117,15 +1195,15 @@ export class NodeService {
           if (result.success) {
             registered++;
             logger.info("Registered custom node", {
-              nodeType: nodeInfo.definition.type,
+              nodeType: nodeInfo.definition.identifier,
               displayName: nodeInfo.definition.displayName,
               path: nodeInfo.path,
             });
           } else {
-            errors.push(`Failed to register ${nodeInfo.definition.type}: ${result.errors?.join(", ")}`);
+            errors.push(`Failed to register ${nodeInfo.definition.identifier}: ${result.errors?.join(", ")}`);
           }
         } catch (error) {
-          const errorMsg = `Failed to register ${nodeInfo.definition.type}: ${error instanceof Error ? error.message : "Unknown error"}`;
+          const errorMsg = `Failed to register ${nodeInfo.definition.identifier}: ${error instanceof Error ? error.message : "Unknown error"}`;
           errors.push(errorMsg);
           logger.warn(errorMsg, { error });
         }

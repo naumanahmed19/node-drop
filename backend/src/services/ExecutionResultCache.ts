@@ -34,7 +34,7 @@ export class ExecutionResultCache {
     });
 
     this.redis.on("connect", () => {
-      logger.info("ExecutionResultCache connected to Redis");
+      // Connected to Redis silently
     });
   }
 

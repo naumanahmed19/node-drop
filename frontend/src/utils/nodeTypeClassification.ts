@@ -30,7 +30,7 @@ function getNodeTypeData(nodeType: string): NodeType | null {
   return (
     nodeTypesCache.find(
       (nt) =>
-        nt.type === nodeType ||
+        nt.identifier === nodeType ||
         nt.name === nodeType ||
         nt.displayName === nodeType
     ) || null
@@ -49,7 +49,7 @@ export function getNodeTypeMetadata(nodeType: string): NodeTypeMetadata | null {
   }
 
   return {
-    type: nodeData.type,
+    type: nodeData.identifier,
     group: nodeData.group,
     executionCapability:
       nodeData.executionCapability || determineExecutionCapability(nodeData),
@@ -61,13 +61,30 @@ export function getNodeTypeMetadata(nodeType: string): NodeTypeMetadata | null {
 }
 
 /**
- * Fallback: Determine execution capability from group if not provided by backend
+ * Determine execution capability from nodeCategory
  */
 function determineExecutionCapability(
   nodeData: NodeType
 ): NodeExecutionCapability {
-  const group = nodeData.group;
+  // Use nodeCategory (all nodes should have this now)
+  if (nodeData.nodeCategory) {
+    switch (nodeData.nodeCategory) {
+      case "trigger":
+        return "trigger";
+      case "condition":
+        return "condition";
+      case "transform":
+        return "transform";
+      case "action":
+      case "service":
+      case "tool":
+      default:
+        return "action";
+    }
+  }
 
+  // Legacy fallback for nodes without nodeCategory (should be rare)
+  const group = nodeData.group;
   if (group.includes("trigger")) {
     return "trigger";
   } else if (group.includes("condition")) {
@@ -80,9 +97,16 @@ function determineExecutionCapability(
 }
 
 /**
- * Fallback: Determine if node can execute individually
+ * Determine if node can execute individually
+ * Only triggers can execute individually, service/tool nodes cannot
  */
 function determineCanExecuteIndividually(nodeData: NodeType): boolean {
+  // Use nodeCategory (all nodes should have this now)
+  if (nodeData.nodeCategory) {
+    return nodeData.nodeCategory === "trigger";
+  }
+  
+  // Legacy fallback for nodes without nodeCategory (should be rare)
   return nodeData.group.includes("trigger");
 }
 
@@ -148,7 +172,7 @@ export function isConditionNode(nodeType: string): boolean {
  * Get all registered node types from cache
  */
 export function getAllNodeTypes(): string[] {
-  return nodeTypesCache.map((nt) => nt.type);
+  return nodeTypesCache.map((nt) => nt.identifier);
 }
 
 /**
@@ -159,10 +183,10 @@ export function registerNodeType(
   nodeType: string,
   metadata: NodeTypeMetadata
 ): void {
-  const existingIndex = nodeTypesCache.findIndex((nt) => nt.type === nodeType);
+  const existingIndex = nodeTypesCache.findIndex((nt) => nt.identifier === nodeType);
 
   const nodeData: NodeType = {
-    type: metadata.type,
+    identifier: metadata.type,
     displayName: metadata.type,
     name: metadata.type,
     group: metadata.group,
@@ -186,8 +210,19 @@ export function registerNodeType(
 
 /**
  * Check if execute button should be visible for a node
+ * Execute button should be hidden for service/tool nodes
  */
 export function shouldShowExecuteButton(nodeType: string): boolean {
+  // First check if it's a service or tool node (not executable)
+  const nodeData = getNodeTypeData(nodeType);
+  if (nodeData) {
+    const nodeCategory = (nodeData as any).nodeCategory;
+    if (nodeCategory === 'service' || nodeCategory === 'tool') {
+      return false;
+    }
+  }
+  
+  // Then check if it can execute individually
   return canNodeExecuteIndividually(nodeType);
 }
 

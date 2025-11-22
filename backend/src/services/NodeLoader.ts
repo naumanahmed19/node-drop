@@ -16,6 +16,7 @@ export interface NodePackageInfo {
   main: string;
   nodes: string[];
   credentials?: string[];
+  oauthProviders?: string[];
 }
 
 export interface NodeLoadResult {
@@ -73,10 +74,7 @@ export class NodeLoader {
       // Load existing custom nodes
       await this.loadAllCustomNodes();
 
-      logger.info("NodeLoader initialized", {
-        customNodesPath: this.customNodesPath,
-        hotReloadEnabled: this.hotReloadEnabled,
-      });
+      // NodeLoader initialized silently
     } catch (error) {
       logger.error("Failed to initialize NodeLoader", { error });
       throw error;
@@ -110,6 +108,11 @@ export class NodeLoader {
         };
       }
 
+      // Load OAuth providers if any
+      if (packageInfo.oauthProviders && packageInfo.oauthProviders.length > 0) {
+        await this.loadOAuthProviders(packagePath, packageInfo.oauthProviders);
+      }
+
       // Load node definitions
       const nodeDefinitions = await this.loadNodeDefinitions(
         packagePath,
@@ -122,7 +125,7 @@ export class NodeLoader {
         const result = await this.nodeService.registerNode(nodeDefinition);
         registrationResults.push({
           success: result.success,
-          nodeType: result.nodeType,
+          nodeType: result.identifier,
           errors: result.errors,
         });
       }
@@ -144,10 +147,7 @@ export class NodeLoader {
         await this.setupHotReload(packagePath, packageInfo.name);
       }
 
-      logger.info("Node package loaded successfully", {
-        packageName: packageInfo.name,
-        nodeCount: nodeDefinitions.length,
-      });
+      // Silently loaded - only log errors
 
       return {
         success: true,
@@ -181,7 +181,7 @@ export class NodeLoader {
       for (const nodePath of packageInfo.nodes) {
         const nodeDefinition = await this.loadSingleNodeDefinition(nodePath);
         if (nodeDefinition) {
-          await this.nodeService.unregisterNode(nodeDefinition.type);
+          await this.nodeService.unregisterNode(nodeDefinition.identifier);
         }
       }
 
@@ -273,7 +273,23 @@ export class NodeLoader {
       let packageInfo: NodePackageInfo;
 
       try {
-        packageInfo = JSON.parse(packageJsonContent);
+        const rawPackage = JSON.parse(packageJsonContent);
+        
+        // Extract nodeDrop configuration if it exists
+        const nodeDrop = rawPackage.nodeDrop || {};
+        
+        // Merge nodeDrop fields with root package info
+        packageInfo = {
+          name: rawPackage.name,
+          version: rawPackage.version,
+          description: rawPackage.description,
+          author: rawPackage.author,
+          keywords: rawPackage.keywords,
+          main: rawPackage.main,
+          nodes: nodeDrop.nodes || rawPackage.nodes || [],
+          credentials: nodeDrop.credentials || rawPackage.credentials,
+          oauthProviders: nodeDrop.oauthProviders || rawPackage.oauthProviders,
+        };
       } catch (parseError) {
         errors.push("Invalid package.json format");
         return { valid: false, errors, warnings };
@@ -519,6 +535,57 @@ export class NodeLoader {
   }
 
   /**
+   * Load OAuth providers from a package
+   */
+  private async loadOAuthProviders(
+    packagePath: string,
+    oauthProviderPaths: string[]
+  ): Promise<void> {
+    for (const providerPath of oauthProviderPaths) {
+      try {
+        const fullPath = path.join(packagePath, providerPath);
+        await this.loadAndRegisterOAuthProvider(fullPath);
+      } catch (error) {
+        logger.error("Failed to load OAuth provider", { error, providerPath });
+      }
+    }
+  }
+
+  /**
+   * Load and register an OAuth provider
+   */
+  private async loadAndRegisterOAuthProvider(
+    providerPath: string
+  ): Promise<void> {
+    try {
+      // Clear require cache
+      delete require.cache[require.resolve(providerPath)];
+
+      // Load the provider module
+      const providerModule = require(providerPath);
+      const provider = providerModule.default || providerModule;
+
+      if (!provider || typeof provider !== "object") {
+        throw new Error("Invalid OAuth provider format");
+      }
+
+      // Validate provider has required fields
+      if (!provider.name || !provider.getAuthorizationUrl || !provider.exchangeCodeForTokens) {
+        throw new Error("OAuth provider must have name, getAuthorizationUrl, and exchangeCodeForTokens");
+      }
+
+      // Register with OAuth provider registry
+      const { oauthProviderRegistry } = require("../oauth");
+      oauthProviderRegistry.register(provider);
+
+      logger.info(`✅ Registered OAuth provider: ${provider.name}`);
+    } catch (error) {
+      logger.error("Failed to load OAuth provider", { error, providerPath });
+      throw error;
+    }
+  }
+
+  /**
    * Load and register a credential type
    */
   private async loadAndRegisterCredential(
@@ -552,10 +619,7 @@ export class NodeLoader {
       // Register with credential service
       this.credentialService.registerCredentialType(credentialType);
 
-      logger.info("Loaded and registered credential type", {
-        name: credentialType.name,
-        displayName: credentialType.displayName,
-      });
+      // Silently loaded - only log errors
     } catch (error) {
       logger.error("Failed to load credential type", { error, credentialPath });
       throw error;
@@ -655,10 +719,7 @@ export class NodeLoader {
       // Store watcher
       this.watchers.set(packageName, watcher);
 
-      logger.info("Hot reload set up for package", {
-        packageName,
-        packagePath,
-      });
+      // Hot reload enabled silently
     } catch (error) {
       logger.error("Failed to set up hot reload", {
         error,
@@ -701,10 +762,7 @@ export class NodeLoader {
         }
       }
 
-      logger.info("Custom nodes auto-load completed", {
-        packagesFound: packageDirs.length,
-        packagesLoaded: this.loadedPackages.size,
-      });
+      // Custom nodes loaded silently
     } catch (error) {
       logger.error("Failed to load custom nodes", { error });
     }

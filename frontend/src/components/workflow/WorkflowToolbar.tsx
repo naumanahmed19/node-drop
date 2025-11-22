@@ -233,11 +233,19 @@ export function WorkflowToolbar({
           {/* Sidebar Trigger - only show when sidebar is available */}
           <SidebarTrigger className="-ml-1 h-7 w-7" />
 
-          {/* Workflow Breadcrumb with Environment Selector */}
+          {/* Workflow Breadcrumb with Team Selector and Environment Selector */}
           <div className="flex-shrink-0">
             <WorkflowBreadcrumb
               category={workflow?.category}
               title={mainWorkflowTitle}
+              teamId={workflow?.teamId || null}
+              onTeamChange={(teamId) => {
+                if (workflow) {
+                  updateWorkflow({ teamId })
+                  setDirty(true)
+                  console.log('Team changed to:', teamId || 'Personal')
+                }
+              }}
               onCategoryChange={(category) => {
                 if (workflow) {
                   updateWorkflow({ category })

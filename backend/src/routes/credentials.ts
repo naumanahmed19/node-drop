@@ -17,21 +17,55 @@ const getCredentialService = () => {
   return global.credentialService;
 };
 
-// Get all credentials for the authenticated user
+// Get all credentials for the authenticated user (owned + shared)
 router.get(
   "/",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { type } = req.query;
 
-    const credentials = await getCredentialService().getCredentials(
+    // Get owned credentials
+    const ownedCredentials = await getCredentialService().getCredentials(
       req.user!.id,
       type as string
     );
 
+    // For each owned credential, get share information
+    const ownedWithShares = await Promise.all(
+      ownedCredentials.map(async (cred) => {
+        try {
+          const shares = await getCredentialService().getCredentialShares(
+            cred.id,
+            req.user!.id
+          );
+          return {
+            ...cred,
+            sharedWith: shares.map(s => ({
+              id: s.sharedWith.id,
+              email: s.sharedWith.email,
+              name: s.sharedWith.name,
+              permission: s.permission
+            })),
+            shareCount: shares.length
+          };
+        } catch (err) {
+          // If getting shares fails, just return credential without share info
+          return { ...cred, sharedWith: [], shareCount: 0 };
+        }
+      })
+    );
+
+    // Get shared credentials
+    const sharedCredentials = await getCredentialService().getSharedCredentials(
+      req.user!.id
+    );
+
+    // Merge both lists
+    const allCredentials = [...ownedWithShares, ...sharedCredentials];
+
     res.json({
       success: true,
-      data: credentials,
+      data: allCredentials,
     });
   })
 );
@@ -46,6 +80,69 @@ router.get(
     res.json({
       success: true,
       data: credentialTypes,
+    });
+  })
+);
+
+// Get credential type with node context (for default values)
+router.get(
+  "/types/:typeName/defaults",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { typeName } = req.params;
+    const { nodeType } = req.query;
+
+    const credentialType = getCredentialService().getCredentialType(typeName);
+    
+    if (!credentialType) {
+      throw new AppError("Credential type not found", 404);
+    }
+
+    // If nodeType is provided, get node-specific defaults and displayName
+    let defaults: Record<string, any> = {};
+    let contextualCredentialType = { ...credentialType };
+    
+    if (nodeType) {
+      // Get node definition to extract credential properties
+      const nodeService = global.nodeService;
+      if (nodeService) {
+        try {
+          const nodeDefinition = await nodeService.getNodeDefinition(nodeType as string);
+          
+          if (nodeDefinition?.credentials) {
+            const credDef = nodeDefinition.credentials.find(
+              (c: any) => c.name === typeName
+            );
+            
+            if (credDef) {
+              // Use context-specific displayName if provided
+              if (credDef.displayName) {
+                contextualCredentialType.displayName = credDef.displayName;
+              }
+              
+              // Extract default values from node's credential properties
+              if (credDef.properties) {
+                credDef.properties.forEach((prop: any) => {
+                  if (prop.name && prop.value !== undefined) {
+                    defaults[prop.name] = prop.value;
+                  }
+                });
+              }
+            }
+          }
+        } catch (error) {
+          // Node not found or error getting definition, continue without defaults
+          console.warn(`Could not get node definition for ${nodeType}:`, error);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        credentialType: contextualCredentialType,
+        defaults,
+      },
     });
   })
 );
@@ -266,6 +363,150 @@ router.post(
       success: true,
       data: credentialWithoutData,
       message: "Credential rotated successfully",
+    });
+  })
+);
+
+// ============================================
+// CREDENTIAL SHARING ROUTES
+// ============================================
+
+// Get credentials shared WITH me
+router.get(
+  "/shared-with-me",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const sharedCredentials = await getCredentialService().getSharedCredentials(
+      req.user!.id
+    );
+
+    res.json({
+      success: true,
+      data: sharedCredentials,
+    });
+  })
+);
+
+// Get shares for a specific credential (who has access)
+router.get(
+  "/:id/shares",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+
+    const shares = await getCredentialService().getCredentialShares(
+      id,
+      req.user!.id
+    );
+
+    res.json({
+      success: true,
+      data: shares,
+    });
+  })
+);
+
+// Share credential with a user
+router.post(
+  "/:id/share",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const { userId, permission = "USE" } = req.body;
+
+    if (!userId) {
+      throw new AppError("User ID is required", 400);
+    }
+
+    if (!["USE", "VIEW", "EDIT"].includes(permission)) {
+      throw new AppError("Invalid permission. Must be USE, VIEW, or EDIT", 400);
+    }
+
+    const share = await getCredentialService().shareCredential(
+      id,
+      req.user!.id,
+      userId,
+      permission,
+      req.user!.id
+    );
+
+    res.status(201).json({
+      success: true,
+      data: share,
+      message: "Credential shared successfully",
+    });
+  })
+);
+
+// Update share permission
+router.put(
+  "/:id/share/:userId",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id, userId } = req.params;
+    const { permission } = req.body;
+
+    if (!permission || !["USE", "VIEW", "EDIT"].includes(permission)) {
+      throw new AppError("Invalid permission. Must be USE, VIEW, or EDIT", 400);
+    }
+
+    const updatedShare = await getCredentialService().updateSharePermission(
+      id,
+      req.user!.id,
+      userId,
+      permission
+    );
+
+    res.json({
+      success: true,
+      data: updatedShare,
+      message: "Permission updated successfully",
+    });
+  })
+);
+
+// Unshare credential (revoke access)
+router.delete(
+  "/:id/share/:userId",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id, userId } = req.params;
+
+    await getCredentialService().unshareCredential(
+      id,
+      req.user!.id,
+      userId
+    );
+
+    res.json({
+      success: true,
+      message: "Access revoked successfully",
+    });
+  })
+);
+
+// ============================================
+// CREDENTIAL TEAM SHARING ROUTES
+// ============================================
+
+// Get teams a credential is shared with
+router.get(
+  "/:id/teams",
+  authenticateToken,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+
+    // Import TeamService
+    const { TeamService } = await import("../services/TeamService");
+    
+    const shares = await TeamService.getCredentialTeamShares(
+      id,
+      req.user!.id
+    );
+
+    res.json({
+      success: true,
+      data: shares,
     });
   })
 );

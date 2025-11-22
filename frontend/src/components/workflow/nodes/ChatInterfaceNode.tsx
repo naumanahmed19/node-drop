@@ -408,6 +408,7 @@ export const ChatInterfaceNode = memo(function ChatInterfaceNode({ data, selecte
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
+              onContextMenu={(e) => e.stopPropagation()}
               disabled={isTyping || isExecuting}
               className="h-10 text-sm pr-10"
             />
@@ -440,8 +441,6 @@ export const ChatInterfaceNode = memo(function ChatInterfaceNode({ data, selecte
       onToggleExpand={handleToggleExpand}
       Icon={MessageCircle}
       iconColor="bg-blue-500"
-      collapsedWidth="180px"
-      expandedWidth="320px"
       headerInfo={headerInfo}
       expandedContent={expandedContent}
       showInputHandle={true}

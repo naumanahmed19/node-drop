@@ -11,7 +11,7 @@ import {
  * Supports custom component rendering for real-time preview in the configuration dialog.
  */
 export const ImagePreviewNode: NodeDefinition = {
-  type: "image-preview",
+  identifier: "image-preview",
   displayName: "Image Preview",
   name: "imagePreview",
   group: ["transform"],

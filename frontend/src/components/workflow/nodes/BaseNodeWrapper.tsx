@@ -1,19 +1,21 @@
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore } from '@/stores'
+import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
 import { NodeExecutionStatus } from '@/types/execution'
 import { useReactFlow } from '@xyflow/react'
-import { ChevronDown, LucideIcon } from 'lucide-react'
-import React, { ReactNode, useCallback } from 'react'
+import { LucideIcon } from 'lucide-react'
+import React, { ReactNode, useCallback, useMemo } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
 import { NodeHandles } from '../components/NodeHandles'
 import { NodeHeader } from '../components/NodeHeader'
-import { NodeIcon } from '../components/NodeIcon'
 import { NodeToolbarContent } from '../components/NodeToolbarContent'
 import { useNodeActions } from '../hooks/useNodeActions'
 import { useNodeExecution } from '../hooks/useNodeExecution'
 import '../node-animations.css'
 import { getNodeStatusClasses } from '../utils/nodeStyleUtils'
+import { useNodeSize } from './useNodeSize'
+import { CollapsedNodeContent } from './CollapsedNodeContent'
+import { NODE_SIZE_CONFIG } from './nodeSizeConfig'
 
 export interface BaseNodeWrapperProps {
   /** Node ID */
@@ -34,6 +36,8 @@ export interface BaseNodeWrapperProps {
     lastExecutionData?: any
     inputs?: string[]
     outputs?: string[]
+    inputNames?: string[]
+    outputNames?: string[]
     executionCapability?: 'trigger' | 'action' | 'transform' | 'condition'
   }
 
@@ -77,9 +81,18 @@ export interface BaseNodeWrapperProps {
     isTrigger?: boolean
     inputs?: string[]
     outputs?: string[]
+    inputNames?: string[]
+    outputNames?: string[]
+    inputsConfig?: Record<string, {
+      position?: 'left' | 'right' | 'top' | 'bottom';
+      displayName?: string;
+      required?: boolean;
+    }>
     imageUrl?: string
     nodeType?: string  // Added to support file: icons
     dynamicHeight?: string  // Added to support dynamic height based on outputs
+    compactMode?: boolean  // Added to support compact mode (hide labels, show in tooltip)
+    isServiceNode?: boolean  // Added to identify service nodes (tool, memory, model)
   }
 
   /** Custom metadata to render below node (like NodeMetadata component) */
@@ -127,6 +140,9 @@ export interface BaseNodeWrapperProps {
 
   /** Whether to show labels on output handles */
   showOutputLabels?: boolean
+
+  /** Small variant for service nodes (reduced size, icon, padding) */
+  small?: boolean
 }
 
 /**
@@ -166,8 +182,8 @@ export function BaseNodeWrapper({
   onToggleExpand,
   Icon,
   iconColor = 'bg-blue-500',
-  collapsedWidth = '180px',
-  expandedWidth = '320px',
+  collapsedWidth = NODE_SIZE_CONFIG.medium.width.collapsed,
+  expandedWidth = NODE_SIZE_CONFIG.medium.width.expanded,
   collapsedContent,
   expandedContent,
   headerInfo,
@@ -181,6 +197,7 @@ export function BaseNodeWrapper({
   nodeConfig,
   nodeEnhancements,
   showOutputLabels = false,
+  small = false,
 }: BaseNodeWrapperProps) {
   // Use node actions hook for context menu functionality
   const {
@@ -189,14 +206,24 @@ export function BaseNodeWrapper({
     handleDuplicate,
     handleDelete,
     handleToggleLock,
+    handleToggleCompact,
     handleUngroup,
     handleGroup,
     handleOutputClick,
-    handleToggleDisabled
+    handleServiceInputClick,
+    handleToggleDisabled,
+    handleToggleDisabledFromContext
   } = useNodeActions(id)
 
   // Get copy/paste functions from store
   const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
+
+  // Get node type definition for context menu
+  const { nodeTypes } = useNodeTypes()
+  const nodeTypeDefinition = useMemo(() => 
+    nodeTypes.find(nt => nt.identifier === data.nodeType),
+    [nodeTypes, data.nodeType]
+  )
 
   // Import useReactFlow to check if node is in a group
   const { getNode, getNodes } = useReactFlow()
@@ -232,11 +259,27 @@ export function BaseNodeWrapper({
     handleRetryNode
   } = useNodeExecution(id, data.nodeType)
 
-  // Get execution state from store for toolbar
-  const { executionState } = useWorkflowStore()
+  // Debug logging for service nodes
+  React.useEffect(() => {
+    if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
+      console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
+        isExecuting: nodeExecutionState.isExecuting,
+        hasError: nodeExecutionState.hasError,
+        hasSuccess: nodeExecutionState.hasSuccess,
+      });
+    }
+  }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
 
-  // Get compact mode from UI store
-  const { compactMode } = useReactFlowUIStore()
+  // Get execution state and workflow from store
+  const { executionState, workflow } = useWorkflowStore()
+
+  // Get compact mode from UI store (global) and node settings (per-node)
+  const { compactMode: globalCompactMode } = useReactFlowUIStore()
+  const workflowNode = workflow?.nodes.find(n => n.id === id)
+  const nodeCompactMode = workflowNode?.settings?.compact || false
+  
+  // Use node-specific compact mode if set, otherwise use global
+  const compactMode = nodeCompactMode || globalCompactMode
 
   // Determine effective node status from visual state or data.status
   // Priority: nodeVisualState > data.status for consistent styling across execution modes
@@ -271,14 +314,104 @@ export function BaseNodeWrapper({
   // If nodeConfig has outputs, use those (for dynamic outputs like Switch node)
   const nodeInputs = nodeConfig?.inputs || data.inputs || (showInputHandle ? ['main'] : [])
   const nodeOutputs = nodeConfig?.outputs || data.outputs || (showOutputHandle ? ['main'] : [])
+  const nodeInputNames = nodeConfig?.inputNames || data.inputNames
+  const nodeOutputNames = nodeConfig?.outputNames || data.outputNames
   const isTrigger = data.executionCapability === 'trigger'
+  
+  // Show input labels if inputNames are provided
+  const showInputLabels = !!nodeInputNames && nodeInputNames.length > 0
+
+  // Check if this is a service node for compact styling
+  const isServiceNode = nodeConfig && 'isServiceNode' in nodeConfig && nodeConfig.isServiceNode
+
+  // Use node size hook for centralized size configuration
+  const { minHeight, iconSize, labelClass, containerClasses } = useNodeSize({
+    small,
+    dynamicHeight: nodeConfig?.dynamicHeight,
+    compactMode,
+    isServiceNode
+  })
 
   // Calculate node width based on compact mode
   const effectiveCollapsedWidth = compactMode ? 'auto' : collapsedWidth
   const effectiveExpandedWidth = compactMode ? '280px' : expandedWidth
 
+  // Shared props for CollapsedNodeContent
+  const collapsedNodeProps = {
+    id,
+    data,
+    selected,
+    effectiveStatus,
+    effectiveCollapsedWidth,
+    minHeight,
+    containerClasses,
+    className,
+    nodeConfig,
+    small,
+    compactMode,
+    isServiceNode,
+    iconSize,
+    labelClass,
+    nodeInputs,
+    nodeOutputs,
+    nodeInputNames,
+    nodeOutputNames,
+    isTrigger,
+    showInputLabels,
+    showOutputLabels,
+    hoveredOutput,
+    onOutputMouseEnter: setHoveredOutput,
+    onOutputMouseLeave: () => setHoveredOutput(null),
+    handleOutputClick: handleOutputClick,
+    handleServiceInputClick: handleServiceInputClick,
+    handleDoubleClick,
+    handleToggleExpandClick,
+    handleExecuteNode,
+    handleRetryNode,
+    handleToggleDisabled,
+    nodeExecutionState,
+    executionStatus: executionState.status,
+    customContent,
+    collapsedContent,
+    Icon,
+    iconColor,
+    headerInfo,
+    nodeEnhancements,
+    isReadOnly,
+    canExpand,
+    expandedContent
+  }
+
   // Compact view (collapsed)
   if (!isExpanded) {
+    const contextMenu = (
+      <NodeContextMenu
+        onOpenProperties={handleOpenProperties}
+        onExecute={handleExecuteFromContext}
+        onDuplicate={handleDuplicate}
+        onDelete={handleDelete}
+        onToggleLock={handleToggleLock}
+        onToggleCompact={handleToggleCompact}
+        onToggleDisabled={handleToggleDisabledFromContext}
+        onCopy={copy || undefined}
+        onCut={cut || undefined}
+        onPaste={paste || undefined}
+        onUngroup={isInGroup ? handleUngroup : undefined}
+        onGroup={canGroup ? handleGroup : undefined}
+        onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
+        isLocked={!!data.locked}
+        isDisabled={data.disabled}
+        isCompact={nodeCompactMode}
+        readOnly={isReadOnly}
+        canCopy={canCopy}
+        canPaste={canPaste}
+        isInGroup={isInGroup}
+        canGroup={canGroup}
+        canCreateTemplate={canCreateTemplate}
+        nodeType={nodeTypeDefinition}
+      />
+    )
+
     // Wrap with tooltip when in compact mode
     if (compactMode) {
       return (
@@ -288,135 +421,17 @@ export function BaseNodeWrapper({
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <div className="relative">
-                    <div
-                      onDoubleClick={handleDoubleClick}
-                      className={`relative bg-card rounded-lg border shadow-sm transition-all duration-200 hover:shadow-md ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
-                        } ${className}`}
-                      style={{
-                        width: effectiveCollapsedWidth,
-                        minHeight: nodeConfig?.dynamicHeight
-                      }}
-                    >
-                      {/* Dynamic Handles */}
-                      <NodeHandles
-                        inputs={nodeInputs}
-                        outputs={nodeOutputs}
-                        disabled={data.disabled}
-                        isTrigger={isTrigger}
-                        hoveredOutput={hoveredOutput}
-                        onOutputMouseEnter={setHoveredOutput}
-                        onOutputMouseLeave={() => setHoveredOutput(null)}
-                        onOutputClick={handleOutputClick}
-                        readOnly={isReadOnly}
-                        showOutputLabels={showOutputLabels}
-                      />
-
-                      {/* Node Toolbar - Always show like CustomNode */}
-                      <NodeToolbarContent
-                        nodeId={id}
-                        nodeType={data.nodeType}
-                        nodeLabel={data.label}
-                        disabled={data.disabled}
-                        isExecuting={nodeExecutionState.isExecuting}
-                        hasError={nodeExecutionState.hasError}
-                        hasSuccess={nodeExecutionState.hasSuccess}
-                        executionError={nodeExecutionState.executionError}
-                        workflowExecutionStatus={executionState.status}
-                        onExecute={handleExecuteNode}
-                        onRetry={handleRetryNode}
-                        onToggleDisabled={handleToggleDisabled}
-                      />
-
-                      {/* Render custom content or NodeContent with icon, or default header */}
-                      {customContent ? (
-                        customContent
-                      ) : nodeConfig ? (
-                        <div className="relative h-full flex items-center">
-                          <div className={`flex items-center w-full ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
-                            <NodeIcon
-                              config={nodeConfig}
-                              isExecuting={nodeExecutionState.isExecuting}
-                            />
-                            {!compactMode && (
-                              <div className="flex flex-col min-w-0 flex-1">
-                                <span className="text-sm font-medium truncate">{data.label}</span>
-                              </div>
-                            )}
-                          </div>
-                          {/* Render node enhancements (badges, overlays, etc.) */}
-                          {nodeEnhancements}
-                        </div>
-                      ) : (
-                        <>
-                          {/* Compact Header */}
-                          <NodeHeader
-                            label={data.label}
-                            headerInfo={headerInfo}
-                            icon={Icon ? { Icon, iconColor } : undefined}
-                            isExpanded={false}
-                            canExpand={canExpand && !!expandedContent}
-                            onToggleExpand={handleToggleExpandClick}
-                            isExecuting={nodeExecutionState.isExecuting}
-                          />
-
-                          {/* Optional collapsed content */}
-                          {collapsedContent && (
-                            <div>
-                              {collapsedContent}
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {/* Bottom Expand Button - Only in compact mode when collapsed and can expand */}
-                      {canExpand && !!expandedContent && (
-                        <button
-                          onClick={handleToggleExpandClick}
-                          className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-card border border-border shadow-sm hover:shadow-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all z-10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          aria-label="Expand node"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Custom metadata below node (e.g., NodeMetadata component) */}
-                    {customMetadata && (
-                      <div className="mt-1">
-                        {customMetadata}
-                      </div>
-                    )}
+                    <CollapsedNodeContent {...collapsedNodeProps} />
+                    {customMetadata && <div className="mt-1">{customMetadata}</div>}
                   </div>
                 </ContextMenuTrigger>
-
-                <NodeContextMenu
-                  onOpenProperties={handleOpenProperties}
-                  onExecute={handleExecuteFromContext}
-                  onDuplicate={handleDuplicate}
-                  onDelete={handleDelete}
-                  onToggleLock={handleToggleLock}
-                  onCopy={copy || undefined}
-                  onCut={cut || undefined}
-                  onPaste={paste || undefined}
-                  onUngroup={isInGroup ? handleUngroup : undefined}
-                  onGroup={canGroup ? handleGroup : undefined}
-                  onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
-                  isLocked={!!data.locked}
-                  readOnly={isReadOnly}
-                  canCopy={canCopy}
-                  canPaste={canPaste}
-                  isInGroup={isInGroup}
-                  canGroup={canGroup}
-                  canCreateTemplate={canCreateTemplate}
-                />
+                {contextMenu}
               </ContextMenu>
             </div>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-xs">
-            <p className="font-medium">{data.label}</p>
-            {headerInfo && (
-              <p className="text-xs text-muted-foreground">{headerInfo}</p>
-            )}
+          <TooltipContent side="bottom" className={`max-w-xs ${small ? 'text-xs' : ''}`}>
+            <p className={small ? 'font-medium text-xs' : 'font-medium'}>{data.label}</p>
+            {headerInfo && <p className="text-xs text-muted-foreground">{headerInfo}</p>}
           </TooltipContent>
         </Tooltip>
       )
@@ -427,128 +442,11 @@ export function BaseNodeWrapper({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="relative">
-            <div
-              onDoubleClick={handleDoubleClick}
-
-              className={`relative bg-card rounded-lg ${compactMode ? 'border-2' : 'border'} shadow-sm transition-all duration-200 hover:shadow-md ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
-                } ${className}`}
-              style={{
-                width: effectiveCollapsedWidth,
-                minHeight: nodeConfig?.dynamicHeight
-              }}
-            >
-              {/* Dynamic Handles */}
-              <NodeHandles
-                inputs={nodeInputs}
-                outputs={nodeOutputs}
-                disabled={data.disabled}
-                isTrigger={isTrigger}
-                hoveredOutput={hoveredOutput}
-                onOutputMouseEnter={setHoveredOutput}
-                onOutputMouseLeave={() => setHoveredOutput(null)}
-                onOutputClick={handleOutputClick}
-                readOnly={isReadOnly}
-                showOutputLabels={showOutputLabels}
-              />
-
-              {/* Node Toolbar - Always show like CustomNode */}
-              <NodeToolbarContent
-                nodeId={id}
-                nodeType={data.nodeType}
-                nodeLabel={data.label}
-                disabled={data.disabled}
-                isExecuting={nodeExecutionState.isExecuting}
-                hasError={nodeExecutionState.hasError}
-                hasSuccess={nodeExecutionState.hasSuccess}
-                executionError={nodeExecutionState.executionError}
-                workflowExecutionStatus={executionState.status}
-                onExecute={handleExecuteNode}
-                onRetry={handleRetryNode}
-                onToggleDisabled={handleToggleDisabled}
-              />
-
-              {/* Render custom content or NodeContent with icon, or default header */}
-              {customContent ? (
-                customContent
-              ) : nodeConfig ? (
-                <div className="relative h-full flex items-center">
-                  <div className={`flex items-center w-full ${compactMode ? 'justify-center gap-0 p-2' : 'gap-2 p-3'}`}>
-                    <NodeIcon
-                      config={nodeConfig}
-                      isExecuting={nodeExecutionState.isExecuting}
-                    />
-                    {!compactMode && (
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-sm font-medium truncate">{data.label}</span>
-                      </div>
-                    )}
-                  </div>
-                  {/* Render node enhancements (badges, overlays, etc.) */}
-                  {nodeEnhancements}
-                </div>
-              ) : (
-                <>
-                  {/* Compact Header */}
-                  <NodeHeader
-                    label={data.label}
-                    headerInfo={headerInfo}
-                    icon={Icon ? { Icon, iconColor } : undefined}
-                    isExpanded={false}
-                    canExpand={canExpand && !!expandedContent}
-                    onToggleExpand={handleToggleExpandClick}
-                    isExecuting={nodeExecutionState.isExecuting}
-                  />
-
-                  {/* Optional collapsed content */}
-                  {collapsedContent && (
-                    <div>
-                      {collapsedContent}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Bottom Expand Button - Only in compact mode when collapsed and can expand */}
-              {compactMode && canExpand && !!expandedContent && (
-                <button
-                  onClick={handleToggleExpandClick}
-                  className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-card border border-border shadow-sm hover:shadow-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all z-10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  aria-label="Expand node"
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Custom metadata below node (e.g., NodeMetadata component) */}
-            {customMetadata && (
-              <div className="mt-1">
-                {customMetadata}
-              </div>
-            )}
+            <CollapsedNodeContent {...collapsedNodeProps} />
+            {customMetadata && <div className="mt-1">{customMetadata}</div>}
           </div>
         </ContextMenuTrigger>
-
-        <NodeContextMenu
-          onOpenProperties={handleOpenProperties}
-          onExecute={handleExecuteFromContext}
-          onDuplicate={handleDuplicate}
-          onDelete={handleDelete}
-          onToggleLock={handleToggleLock}
-          onCopy={copy || undefined}
-          onCut={cut || undefined}
-          onPaste={paste || undefined}
-          onUngroup={isInGroup ? handleUngroup : undefined}
-          onGroup={canGroup ? handleGroup : undefined}
-          onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
-          isLocked={!!data.locked}
-          readOnly={isReadOnly}
-          canCopy={canCopy}
-          canPaste={canPaste}
-          isInGroup={isInGroup}
-          canGroup={canGroup}
-          canCreateTemplate={canCreateTemplate}
-        />
+        {contextMenu}
       </ContextMenu>
     )
   }
@@ -560,9 +458,11 @@ export function BaseNodeWrapper({
         <div className="relative">
           <div
             onDoubleClick={handleDoubleClick}
-
-            className={`relative bg-card rounded-lg ${compactMode ? 'border-2' : 'border'} shadow-lg transition-all duration-200 hover:shadow-xl ${getNodeStatusClasses(effectiveStatus, selected, data.disabled)
-              } ${className}`}
+            className={`relative bg-card rounded-lg ${compactMode ? 'border-2' : 'border'} shadow-lg transition-all duration-200 hover:shadow-xl ${getNodeStatusClasses(
+              effectiveStatus,
+              selected,
+              data.disabled
+            )} ${className}`}
             style={{
               width: effectiveExpandedWidth,
               minHeight: nodeConfig?.dynamicHeight
@@ -572,17 +472,23 @@ export function BaseNodeWrapper({
             <NodeHandles
               inputs={nodeInputs}
               outputs={nodeOutputs}
+              inputNames={nodeInputNames}
+              outputNames={nodeOutputNames}
+              inputsConfig={nodeConfig?.inputsConfig}
               disabled={data.disabled}
               isTrigger={isTrigger}
               hoveredOutput={hoveredOutput}
               onOutputMouseEnter={setHoveredOutput}
               onOutputMouseLeave={() => setHoveredOutput(null)}
               onOutputClick={handleOutputClick}
+              onServiceInputClick={handleServiceInputClick}
               readOnly={isReadOnly}
+              showInputLabels={showInputLabels}
               showOutputLabels={showOutputLabels}
+              compactMode={nodeConfig?.compactMode}
             />
 
-            {/* Node Toolbar - Always show like CustomNode */}
+            {/* Node Toolbar */}
             <NodeToolbarContent
               nodeId={id}
               nodeType={data.nodeType}
@@ -595,7 +501,6 @@ export function BaseNodeWrapper({
               workflowExecutionStatus={executionState.status}
               onExecute={handleExecuteNode}
               onRetry={handleRetryNode}
-              onToggleDisabled={handleToggleDisabled}
             />
 
             {/* Expanded Header */}
@@ -622,6 +527,8 @@ export function BaseNodeWrapper({
         onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         onToggleLock={handleToggleLock}
+        onToggleCompact={handleToggleCompact}
+        onToggleDisabled={handleToggleDisabledFromContext}
         onCopy={copy || undefined}
         onCut={cut || undefined}
         onPaste={paste || undefined}
@@ -629,12 +536,15 @@ export function BaseNodeWrapper({
         onGroup={canGroup ? handleGroup : undefined}
         onCreateTemplate={canCreateTemplate ? handleCreateTemplate : undefined}
         isLocked={!!data.locked}
+        isDisabled={data.disabled}
+        isCompact={nodeCompactMode}
         readOnly={isReadOnly}
         canCopy={canCopy}
         canPaste={canPaste}
         isInGroup={isInGroup}
         canGroup={canGroup}
         canCreateTemplate={canCreateTemplate}
+        nodeType={nodeTypeDefinition}
       />
     </ContextMenu>
   )

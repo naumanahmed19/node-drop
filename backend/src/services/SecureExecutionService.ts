@@ -343,6 +343,12 @@ export class SecureExecutionService {
           );
         }
 
+        // Return data for the specified input name
+        const sanitizedData = validation.sanitizedData as any;
+        if (inputName && inputName !== "main" && sanitizedData[inputName]) {
+          return { [inputName]: sanitizedData[inputName] };
+        }
+
         return validation.sanitizedData;
       },
 
@@ -355,6 +361,8 @@ export class SecureExecutionService {
         userId
       ),
       logger: this.createSecureLogger(executionId),
+      // Expose userId for service nodes that need to fetch credentials
+      userId,
       // Utility functions for common node operations
       resolveValue,
       resolvePath,
@@ -488,6 +496,33 @@ export class SecureExecutionService {
           userId
         );
 
+      // Check if this is an OAuth credential that might need token refresh
+      if (this.isOAuthCredential(credentialData)) {
+        // Check if token needs refresh
+        if (this.shouldRefreshToken(credentialData)) {
+          logger.info(`Token refresh needed for credential ${credentialId}`);
+          
+          try {
+            // Attempt to refresh the token
+            const refreshedData = await this.refreshOAuthToken(
+              credentialId,
+              userId,
+              credentialData
+            );
+            
+            if (refreshedData) {
+              logger.info(`Token refreshed successfully for credential ${credentialId}`);
+              return refreshedData;
+            }
+          } catch (refreshError) {
+            logger.warn(`Token refresh failed for credential ${credentialId}, using existing token`, {
+              error: refreshError instanceof Error ? refreshError.message : 'Unknown error'
+            });
+            // Continue with existing token if refresh fails
+          }
+        }
+      }
+
       return credentialData;
     } catch (error) {
       logger.error("Credential injection failed:", {
@@ -501,6 +536,126 @@ export class SecureExecutionService {
         }`
       );
     }
+  }
+
+  /**
+   * Check if credential is OAuth-based
+   */
+  private isOAuthCredential(credentialData: any): boolean {
+    return !!(
+      credentialData.accessToken &&
+      credentialData.refreshToken &&
+      credentialData.clientId &&
+      credentialData.clientSecret
+    );
+  }
+
+  /**
+   * Check if OAuth token needs refresh (expired or expiring soon)
+   */
+  private shouldRefreshToken(credentialData: any): boolean {
+    if (!credentialData.tokenObtainedAt || !credentialData.expiresIn) {
+      return false; // Can't determine, assume valid
+    }
+
+    const obtainedAt = new Date(credentialData.tokenObtainedAt);
+    const expiresAt = new Date(obtainedAt.getTime() + credentialData.expiresIn * 1000);
+    const now = new Date();
+    const bufferTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes buffer
+
+    return expiresAt <= bufferTime;
+  }
+
+  /**
+   * Refresh OAuth token
+   */
+  private async refreshOAuthToken(
+    credentialId: string,
+    userId: string,
+    credentialData: any
+  ): Promise<any> {
+    try {
+      // Get the full credential from database to access the type
+      const credential = await this.credentialService.getCredential(
+        credentialId,
+        userId
+      );
+      
+      if (!credential) {
+        throw new Error('Credential not found');
+      }
+      
+      // Get credential type to find OAuth provider
+      const credentialType = this.credentialService.getCredentialType(credential.type);
+      if (!credentialType || !credentialType.oauthProvider) {
+        throw new Error(`Credential type ${credential.type} is not an OAuth credential`);
+      }
+
+      // Get OAuth provider from registry
+      const { oauthProviderRegistry } = require('../oauth');
+      const oauthProvider = oauthProviderRegistry.get(credentialType.oauthProvider);
+      
+      if (!oauthProvider) {
+        throw new Error(`OAuth provider ${credentialType.oauthProvider} not found`);
+      }
+
+      if (!oauthProvider.refreshAccessToken) {
+        throw new Error(`OAuth provider ${credentialType.oauthProvider} does not support token refresh`);
+      }
+
+      // Refresh the token using the provider
+      const tokens = await oauthProvider.refreshAccessToken({
+        refreshToken: credentialData.refreshToken,
+        clientId: credentialData.clientId,
+        clientSecret: credentialData.clientSecret,
+      });
+
+      // Update credential in database
+      await this.credentialService.updateCredential(credentialId, userId, {
+        data: {
+          ...credentialData,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken || credentialData.refreshToken,
+          expiresIn: tokens.expiresIn,
+          tokenObtainedAt: new Date().toISOString(),
+        },
+      });
+
+      // Return updated credential data
+      return {
+        ...credentialData,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken || credentialData.refreshToken,
+        expiresIn: tokens.expiresIn,
+        tokenObtainedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error('Failed to refresh OAuth token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract OAuth provider from credential type
+   * Examples:
+   * - "googleOAuth2" -> "google"
+   * - "githubOAuth2" -> "github"
+   * - "microsoftOAuth2" -> "microsoft"
+   * - "slackOAuth2" -> "slack"
+   */
+  private extractProviderFromType(credentialType: string): string {
+    // Remove "OAuth2" suffix and convert to lowercase
+    const provider = credentialType
+      .replace(/OAuth2$/i, '')
+      .replace(/OAuth$/i, '')
+      .toLowerCase();
+    
+    // Handle special cases
+    if (provider === 'googlesheets' || provider === 'googledrive') {
+      return 'google';
+    }
+    
+    return provider;
   }
 
   /**
@@ -673,6 +828,7 @@ export class SecureExecutionService {
    */
   private createSecureLogger(executionId: string): NodeLogger {
     return {
+      executionId, // Expose execution ID for service node event emission
       debug: (message: string, extra?: any) => {
         logger.debug(`[${executionId}] ${message}`, this.sanitizeValue(extra));
       },

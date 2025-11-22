@@ -269,9 +269,9 @@ program
       }
 
       // Execute the node
-      console.log(`   Executing node: ${nodeDefinition.type}`);
+      console.log(`   Executing node: ${nodeDefinition.identifier}`);
       const result = await nodeService.executeNode(
-        nodeDefinition.type,
+        nodeDefinition.identifier,
         parameters,
         inputData,
         credentials

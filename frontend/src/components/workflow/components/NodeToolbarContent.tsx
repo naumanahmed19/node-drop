@@ -1,7 +1,6 @@
-import { canNodeExecuteIndividually, shouldShowDisableButton, shouldShowExecuteButton } from '@/utils/nodeTypeClassification'
+import { canNodeExecuteIndividually, shouldShowExecuteButton } from '@/utils/nodeTypeClassification'
 import { NodeToolbar, Position } from '@xyflow/react'
 import { memo } from 'react'
-import { DisableToggleToolbarButton } from '../DisableToggleToolbarButton'
 import { ExecuteToolbarButton } from '../ExecuteToolbarButton'
 import type { NodeExecutionError } from '../types'
 
@@ -17,7 +16,6 @@ interface NodeToolbarContentProps {
   workflowExecutionStatus: string
   onExecute: (nodeId: string, nodeType: string) => void
   onRetry: (nodeId: string, nodeType: string) => void
-  onToggleDisabled: (nodeId: string, disabled: boolean) => void
 }
 
 export const NodeToolbarContent = memo(function NodeToolbarContent({
@@ -31,8 +29,7 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
   executionError,
   workflowExecutionStatus,
   onExecute,
-  onRetry,
-  onToggleDisabled
+  onRetry
 }: NodeToolbarContentProps) {
   return (
     <NodeToolbar
@@ -63,16 +60,6 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
             executionError={executionError}
             onExecute={() => onExecute(nodeId, nodeType)}
             onRetry={() => onRetry(nodeId, nodeType)}
-          />
-        )}
-        
-        {/* Disable/Enable toggle button */}
-        {shouldShowDisableButton(nodeType) && (
-          <DisableToggleToolbarButton
-            nodeId={nodeId}
-            nodeLabel={nodeLabel}
-            disabled={disabled}
-            onToggle={onToggleDisabled}
           />
         )}
       </div>

@@ -59,11 +59,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
   const [processingNode, setProcessingNode] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [nodeToDelete, setNodeToDelete] = useState<NodeType | null>(null)
-  // Marketplace filter state
-  const [marketplaceSortBy, setMarketplaceSortBy] = useState<'downloads' | 'rating' | 'updated' | 'relevance'>('downloads')
-  const [marketplaceSortOrder, setMarketplaceSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [marketplaceSelectedCategory, setMarketplaceSelectedCategory] = useState<string>('all')
-  const [marketplaceCategories, setMarketplaceCategories] = useState<string[]>([])
 
   // Initialize store on mount
   useEffect(() => {
@@ -110,7 +105,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
     return activeNodeTypes.filter(nodeType =>
       nodeType.displayName.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
       nodeType.description.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
-      nodeType.type.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
+      nodeType.identifier.toLowerCase().includes(effectiveSearchTerm.toLowerCase()) ||
       nodeType.group.some(group => group.toLowerCase().includes(effectiveSearchTerm.toLowerCase()))
     )
   }, [activeNodeTypes, searchTerm])
@@ -176,15 +171,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         setSearchTerm={setSearchTerm}
         onRefresh={refetchNodeTypes}
         isRefreshing={isLoading}
-        sortBy={marketplaceSortBy}
-        sortOrder={marketplaceSortOrder}
-        selectedCategory={marketplaceSelectedCategory}
-        categories={marketplaceCategories}
-        onSortChange={(sortBy, sortOrder) => {
-          setMarketplaceSortBy(sortBy as any)
-          setMarketplaceSortOrder(sortOrder as any)
-        }}
-        onCategoryChange={setMarketplaceSelectedCategory}
       />
     )
 
@@ -211,18 +197,18 @@ export function NodeTypesList({ }: NodeTypesListProps) {
   const handleDeleteNode = async () => {
     if (!nodeToDelete) return;
 
-    setProcessingNode(nodeToDelete.type);
+    setProcessingNode(nodeToDelete.identifier);
     setDeleteDialogOpen(false);
 
     try {
-      console.log('Attempting to delete node:', nodeToDelete.type);
+      console.log('Attempting to delete node:', nodeToDelete.identifier);
       console.log('Full node details:', nodeToDelete);
 
-      // Check if this is a database node (has id) vs a service node (only has type)
+      // Check if this is a database node (has id) vs a service node (only has identifier)
       const extendedNode = nodeToDelete as ExtendedNodeType;
       console.log('Extended node properties:', {
         id: extendedNode.id,
-        type: nodeToDelete.type,
+        identifier: nodeToDelete.identifier,
         hasId: !!extendedNode.id,
         createdAt: extendedNode.createdAt
       });
@@ -232,7 +218,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         throw new Error('This appears to be a core system node that cannot be uninstalled. Only custom uploaded nodes can be removed.');
       }
 
-      await nodeTypeService.deleteNodeType(nodeToDelete.type);
+      await nodeTypeService.deleteNodeType(nodeToDelete.identifier);
       console.log('Delete successful');
 
       globalToastManager.showSuccess(
@@ -287,10 +273,10 @@ export function NodeTypesList({ }: NodeTypesListProps) {
 
     const nodeWithStatus = nodeType as ExtendedNodeType;
     const newStatus = !(nodeWithStatus.active ?? true); // Default to true if not set
-    setProcessingNode(nodeType.type);
+    setProcessingNode(nodeType.identifier);
 
     try {
-      await nodeTypeService.updateNodeTypeStatus(nodeType.type, newStatus);
+      await nodeTypeService.updateNodeTypeStatus(nodeType.identifier, newStatus);
 
       // Refresh the list immediately after successful update
       await refetchNodeTypes();
@@ -369,17 +355,17 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                   >
                     <NodeIconRenderer
                       icon={nodeType.icon}
-                      nodeType={nodeType.type}
+                      nodeType={nodeType.identifier}
                       nodeGroup={nodeType.group}
                       displayName={nodeType.displayName}
                       backgroundColor={nodeType.color}
                       size="md"
                       className="shrink-0 mt-0.5"
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium break-words">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="font-medium">
                         <div className="flex items-start gap-2 flex-wrap">
-                          <span className="break-words">{nodeType.displayName}</span>
+                          <span className="break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{nodeType.displayName}</span>
                           {(nodeType as ExtendedNodeType).active === false && (
                             <Badge variant="outline" className="text-xs h-4 px-1 shrink-0">
                               <PowerOff className="h-2 w-2 mr-1" />
@@ -419,14 +405,14 @@ export function NodeTypesList({ }: NodeTypesListProps) {
 
                 // Wrap with context menu
                 return (
-                  <ContextMenu key={`${nodeType.type}-${(nodeType as ExtendedNodeType).active}`}>
+                  <ContextMenu key={`${nodeType.identifier}-${(nodeType as ExtendedNodeType).active}`}>
                     <ContextMenuTrigger className="block w-full">
                       {nodeElement}
                     </ContextMenuTrigger>
                     <ContextMenuContent className="w-48">
                       <ContextMenuItem
                         onClick={() => handleToggleNodeStatus(nodeType)}
-                        disabled={processingNode === nodeType.type}
+                        disabled={processingNode === nodeType.identifier}
                       >
                         {(nodeType as ExtendedNodeType).active !== false ? (
                           <>
@@ -451,7 +437,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                             );
                           }
                         }}
-                        disabled={processingNode === nodeType.type}
+                        disabled={processingNode === nodeType.identifier}
                         className={isDeletable ? "text-destructive focus:text-destructive" : "text-muted-foreground"}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
@@ -519,10 +505,6 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         <TabsContent value="marketplace" className="mt-0 p-0">
           <NodeMarketplace
             searchTerm={searchTerm}
-            sortBy={marketplaceSortBy}
-            sortOrder={marketplaceSortOrder}
-            selectedCategory={marketplaceSelectedCategory}
-            onCategoriesChange={setMarketplaceCategories}
             onRefreshNodes={refetchNodeTypes}
           />
         </TabsContent>
@@ -544,11 +526,11 @@ export function NodeTypesList({ }: NodeTypesListProps) {
         onConfirm={handleDeleteNode}
         title="Uninstall Node"
         message={`Are you sure you want to uninstall "${nodeToDelete?.displayName}"? This action cannot be undone and will remove the node from your workflow editor.`}
-        confirmText={processingNode === nodeToDelete?.type ? 'Uninstalling...' : 'Uninstall Node'}
+        confirmText={processingNode === nodeToDelete?.identifier ? 'Uninstalling...' : 'Uninstall Node'}
         cancelText="Cancel"
         severity="danger"
-        loading={processingNode === nodeToDelete?.type}
-        disabled={processingNode === nodeToDelete?.type}
+        loading={processingNode === nodeToDelete?.identifier}
+        disabled={processingNode === nodeToDelete?.identifier}
       />
     </>
   )

@@ -26,6 +26,13 @@ export function useNodeActions(nodeId: string) {
     updateNode(nodeId, { disabled });
   };
 
+  const handleToggleDisabledFromContext = () => {
+    const node = workflow?.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      updateNode(nodeId, { disabled: !node.disabled });
+    }
+  };
+
   const handleOpenProperties = () => {
     // Open regular properties panel for all nodes (including chat)
     openNodeProperties(nodeId);
@@ -58,6 +65,19 @@ export function useNodeActions(nodeId: string) {
 
   const handleToggleLock = () => {
     toggleNodeLock(nodeId);
+  };
+
+  const handleToggleCompact = () => {
+    const node = workflow?.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      const currentCompact = node.settings?.compact || false;
+      updateNode(nodeId, {
+        settings: {
+          ...node.settings,
+          compact: !currentCompact,
+        },
+      });
+    }
   };
 
   const handleUngroup = () => {
@@ -186,15 +206,41 @@ export function useNodeActions(nodeId: string) {
     });
   };
 
+  const handleServiceInputClick = (
+    event: React.MouseEvent<HTMLDivElement>,
+    inputHandle: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const position = {
+      x: rect.left - 10,
+      y: rect.top + rect.height / 2,
+    };
+
+    // For service inputs, the new node will be the SOURCE and this node will be the TARGET
+    // We pass targetNodeId and targetInput to indicate where to connect TO
+    openDialog(position, {
+      sourceNodeId: "", // New node will be source
+      targetNodeId: nodeId, // This node is the target
+      sourceOutput: inputHandle, // The output type we need (model, memory, tool)
+      targetInput: inputHandle, // The input on this node (model, memory, tools)
+    });
+  };
+
   return {
     handleToggleDisabled,
+    handleToggleDisabledFromContext,
     handleOpenProperties,
     handleExecuteFromContext,
     handleDuplicate,
     handleDelete,
     handleToggleLock,
+    handleToggleCompact,
     handleUngroup,
     handleGroup,
     handleOutputClick,
+    handleServiceInputClick,
   };
 }

@@ -7,5 +7,6 @@ export * from "./customNode";
 export * from "./nodeConfigDialog";
 export * from "./nodeTypes";
 export * from "./reactFlowUI";
+export * from "./team";
 export * from "./workflow";
 export * from "./workflowToolbar";

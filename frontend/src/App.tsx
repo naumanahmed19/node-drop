@@ -2,7 +2,7 @@ import { Layout, ProtectedRoute, WorkflowEditorLayout } from '@/components'
 import { GlobalToastProvider } from '@/components/providers/GlobalToastProvider'
 import { Toaster } from '@/components/ui/sonner'
 
-import { SidebarContextProvider, ThemeProvider } from '@/contexts'
+import { SidebarContextProvider, TeamProvider, ThemeProvider } from '@/contexts'
 import {
     CustomNodesPage,
     ExecutionsPage,
@@ -11,6 +11,7 @@ import {
     ProfilePage,
     PublicFormPage,
     RegisterPage,
+    WebhookRequestsPage,
     WorkflowEditorPage
 } from '@/pages'
 import { OAuthCallback } from '@/pages/OAuthCallback'
@@ -27,7 +28,8 @@ function App() {
       >
         <ThemeProvider>
           <SidebarContextProvider>
-          <Routes>
+            <TeamProvider>
+              <Routes>
           {/* Public routes */}
           <Route
             path="/login"
@@ -106,6 +108,7 @@ function App() {
           >
             <Route index element={<Navigate to="/workflows" replace />} />
             <Route path="executions" element={<ExecutionsPage />} />
+            <Route path="webhook-requests" element={<WebhookRequestsPage />} />
             <Route path="custom-nodes" element={<CustomNodesPage />} />
             <Route path="profile" element={<ProfilePage />} />
           
@@ -113,10 +116,11 @@ function App() {
 
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-          <Toaster />
-          <GlobalToastProvider />
-        </SidebarContextProvider>
+              </Routes>
+              <Toaster />
+              <GlobalToastProvider />
+            </TeamProvider>
+          </SidebarContextProvider>
         </ThemeProvider>
       </Router>
     </>

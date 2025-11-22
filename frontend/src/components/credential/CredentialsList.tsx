@@ -1,6 +1,7 @@
 import { CredentialFormSidebar } from '@/components/credential/CredentialFormSidebar'
 import { CredentialsHeader } from '@/components/credential/CredentialsHeader'
 import { CredentialTypeSelection } from '@/components/credential/CredentialTypeSelection'
+import { CredentialSharingModal } from '@/components/credential/CredentialSharingModal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,16 +19,22 @@ import {
   Activity,
   Calendar,
   Clock,
-  Copy,
   Edit,
   Key as KeyIcon,
   MoreHorizontal,
   Plus,
+  Share2,
   Shield,
-  TestTube,
   Trash2,
   Users
 } from 'lucide-react'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -57,6 +64,7 @@ export function CredentialsList({}: CredentialsListProps) {
   
   // Dialog states
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null)
+  const [sharingCredential, setSharingCredential] = useState<Credential | null>(null)
 
   // CRUD handlers (defined early to avoid hoisting issues)
   const handleCreateCredential = () => {
@@ -127,44 +135,6 @@ export function CredentialsList({}: CredentialsListProps) {
     }
   }
 
-  const handleTestCredential = async (credential: Credential) => {
-    try {
-      // This would need to be implemented in the store/service
-      toast.info(`Testing credential: ${credential.name}`)
-      // const result = await testCredential({ type: credential.type, data: credential.data })
-      // if (result.success) {
-      //   toast.success('Credential test successful')
-      // } else {
-      //   toast.error('Credential test failed: ' + result.error)
-      // }
-    } catch (error) {
-      toast.error('Failed to test credential')
-    }
-  }
-
-  const handleDuplicateCredential = (credential: Credential) => {
-    // Find the credential type and open the form with that type
-    const credentialType = credentialTypes.find(ct => ct.name === credential.type)
-    
-    if (credentialType) {
-      setEditingCredential(null) // Don't pre-fill data for security
-      setDetailSidebar({
-        isOpen: true,
-        title: `Create ${credentialType.displayName}`,
-        content: (
-          <CredentialFormSidebar
-            credentialType={credentialType}
-            onSuccess={handleCredentialSuccess}
-            onCancel={handleCloseDetailSidebar}
-          />
-        )
-      })
-      toast.info(`Creating duplicate of credential: ${credential.name}`)
-    } else {
-      toast.error('Credential type not found')
-    }
-  }
-
   const handleCredentialSuccess = async () => {
     try {
       // Refresh credentials list
@@ -194,9 +164,13 @@ export function CredentialsList({}: CredentialsListProps) {
       }
       setError(null)
       
-      // Fetch fresh data
-      const fetchedCredentials = await credentialService.getCredentials()
-      setCredentials(fetchedCredentials)
+      // Fetch all credentials (owned + shared) from single endpoint
+      const allCredentials = await credentialService.getCredentials()
+      
+      // Debug: Log credentials to see share data
+      console.log('Fetched credentials:', allCredentials)
+      
+      setCredentials(allCredentials)
       setIsCredentialsLoaded(true)
     } catch (err) {
       console.error('Failed to fetch credentials:', err)
@@ -249,6 +223,11 @@ export function CredentialsList({}: CredentialsListProps) {
     }
   }, [setHeaderSlot, filteredCredentials.length, localSearchTerm, handleCreateCredential, isRefreshing])
 
+  const handleShareCredential = (credential: Credential) => {
+    console.log('Share credential clicked:', credential)
+    setSharingCredential(credential)
+  }
+
   const handleCredentialAction = (action: string, credentialId: string, event: React.MouseEvent) => {
     event.stopPropagation()
     const credential = credentials.find(c => c.id === credentialId)
@@ -258,11 +237,8 @@ export function CredentialsList({}: CredentialsListProps) {
       case 'edit':
         handleEditCredential(credential)
         break
-      case 'test':
-        handleTestCredential(credential)
-        break
-      case 'duplicate':
-        handleDuplicateCredential(credential)
+      case 'share':
+        handleShareCredential(credential)
         break
       case 'delete':
         handleDeleteCredential(credential)
@@ -393,14 +369,14 @@ export function CredentialsList({}: CredentialsListProps) {
                 }
               }}
             >
-              <div className="px-4 py-3">
+              <div className="px-4 py-3 overflow-hidden">
               {/* Header Row - Name and Action Button */}
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                   <div className="shrink-0">
                     {getCredentialIcon(credential.type)}
                   </div>
-                  <h4 className="text-sm font-medium truncate">{credential.name}</h4>
+                  <h4 className="text-sm font-medium break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{credential.name}</h4>
                 </div>
                 
                 <DropdownMenu>
@@ -415,35 +391,57 @@ export function CredentialsList({}: CredentialsListProps) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-40">
-                    {/* Hide Edit option for OAuth credentials */}
-                    {(credential.type !== 'googleSheetsOAuth2' && credential.type !== 'googleDriveOAuth2') && (
-                      <DropdownMenuItem
-                        onClick={(e) => handleCredentialAction('edit', credential.id, e)}
-                      >
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      onClick={(e) => handleCredentialAction('test', credential.id, e)}
-                    >
-                      <TestTube className="h-4 w-4 mr-2" />
-                      Test
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => handleCredentialAction('duplicate', credential.id, e)}
-                    >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Duplicate
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={(e) => handleCredentialAction('delete', credential.id, e)}
-                      className="text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
+                    {(() => {
+                      const isSharedWithMe = !!(credential as any).sharedBy
+                      const permission = (credential as any).permission
+                      const isOwner = !isSharedWithMe
+                      
+                      return (
+                        <>
+                          {/* Edit - Only for owners or EDIT permission */}
+                          {(isOwner || permission === 'EDIT') && 
+                           (credential.type !== 'googleSheetsOAuth2' && credential.type !== 'googleDriveOAuth2') && (
+                            <DropdownMenuItem
+                              onClick={(e) => handleCredentialAction('edit', credential.id, e)}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {/* Share - Only for owners */}
+                          {isOwner && (
+                            <DropdownMenuItem
+                              onClick={(e) => handleCredentialAction('share', credential.id, e)}
+                            >
+                              <Share2 className="h-4 w-4 mr-2" />
+                              Share
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {/* Separator - Only if there are items above */}
+                          {(isOwner || permission === 'EDIT') && <DropdownMenuSeparator />}
+                          
+                          {/* Delete - Only for owners */}
+                          {isOwner && (
+                            <DropdownMenuItem
+                              onClick={(e) => handleCredentialAction('delete', credential.id, e)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          )}
+                          
+                          {/* If shared with me and only USE permission, show info */}
+                          {isSharedWithMe && permission === 'USE' && (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                              View only access
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -458,15 +456,17 @@ export function CredentialsList({}: CredentialsListProps) {
                   >
                     {credential.type}
                   </Badge>
-                  {credential.isShared && (
+                  {/* Show "Shared by" if credential is shared WITH you */}
+                  {(credential as any).sharedBy && (
                     <Badge 
                       variant="secondary"
                       className="text-[10px] h-4 px-1.5 shrink-0"
                     >
                       <Users className="h-2.5 w-2.5 mr-0.5" />
-                      Shared
+                      Shared by {(credential as any).sharedBy.name || (credential as any).sharedBy.email}
                     </Badge>
                   )}
+
                   {isExpired(credential.expiresAt) && (
                     <Badge 
                       variant="destructive"
@@ -512,6 +512,54 @@ export function CredentialsList({}: CredentialsListProps) {
                   </Badge>
                 )}
               </div>
+
+              {/* Avatar stack at bottom - Show if you shared it with others */}
+              {(credential as any).shareCount > 0 && !(credential as any).sharedBy && (
+                <div className="mt-3 ml-6">
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <div className="flex -space-x-3">
+                            {(credential as any).sharedWith?.slice(0, 5).map((user: any) => (
+                              <Avatar key={user.id} className="h-[35px] w-[35px] border-2 border-background ring-1 ring-border">
+                                <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
+                                  {(user.name || user.email).substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                            ))}
+                            {(credential as any).shareCount > 5 && (
+                              <div className="h-[35px] w-[35px] rounded-full bg-muted border-2 border-background ring-1 ring-border flex items-center justify-center">
+                                <span className="text-xs font-medium">+{(credential as any).shareCount - 5}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="p-3">
+                        <div className="text-sm">
+                          <div className="font-medium mb-2">Shared with {(credential as any).shareCount} {(credential as any).shareCount === 1 ? 'user' : 'users'}:</div>
+                          <div className="space-y-2">
+                            {(credential as any).sharedWith?.map((user: any) => (
+                              <div key={user.id} className="flex items-center gap-2">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarFallback className="text-[10px]">
+                                    {(user.name || user.email).substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{user.name || user.email}</span>
+                                  {user.name && <span className="text-xs text-muted-foreground">{user.email}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
           </div>
           )
@@ -519,6 +567,18 @@ export function CredentialsList({}: CredentialsListProps) {
       </div>
 
       {/* Detail sidebar is managed by the main app sidebar */}
+
+      {/* Sharing Modal */}
+      {sharingCredential && (
+        <CredentialSharingModal
+          credential={sharingCredential}
+          onClose={() => setSharingCredential(null)}
+          onShare={() => {
+            fetchCredentials(true)
+            setSharingCredential(null)
+          }}
+        />
+      )}
     </>
   )
 }

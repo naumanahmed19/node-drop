@@ -155,11 +155,10 @@ export class ExecutionService {
 
       // Find trigger nodes or determine starting point
       // Include chat nodes as they can trigger workflows
-      const triggerNodes = workflowNodes.filter(
-        (node: any) =>
-          node.type.includes("trigger") ||
-          ["manual-trigger", "workflow-called", "chat"].includes(node.type)
-      );
+      const triggerNodes = workflowNodes.filter((node: any) => {
+        const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+        return nodeDef?.triggerType !== undefined || node.type === "chat";
+      });
 
       let flowResult: FlowExecutionResult;
 
@@ -1260,12 +1259,8 @@ export class ExecutionService {
       }
 
       // Handle execution based on mode
-      const triggerNodeTypes = [
-        "manual-trigger",
-        "webhook-trigger",
-        "workflow-called",
-      ];
-      const isTriggerNode = triggerNodeTypes.includes(node.type);
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      const isTriggerNode = nodeDef?.triggerType !== undefined;
 
       if (mode === "workflow" && !isTriggerNode) {
         return {
@@ -1303,10 +1298,25 @@ export class ExecutionService {
             // Get the credential ID from parameters using the field name
             const credentialId = nodeParameters[property.name];
 
-            if (credentialId) {
-              // Map credential type to ID
-              // property.allowedTypes[0] is the credential type (e.g., "postgresDb")
-              credentialsMapping[property.allowedTypes[0]] = credentialId;
+            if (credentialId && typeof credentialId === "string") {
+              // Verify credential exists and get its actual type
+              const cred = await this.prisma.credential.findUnique({
+                where: { id: credentialId },
+                select: { type: true, userId: true }
+              });
+
+              if (cred) {
+                if (cred.userId !== userId) {
+                  logger.warn(`Credential ${credentialId} does not belong to user ${userId}`);
+                  continue;
+                }
+                // Map the actual credential type from the database to the credential ID
+                // This ensures the node can request credentials by their actual type
+                credentialsMapping[cred.type] = credentialId;
+                logger.info(`Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
+              } else {
+                logger.warn(`Credential ${credentialId} not found in database`);
+              }
             }
           }
         }

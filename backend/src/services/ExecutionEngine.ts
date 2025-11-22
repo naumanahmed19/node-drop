@@ -460,19 +460,12 @@ export class ExecutionEngine extends EventEmitter {
         maxConcurrentRequests: 5,
       };
 
-      // For manual triggers, add additional context
-      if (node.type === "manual-trigger") {
-        logger.info(`Executing manual trigger node ${nodeId}`, {
+      // For trigger nodes, add additional context
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      if (nodeDef?.triggerType) {
+        logger.info(`Executing ${nodeDef.triggerType} trigger node ${nodeId}`, {
           executionId,
-          triggerDataSize: JSON.stringify(context.triggerData || {}).length,
-          nodeParameters: Object.keys(node.parameters || {}),
-        });
-      }
-
-      // For workflow-called triggers, add additional context
-      if (node.type === "workflow-called") {
-        logger.info(`Executing workflow-called trigger node ${nodeId}`, {
-          executionId,
+          triggerType: nodeDef.triggerType,
           triggerDataSize: JSON.stringify(context.triggerData || {}).length,
           nodeParameters: Object.keys(node.parameters || {}),
         });
@@ -500,17 +493,23 @@ export class ExecutionEngine extends EventEmitter {
           status: NodeExecutionStatus.SUCCESS,
           outputData: result.data as any,
           finishedAt: new Date(),
-          // Store additional execution metadata for manual triggers
-          ...(node.type === "manual-trigger" && {
-            real_output_data: result.data,
-            network_metrics: {
-              executionTime:
-                new Date().getTime() -
-                new Date(nodeExecution.startedAt || new Date()).getTime(),
-              triggerType: "manual",
-              triggerDataSize: JSON.stringify(context.triggerData || {}).length,
-            },
-          }),
+          // Store additional execution metadata for trigger nodes
+          ...(() => {
+            const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+            if (nodeDef?.triggerType) {
+              return {
+                real_output_data: result.data,
+                network_metrics: {
+                  executionTime:
+                    new Date().getTime() -
+                    new Date(nodeExecution.startedAt || new Date()).getTime(),
+                  triggerType: nodeDef.triggerType,
+                  triggerDataSize: JSON.stringify(context.triggerData || {}).length,
+                },
+              };
+            }
+            return {};
+          })(),
         },
       });
 
@@ -552,19 +551,23 @@ export class ExecutionEngine extends EventEmitter {
         const workflowNodes = workflow?.nodes as unknown as Node[];
         const currentNode = workflowNodes?.find((n) => n.id === nodeId);
 
-        if (currentNode && currentNode.type === "manual-trigger") {
-          logger.error(`Manual trigger node ${nodeId} execution failed`, {
-            executionId,
-            error: error instanceof Error ? error.message : "Unknown error",
-            triggerDataSize: JSON.stringify(currentContext.triggerData || {}).length,
-            nodeParameters: Object.keys(currentNode.parameters || {}),
-          });
+        if (currentNode) {
+          const nodeDef = this.nodeService.getNodeDefinitionSync(currentNode.type);
+          if (nodeDef?.triggerType) {
+            logger.error(`${nodeDef.triggerType} trigger node ${nodeId} execution failed`, {
+              executionId,
+              triggerType: nodeDef.triggerType,
+              error: error instanceof Error ? error.message : "Unknown error",
+              triggerDataSize: JSON.stringify(currentContext.triggerData || {}).length,
+              nodeParameters: Object.keys(currentNode.parameters || {}),
+            });
+          }
         }
 
-        // Enhanced error handling for workflow-called triggers
+        // Continue with error handling
         if (currentNode && currentNode.type === "workflow-called") {
           logger.error(
-            `Workflow-called trigger node ${nodeId} execution failed`,
+            `Workflow-called trigger node ${nodeId} execution failed (legacy log)`,
             {
               executionId,
               error: error instanceof Error ? error.message : "Unknown error",
@@ -1074,21 +1077,27 @@ export class ExecutionEngine extends EventEmitter {
       // This is a trigger node, prepare trigger data properly
       const node = graph.nodes.get(nodeId);
 
-      if (node && node.type === "manual-trigger") {
-        // For manual triggers, pass the trigger data as the first item
-        // The manual trigger node will handle validation and processing
-        const triggerInput = context.triggerData || {};
+      if (node) {
+        const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+        
+        if (nodeDef?.triggerType) {
+          // For trigger nodes, pass the trigger data as the first item
+          // The trigger node will handle validation and processing
+          const triggerInput = context.triggerData || {};
 
-        // Log trigger data for debugging
-        logger.debug(`Preparing manual trigger input data for node ${nodeId}`, {
-          triggerDataKeys: Object.keys(triggerInput),
-          triggerDataSize: JSON.stringify(triggerInput).length,
-        });
+          // Log trigger data for debugging
+          logger.debug(`Preparing ${nodeDef.triggerType} trigger input data for node ${nodeId}`, {
+            triggerType: nodeDef.triggerType,
+            triggerDataKeys: Object.keys(triggerInput),
+            triggerDataSize: JSON.stringify(triggerInput).length,
+          });
 
-        inputData.main = [[{ json: triggerInput }]];
-      } else if (node && node.type === "workflow-called") {
-        // For workflow-called triggers, pass the trigger data as the first item
-        // Similar to manual triggers but specifically for workflow-to-workflow calls
+          inputData.main = [[{ json: triggerInput }]];
+        }
+      }
+      
+      // Legacy handling for workflow-called (keeping for backward compatibility)
+      if (node && node.type === "workflow-called") {
         const triggerInput = context.triggerData || {};
 
         // Log trigger data for debugging
@@ -1106,56 +1115,149 @@ export class ExecutionEngine extends EventEmitter {
         inputData.main = [[context.triggerData || {}]];
       }
     } else {
-      // Collect data from source nodes
-      // Keep data from each connection separate for multi-input support (like Merge node)
-      const sourceDataPerConnection: any[][] = [];
-
+      // Group connections by target input name (for nodes with multiple named inputs like AI Agent)
+      const connectionsByInput = new Map<string, typeof incomingConnections>();
+      
       for (const connection of incomingConnections) {
-        const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
-        const connectionData: any[] = [];
-
-        if (sourceOutput) {
-          // Check if this is a branching node (has branches property)
-          const hasBranches = (sourceOutput as any).branches;
-
-          if (hasBranches) {
-            // For branching nodes (like IfElse), only use data from the specific output branch
-            const branchName = connection.sourceOutput || "main";
-            const branchData = (sourceOutput as any).branches?.[branchName] || [];
-
-            logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
-              branchName,
-              itemCount: branchData.length,
-              availableBranches: Object.keys((sourceOutput as any).branches || {}),
-            });
-
-            connectionData.push(...branchData);
-          } else {
-            // For standard nodes, use main output
-            const outputItems = (sourceOutput as any).main || [];
-            connectionData.push(...outputItems);
-          }
+        const targetInput = connection.targetInput || 'main';
+        if (!connectionsByInput.has(targetInput)) {
+          connectionsByInput.set(targetInput, []);
         }
-        
-        // Add this connection's data as a separate array
-        sourceDataPerConnection.push(connectionData);
+        connectionsByInput.get(targetInput)!.push(connection);
       }
 
-      // For nodes with multiple inputs (like Merge), keep data from each connection separate
-      // For nodes with single input, flatten for backward compatibility
-      if (sourceDataPerConnection.length > 1) {
-        // Multiple connections: keep them separate (2D array)
-        inputData.main = sourceDataPerConnection;
-      } else if (sourceDataPerConnection.length === 1) {
-        // Single connection: use existing format for backward compatibility
-        const singleConnectionData = sourceDataPerConnection[0];
-        // If no source data, provide empty object
-        if (singleConnectionData.length === 0) {
-          singleConnectionData.push({ json: {} });
+      // Process each named input
+      for (const [inputName, connections] of connectionsByInput.entries()) {
+        // Check if this is a service input (model, memory, tools, etc.)
+        // Service inputs should receive node references, not data
+        const isServiceInput = inputName !== 'main' && inputName !== 'done';
+        
+        if (isServiceInput && connections.length > 0) {
+          // For service inputs, store references to the connected nodes
+          const serviceNodes: any[] = [];
+          
+          for (const connection of connections) {
+            const sourceNode = graph.nodes.get(connection.sourceNodeId);
+            if (sourceNode) {
+              // Store full node configuration including parameters and credentials
+              // Credentials can be stored in:
+              // 1. A separate credentials field (legacy)
+              // 2. In parameters (for nodes with credential-type properties)
+              const nodeParameters = (sourceNode as any).parameters || {};
+              const nodeCredentials = (sourceNode as any).credentials || {};
+              
+              // Build credentials mapping from parameters
+              // We need to map credential types to credential IDs
+              // For example: { "apiKey": "cred_123" } instead of { "authentication": "cred_123" }
+              const credentialsMapping: Record<string, string> = { ...nodeCredentials };
+              
+              // Get node definition from registry (synchronous access)
+              const nodeDefinition = this.nodeService['nodeRegistry']?.get(sourceNode.type);
+              if (nodeDefinition && nodeDefinition.properties) {
+                const properties = Array.isArray(nodeDefinition.properties) 
+                  ? nodeDefinition.properties 
+                  : [];
+                
+                // Find credential properties and map their types to IDs
+                for (const property of properties) {
+                  if (property.type === 'credential' && property.allowedTypes && property.allowedTypes.length > 0) {
+                    const credentialId = nodeParameters[property.name];
+                    // Check if this is a valid credential ID (any non-empty string)
+                    if (credentialId && typeof credentialId === 'string' && credentialId.trim().length > 0) {
+                      // Map the credential type to the credential ID
+                      // Use the first allowed type as the key
+                      const credentialType = property.allowedTypes[0];
+                      credentialsMapping[credentialType] = credentialId;
+                      
+                      logger.debug(`Mapped credential type '${credentialType}' to ID '${credentialId}' from parameter '${property.name}'`, {
+                        nodeType: sourceNode.type,
+                        parameterName: property.name,
+                      });
+                    }
+                  }
+                }
+              }
+              
+              // Fallback: Also scan parameters for any credential IDs not yet mapped
+              for (const [key, value] of Object.entries(nodeParameters)) {
+                if (typeof value === 'string' && value.startsWith('cred_')) {
+                  // Store with parameter name as key if not already mapped by type
+                  if (!Object.values(credentialsMapping).includes(value)) {
+                    credentialsMapping[key] = value;
+                  }
+                }
+              }
+              
+              serviceNodes.push({
+                id: sourceNode.id,
+                type: sourceNode.type,
+                nodeId: connection.sourceNodeId,
+                parameters: nodeParameters,
+                credentials: credentialsMapping,
+              });
+            }
+          }
+          
+          // Store service node references
+          (inputData as any)[inputName] = serviceNodes;
+          
+          logger.debug(`Prepared service input '${inputName}' for node ${nodeId}`, {
+            serviceNodeCount: serviceNodes.length,
+            serviceNodeTypes: serviceNodes.map(n => n.type),
+          });
+        } else {
+          // Regular data input - process normally
+          const sourceDataPerConnection: any[][] = [];
+
+          for (const connection of connections) {
+            const sourceOutput = context.nodeOutputs.get(connection.sourceNodeId);
+            const connectionData: any[] = [];
+
+            if (sourceOutput) {
+              // Check if this is a branching node (has branches property)
+              const hasBranches = (sourceOutput as any).branches;
+
+              if (hasBranches) {
+                // For branching nodes (like IfElse), only use data from the specific output branch
+                const branchName = connection.sourceOutput || "main";
+                const branchData = (sourceOutput as any).branches?.[branchName] || [];
+
+                logger.debug(`Using branch data from ${connection.sourceNodeId}`, {
+                  branchName,
+                  itemCount: branchData.length,
+                  availableBranches: Object.keys((sourceOutput as any).branches || {}),
+                });
+
+                connectionData.push(...branchData);
+              } else {
+                // For standard nodes, use main output
+                const outputItems = (sourceOutput as any).main || [];
+                connectionData.push(...outputItems);
+              }
+            }
+            
+            // Add this connection's data as a separate array
+            sourceDataPerConnection.push(connectionData);
+          }
+
+          // Store data for this named input
+          if (sourceDataPerConnection.length > 1) {
+            // Multiple connections to same input: keep them separate (2D array)
+            (inputData as any)[inputName] = sourceDataPerConnection;
+          } else if (sourceDataPerConnection.length === 1) {
+            // Single connection: use existing format for backward compatibility
+            const singleConnectionData = sourceDataPerConnection[0];
+            // If no source data, provide empty object
+            if (singleConnectionData.length === 0) {
+              singleConnectionData.push({ json: {} });
+            }
+            (inputData as any)[inputName] = [singleConnectionData];
+          }
         }
-        inputData.main = [singleConnectionData];
-      } else {
-        // No connections
+      }
+
+      // Ensure 'main' input exists for backward compatibility
+      if (!inputData.main) {
         inputData.main = [[{ json: {} }]];
       }
     }
@@ -1404,35 +1506,20 @@ export class ExecutionEngine extends EventEmitter {
    * Determine the trigger type for a workflow
    */
   private determineTriggerType(nodes: Node[]): string {
-    // Find trigger nodes (nodes with no inputs)
-    const triggerNodes = nodes.filter(
-      (node) =>
-        node.type.includes("trigger") ||
-        [
-          "manual-trigger",
-          "webhook-trigger",
-          "schedule-trigger",
-          "workflow-called",
-        ].includes(node.type)
-    );
+    // Find trigger nodes using node definitions
+    const triggerNodes = nodes.filter((node) => {
+      const nodeDef = this.nodeService.getNodeDefinitionSync(node.type);
+      return nodeDef?.triggerType !== undefined;
+    });
 
     if (triggerNodes.length === 0) {
       return "unknown";
     }
 
-    // Return the first trigger type found
+    // Return the trigger type from the first trigger node
     const firstTrigger = triggerNodes[0];
-    if (firstTrigger.type === "manual-trigger") {
-      return "manual";
-    } else if (firstTrigger.type === "webhook-trigger") {
-      return "webhook";
-    } else if (firstTrigger.type === "schedule-trigger") {
-      return "schedule";
-    } else if (firstTrigger.type === "workflow-called") {
-      return "workflow-called";
-    }
-
-    return firstTrigger.type;
+    const nodeDef = this.nodeService.getNodeDefinitionSync(firstTrigger.type);
+    return nodeDef?.triggerType || firstTrigger.type;
   }
 
   /**

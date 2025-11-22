@@ -1,14 +1,16 @@
-﻿import {
+import {
   NodeDefinition,
   NodeInputData,
   NodeOutputData,
 } from "../../types/node.types";
 
 export const WebhookTriggerNode: NodeDefinition = {
-  type: "webhook-trigger",
+  identifier: "webhook-trigger",
   displayName: "Webhook Trigger",
   name: "webhookTrigger",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "webhook",
   version: 1,
   description: "Triggers workflow execution when a webhook is called",
   icon: "Webhook",
@@ -129,6 +131,14 @@ export const WebhookTriggerNode: NodeDefinition = {
           tooltip: "Ignore requests from bots like link previewers and web crawlers",
         },
         {
+          name: "saveRequestLogs",
+          displayName: "Save Request Logs",
+          type: "boolean",
+          default: false,
+          tooltip: "Save webhook request logs to database",
+          description: "Enable to log all webhook requests for debugging and monitoring. Disable for high-traffic webhooks or to avoid storing sensitive data.",
+        },
+        {
           name: "ipWhitelist",
           displayName: "IP(s) Whitelist",
           type: "string",
@@ -136,6 +146,47 @@ export const WebhookTriggerNode: NodeDefinition = {
           placeholder: "192.168.1.1, 10.0.0.0/8",
           tooltip: "Restrict access by IP address",
           description: "Comma-separated list of allowed IP addresses or CIDR ranges. Leave blank to allow all IPs.",
+        },
+        {
+          name: "hmacSecret",
+          displayName: "HMAC Secret",
+          type: "string",
+          default: "",
+          placeholder: "your-secret-key",
+          tooltip: "Secret key for HMAC signature verification",
+          description: "Enable HMAC signature verification to ensure webhook authenticity. The signature should be sent in the X-Webhook-Signature header.",
+        },
+        {
+          name: "hmacAlgorithm",
+          displayName: "HMAC Algorithm",
+          type: "options",
+          default: "sha256",
+          tooltip: "Algorithm used for HMAC signature",
+          description: "Hash algorithm for HMAC signature verification",
+          options: [
+            { name: "SHA-256", value: "sha256" },
+            { name: "SHA-1", value: "sha1" },
+            { name: "SHA-512", value: "sha512" },
+          ],
+          displayOptions: {
+            show: {
+              "options.hmacSecret": [{ _cnd: { not: "" } }],
+            },
+          },
+        },
+        {
+          name: "hmacHeader",
+          displayName: "HMAC Header Name",
+          type: "string",
+          default: "X-Webhook-Signature",
+          placeholder: "X-Webhook-Signature",
+          tooltip: "HTTP header containing the HMAC signature",
+          description: "Name of the header that contains the HMAC signature",
+          displayOptions: {
+            show: {
+              "options.hmacSecret": [{ _cnd: { not: "" } }],
+            },
+          },
         },
         {
           name: "noResponseBody",
@@ -185,7 +236,7 @@ export const WebhookTriggerNode: NodeDefinition = {
         {
           name: "responseHeaders",
           displayName: "Response Headers",
-          type: "fixedCollection",
+          identifier: "fixedCollection",
           typeOptions: {
             multipleValues: true,
           },

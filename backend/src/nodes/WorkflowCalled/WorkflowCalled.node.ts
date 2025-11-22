@@ -5,10 +5,12 @@ import {
 } from "../../types/node.types";
 
 export const WorkflowCalledNode: NodeDefinition = {
-  type: "workflow-called",
+  identifier: "workflow-called",
   displayName: "Called by Workflow",
   name: "workflowCalled",
   group: ["trigger"],
+  nodeCategory: "trigger",
+  triggerType: "workflow-called",
   version: 1,
   description: "Receives data when this workflow is called by another workflow",
   icon: "fa:phone-alt",

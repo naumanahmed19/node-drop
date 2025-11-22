@@ -88,16 +88,17 @@ export function WorkflowEditor({
             chat: ChatInterfaceNode,
             'image-preview': ImagePreviewNode,
             'data-preview': DataPreviewNode,
-            'form-generator': FormGeneratorNode,
+            'forms': FormGeneratorNode,
             group: GroupNode,
             annotation: AnnotationNode,
+          //  'ai-agent': AIAgentNode,
         } as NodeTypes
 
         // For dynamically uploaded nodes, they all use the CustomNode component
         // The CustomNode component handles different node types based on the data.nodeType
         storeNodeTypes.forEach(nodeType => {
-            if (!baseNodeTypes[nodeType.type]) {
-                baseNodeTypes[nodeType.type] = CustomNode
+            if (!baseNodeTypes[nodeType.identifier]) {
+                baseNodeTypes[nodeType.identifier] = CustomNode
             }
         })
 
@@ -317,6 +318,15 @@ export function WorkflowEditor({
     const workflowId = workflow?.id;
     const prevWorkflowIdRef = useRef<string | undefined>();
     const prevReactFlowNodesRef = useRef<any[]>([]);
+    
+    // Initialize socket listeners for real-time updates
+    const initializeRealTimeUpdates = useWorkflowStore(state => state.initializeRealTimeUpdates)
+    
+    useEffect(() => {
+        // Setup socket listeners when component mounts
+        initializeRealTimeUpdates()
+        console.log('🔌 Initialized real-time socket listeners')
+    }, [initializeRealTimeUpdates])
 
     useEffect(() => {
         const workflowChanged = workflowId !== prevWorkflowIdRef.current;
@@ -380,7 +390,7 @@ export function WorkflowEditor({
 
     // Memoize node type map for O(1) lookups
     const nodeTypeMap = useMemo(() => {
-        return new Map(availableNodeTypes.map(nt => [nt.type, nt]))
+        return new Map(availableNodeTypes.map(nt => [nt.identifier, nt]))
     }, [availableNodeTypes])
 
     // Memoize workflow nodes map for O(1) lookups

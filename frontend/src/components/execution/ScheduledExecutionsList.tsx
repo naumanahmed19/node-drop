@@ -24,8 +24,9 @@ interface ScheduleJob {
   description: string
   nextRun: string | null
   lastRun: string | null
-  status: 'active'
+  status: 'active' | 'inactive'
   failCount: number
+  type?: 'schedule' | 'polling'
 }
 
 function getRelativeTime(date: Date): string {
@@ -64,16 +65,37 @@ export function ScheduledExecutionsList() {
     }
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:4000/api/schedule-jobs', {
+      // Fetch all active triggers (schedule + polling) from unified endpoint
+      const response = await fetch('http://localhost:4000/api/triggers/active-triggers', {
         headers: { Authorization: `Bearer ${token}` },
       })
+      
       if (response.ok) {
         const result = await response.json()
-        setJobs(result.data.jobs || [])
+        const triggers = (result.data.triggers || []).map((trigger: any) => ({
+          id: trigger.id,
+          workflowId: trigger.workflowId,
+          workflowName: trigger.workflowName,
+          triggerId: trigger.triggerId,
+          cronExpression: trigger.type === 'polling' 
+            ? `Every ${trigger.pollInterval}s` 
+            : trigger.cronExpression,
+          timezone: trigger.timezone || 'N/A',
+          description: trigger.description || (trigger.type === 'polling' ? 'Polling trigger' : 'Scheduled trigger'),
+          nextRun: trigger.nextRun,
+          lastRun: trigger.lastRun,
+          status: trigger.status,
+          failCount: trigger.failCount || 0,
+          type: trigger.type,
+        }))
+        setJobs(triggers)
+      } else {
+        console.error('Failed to fetch triggers:', response.status, await response.text())
+        toast.error('Failed to load triggers')
       }
     } catch (error) {
-      console.error('Error fetching jobs:', error)
-      toast.error('Failed to load schedule jobs')
+      console.error('Error fetching triggers:', error)
+      toast.error('Failed to load triggers')
     } finally {
       setLoading(false)
     }
@@ -81,13 +103,13 @@ export function ScheduledExecutionsList() {
 
   const deleteJob = async (workflowId: string, triggerId: string, workflowName: string) => {
     const confirmed = await showConfirm({
-      title: 'Delete Schedule',
-      message: `Are you sure you want to delete the schedule for "${workflowName}"?`,
-      confirmText: 'Delete Schedule',
+      title: 'Delete Trigger',
+      message: `Are you sure you want to delete the trigger for "${workflowName}"?`,
+      confirmText: 'Delete Trigger',
       cancelText: 'Cancel',
       severity: 'danger',
       details: [
-        'This will stop all future scheduled executions',
+        'This will stop all future automated executions',
         'You can recreate it by editing and saving the workflow',
         'This action cannot be undone'
       ]
@@ -97,8 +119,7 @@ export function ScheduledExecutionsList() {
 
     setDeleting(true)
     try {
-      const jobId = `${workflowId}-${triggerId}`
-      const response = await fetch(`http://localhost:4000/api/schedule-jobs/${jobId}`, {
+      const response = await fetch(`http://localhost:4000/api/triggers/active-triggers/${triggerId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -108,14 +129,14 @@ export function ScheduledExecutionsList() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error?.message || 'Failed to delete schedule')
+        throw new Error(errorData.error?.message || 'Failed to delete trigger')
       }
 
-      toast.success('Schedule deleted successfully')
+      toast.success('Trigger deleted successfully')
       await fetchJobs()
     } catch (error) {
-      console.error('Error deleting job:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to delete schedule')
+      console.error('Error deleting trigger:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete trigger')
     } finally {
       setDeleting(false)
     }
@@ -138,7 +159,7 @@ export function ScheduledExecutionsList() {
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-xs text-muted-foreground">
-            {jobs.length} active schedule{jobs.length !== 1 ? 's' : ''}
+            {jobs.length} active trigger{jobs.length !== 1 ? 's' : ''}
           </div>
           <Button
             variant="outline"
@@ -153,7 +174,7 @@ export function ScheduledExecutionsList() {
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search schedules..."
+            placeholder="Search triggers..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-8 pl-8 text-sm"
@@ -195,7 +216,7 @@ export function ScheduledExecutionsList() {
               disabled={deleting}
             >
               <Trash2 className="h-3.5 w-3.5 mr-2" />
-              {deleting ? 'Deleting...' : 'Delete Schedule'}
+              {deleting ? 'Deleting...' : 'Delete Trigger'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -208,7 +229,16 @@ export function ScheduledExecutionsList() {
       <div className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
         <Clock className="h-3 w-3 shrink-0" />
         <span className="truncate">{job.cronExpression}</span>
-        <span className="text-[10px] shrink-0">({job.timezone})</span>
+        {job.type === 'schedule' && (
+          <span className="text-[10px] shrink-0">({job.timezone})</span>
+        )}
+        <span className={`text-[10px] shrink-0 px-1.5 py-0.5 rounded font-semibold ${
+          job.type === 'polling' 
+            ? 'bg-blue-500/10 text-blue-600' 
+            : 'bg-purple-500/10 text-purple-600'
+        }`}>
+          {job.type === 'polling' ? 'POLLING' : 'SCHEDULE'}
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         {job.nextRun && (
@@ -230,9 +260,9 @@ export function ScheduledExecutionsList() {
       </div>
       <div className="flex items-center gap-1 text-xs pt-1 border-t border-border/50">
         <div className="text-muted-foreground/70 text-[10px] uppercase tracking-wide">Status</div>
-        <div className="flex items-center gap-1 text-green-600">
+        <div className={`flex items-center gap-1 ${job.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
           <span className="text-lg leading-none">●</span>
-          <span className="font-medium">Active</span>
+          <span className="font-medium capitalize">{job.status}</span>
         </div>
       </div>
     </div>
@@ -260,8 +290,8 @@ export function ScheduledExecutionsList() {
       <div className="p-4">
         <div className="text-center text-muted-foreground py-8">
           <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-          <p className="text-sm">No scheduled jobs</p>
-          <p className="text-xs mt-1">Create a workflow with a Schedule Trigger</p>
+          <p className="text-sm">No active triggers</p>
+          <p className="text-xs mt-1">Create a workflow with a Schedule or Polling Trigger</p>
         </div>
       </div>
     )
@@ -272,7 +302,7 @@ export function ScheduledExecutionsList() {
       <div className="p-4">
         <div className="text-center text-muted-foreground py-8">
           <Search className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-          <p className="text-sm">No schedules match your search</p>
+          <p className="text-sm">No triggers match your search</p>
         </div>
       </div>
     )

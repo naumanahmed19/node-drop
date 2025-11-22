@@ -69,7 +69,7 @@ router.get("/:type", async (req: Request, res: Response) => {
     const { type } = req.params;
 
     const nodeType = await prisma.nodeType.findUnique({
-      where: { type },
+      where: { identifier: type },
     });
 
     if (!nodeType) {
@@ -84,7 +84,7 @@ router.get("/:type", async (req: Request, res: Response) => {
       data: nodeType,
     });
   } catch (error) {
-    logger.error("Failed to get node type", { error, type: req.params.type });
+    logger.error("Failed to get node type", { error, type: req.params.identifier });
     res.status(500).json({
       success: false,
       error: "Failed to get node type",
@@ -177,7 +177,7 @@ router.patch("/:type", async (req: Request, res: Response) => {
     logger.info("Updating node type", { type, updateData });
 
     const nodeType = await prisma.nodeType.update({
-      where: { type },
+      where: { identifier: type },
       data: {
         ...updateData,
         updatedAt: new Date(),
@@ -204,7 +204,7 @@ router.patch("/:type", async (req: Request, res: Response) => {
 
     logger.error("Failed to update node type", {
       error,
-      type: req.params.type,
+      type: req.params.identifier,
       updateData: req.body,
     });
     res.status(500).json({
@@ -246,14 +246,14 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
     logger.info("Using heuristic matching to find package nodes", { packageName });
 
     for (const nodeType of allNodeTypes) {
-      const typeMatch = nodeType.type.toLowerCase() === packageName.toLowerCase();
+      const typeMatch = nodeType.identifier.toLowerCase() === packageName.toLowerCase();
       const nameMatch = nodeType.name.toLowerCase().includes(packageName.toLowerCase());
       const displayNameMatch = nodeType.displayName.toLowerCase().includes(packageName.toLowerCase());
 
       if (typeMatch || nameMatch || displayNameMatch) {
         packageNodeTypes.push(nodeType);
         logger.info("Found matching node type", {
-          type: nodeType.type,
+          type: nodeType.identifier,
           displayName: nodeType.displayName,
           matchReason: typeMatch ? 'type' : nameMatch ? 'name' : 'displayName'
         });
@@ -283,10 +283,10 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
             const nodeFileName = path.basename(nodePath, path.extname(nodePath));
             const potentialType = nodeFileName.replace('.node', '');
 
-            const matchingNode = allNodeTypes.find(nt => nt.type === potentialType);
-            if (matchingNode && !packageNodeTypes.find(pnt => pnt.type === matchingNode.type)) {
+            const matchingNode = allNodeTypes.find(nt => nt.identifier === potentialType);
+            if (matchingNode && !packageNodeTypes.find(pnt => pnt.identifier === matchingNode.identifier)) {
               packageNodeTypes.push(matchingNode);
-              logger.info("Found node type from package.json", { type: matchingNode.type });
+              logger.info("Found node type from package.json", { type: matchingNode.identifier });
             }
           }
         }
@@ -326,10 +326,10 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
         const fileName = path.basename(nodeFile);
         const potentialType = fileName.replace(/\.(node\.)?(js|ts)$/, '');
 
-        const matchingNode = allNodeTypes.find(nt => nt.type === potentialType);
-        if (matchingNode && !packageNodeTypes.find(pnt => pnt.type === matchingNode.type)) {
+        const matchingNode = allNodeTypes.find(nt => nt.identifier === potentialType);
+        if (matchingNode && !packageNodeTypes.find(pnt => pnt.identifier === matchingNode.identifier)) {
           packageNodeTypes.push(matchingNode);
-          logger.info("Found node type from file scan", { type: matchingNode.type, file: fileName });
+          logger.info("Found node type from file scan", { type: matchingNode.identifier, file: fileName });
         }
       }
       } catch (error) {
@@ -340,7 +340,7 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
     logger.info("Node identification complete", {
       packageName,
       foundNodes: packageNodeTypes.length,
-      nodeTypes: packageNodeTypes.map(nt => nt.type)
+      nodeTypes: packageNodeTypes.map(nt => nt.identifier)
     });
 
     // Check if we found any nodes to delete
@@ -364,10 +364,10 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
 
       for (const nodeType of packageNodeTypes) {
         try {
-          await nodeService.unloadNodeFromMemory(nodeType.type);
-          logger.info("Unloaded node from memory", { type: nodeType.type });
+          await nodeService.unloadNodeFromMemory(nodeType.identifier);
+          logger.info("Unloaded node from memory", { type: nodeType.identifier });
         } catch (error) {
-          logger.warn("Failed to unload node from memory", { type: nodeType.type, error: error instanceof Error ? error.message : String(error) });
+          logger.warn("Failed to unload node from memory", { type: nodeType.identifier, error: error instanceof Error ? error.message : String(error) });
         }
       }
     } catch (error) {
@@ -379,12 +379,12 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
     for (const nodeType of packageNodeTypes) {
       try {
         await prisma.nodeType.delete({
-          where: { type: nodeType.type },
+          where: { identifier: nodeType.identifier },
         });
-        deletedNodeTypes.push(nodeType.type);
-        logger.info("Deleted node type from database", { type: nodeType.type });
+        deletedNodeTypes.push(nodeType.identifier);
+        logger.info("Deleted node type from database", { type: nodeType.identifier });
       } catch (error) {
-        const errorMsg = `Failed to delete node type ${nodeType.type}: ${error instanceof Error ? error.message : String(error)}`;
+        const errorMsg = `Failed to delete node type ${nodeType.identifier}: ${error instanceof Error ? error.message : String(error)}`;
         logger.warn(errorMsg);
         errors.push(errorMsg);
       }
@@ -578,7 +578,7 @@ router.post("/templates", async (req: Request, res: Response) => {
 
     // Check if template with this type already exists
     const existing = await prisma.nodeType.findUnique({
-      where: { type },
+      where: { identifier: type },
     });
 
     if (existing) {
@@ -591,7 +591,7 @@ router.post("/templates", async (req: Request, res: Response) => {
     // Create the template node type
     const template = await prisma.nodeType.create({
       data: {
-        type,
+        identifier: type,
         displayName,
         name: name || displayName,
         description: description || "",
@@ -610,7 +610,7 @@ router.post("/templates", async (req: Request, res: Response) => {
     });
 
     logger.info("Template created successfully", {
-      type: template.type,
+      type: template.identifier,
       displayName: template.displayName,
       nodesCount: templateData?.nodes?.length || 0,
       connectionsCount: templateData?.connections?.length || 0,
@@ -665,7 +665,7 @@ router.get("/templates/:type", async (req: Request, res: Response) => {
 
     const template = await prisma.nodeType.findFirst({
       where: {
-        type,
+        identifier: type,
         isTemplate: true,
       },
     });
@@ -682,7 +682,7 @@ router.get("/templates/:type", async (req: Request, res: Response) => {
       data: template,
     });
   } catch (error) {
-    logger.error("Failed to get template", { error, type: req.params.type });
+    logger.error("Failed to get template", { error, type: req.params.identifier });
     res.status(500).json({
       success: false,
       error: "Failed to get template",
@@ -701,7 +701,7 @@ router.patch("/templates/:type", async (req: Request, res: Response) => {
 
     const template = await prisma.nodeType.updateMany({
       where: {
-        type,
+        identifier: type,
         isTemplate: true,
       },
       data: {
@@ -719,7 +719,7 @@ router.patch("/templates/:type", async (req: Request, res: Response) => {
 
     // Fetch the updated template
     const updatedTemplate = await prisma.nodeType.findUnique({
-      where: { type },
+      where: { identifier: type },
     });
 
     logger.info("Template updated successfully", { type });
@@ -732,7 +732,7 @@ router.patch("/templates/:type", async (req: Request, res: Response) => {
   } catch (error) {
     logger.error("Failed to update template", {
       error,
-      type: req.params.type,
+      type: req.params.identifier,
     });
     res.status(500).json({
       success: false,
@@ -751,7 +751,7 @@ router.delete("/templates/:type", async (req: Request, res: Response) => {
 
     const result = await prisma.nodeType.deleteMany({
       where: {
-        type,
+        identifier: type,
         isTemplate: true,
       },
     });
@@ -772,7 +772,7 @@ router.delete("/templates/:type", async (req: Request, res: Response) => {
   } catch (error) {
     logger.error("Failed to delete template", {
       error,
-      type: req.params.type,
+      type: req.params.identifier,
     });
     res.status(500).json({
       success: false,

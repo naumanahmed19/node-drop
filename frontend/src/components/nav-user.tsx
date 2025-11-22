@@ -27,6 +27,7 @@ import {
   ChevronsUpDown,
   Database,
   LogOut,
+  Webhook,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
@@ -109,6 +110,10 @@ export function NavUser({
               <DropdownMenuItem onClick={() => navigate('/executions')}>
                 <Activity />
                 Executions
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/webhook-requests')}>
+                <Webhook />
+                Webhook Requests
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/custom-nodes')}>
                 <Database />
