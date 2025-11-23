@@ -28,6 +28,9 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    sysctls:
+      - net.core.somaxconn=511
+      - vm.overcommit_memory=1
 
   backend:
     build:
