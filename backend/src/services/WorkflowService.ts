@@ -276,18 +276,20 @@ export class WorkflowService {
 
 
       // Sync triggers with TriggerService if triggers or active status changed
+      // Run asynchronously to avoid blocking the HTTP response
       if (
         isTriggerServiceInitialized() &&
         (normalizedTriggers || data.active !== undefined)
       ) {
-        try {
-          console.log(`🔄 Syncing triggers for workflow ${id}...`);
-          await getTriggerService().syncWorkflowTriggers(id);
-          console.log(`✅ Triggers synced successfully for workflow ${id}`);
-        } catch (error) {
-          console.error(`❌ Error syncing triggers for workflow ${id}:`, error);
-          // Don't fail the update if trigger sync fails
-        }
+        // Fire and forget - don't await
+        getTriggerService().syncWorkflowTriggers(id)
+          .then(() => {
+            console.log(`✅ Triggers synced successfully for workflow ${id}`);
+          })
+          .catch((error) => {
+            console.error(`❌ Error syncing triggers for workflow ${id}:`, error);
+          });
+        console.log(`🔄 Trigger sync initiated for workflow ${id} (async)`);
       } else {
         console.log(`⏭️  Skipping trigger sync for workflow ${id}`, {
           triggerServiceInitialized: isTriggerServiceInitialized(),
@@ -297,13 +299,17 @@ export class WorkflowService {
       }
 
       // Sync schedule jobs with ScheduleJobManager
+      // Run asynchronously to avoid blocking the HTTP response
       if (global.scheduleJobManager && (normalizedTriggers || data.active !== undefined)) {
-        try {
-          await global.scheduleJobManager.syncWorkflowJobs(id);
-        } catch (error) {
-          console.error(`Error syncing schedule jobs for workflow ${id}:`, error);
-          // Don't fail the update if job sync fails
-        }
+        // Fire and forget - don't await
+        global.scheduleJobManager.syncWorkflowJobs(id)
+          .then(() => {
+            console.log(`✅ Schedule jobs synced successfully for workflow ${id}`);
+          })
+          .catch((error) => {
+            console.error(`❌ Error syncing schedule jobs for workflow ${id}:`, error);
+          });
+        console.log(`🔄 Schedule job sync initiated for workflow ${id} (async)`);
       }
 
       return workflow;
