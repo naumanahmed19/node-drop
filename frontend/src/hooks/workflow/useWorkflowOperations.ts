@@ -38,14 +38,6 @@ export function useWorkflowOperations() {
   const buildWorkflowData = useCallback(
     (currentWorkflow: Workflow) => {
       const triggers = extractTriggersFromNodes(currentWorkflow.nodes, activeNodeTypes);
-
-      console.log(
-        "🔍 FRONTEND: Workflow nodes before building:",
-        JSON.stringify(currentWorkflow.nodes, null, 2)
-      );
-
-      console.log('🔍 Building workflow data with settings:', currentWorkflow.settings);
-      console.log('🔍 Extracted triggers with types:', triggers);
       
       return {
         name: workflowTitle || currentWorkflow.name,

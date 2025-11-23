@@ -44,6 +44,7 @@ export function getTriggerNodes(nodes: WorkflowNode[], nodeTypes: NodeType[]): W
 /**
  * Extract triggers from workflow nodes (for saving to backend)
  * Uses node types to determine trigger type from node definitions
+ * Converts simple/datetime schedules to cron expressions
  */
 export function extractTriggersFromNodes(nodes: WorkflowNode[], nodeTypes?: NodeType[]): any[] {
   if (!Array.isArray(nodes)) {
