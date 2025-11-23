@@ -323,7 +323,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </Sidebar>
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
-      <Sidebar collapsible="none" className="hidden flex-1 md:flex">
+      <Sidebar collapsible="none" className="flex-1 md:flex">
         {/* Show DetailSidebar header when detail sidebar is open, otherwise show normal header */}
         {detailSidebar ? (
           <SidebarHeader className="gap-3 border-b p-4 bg-sidebar/50">
