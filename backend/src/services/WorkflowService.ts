@@ -9,12 +9,8 @@ import {
   getTriggerService,
   isTriggerServiceInitialized,
 } from "./triggerServiceSingleton";
-
-interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-  warnings?: string[];
-}
+import { validateWorkflow } from "../utils/workflowValidator";
+import { prepareTriggersForSave } from "../utils/triggerUtils";
 
 interface WorkflowFilters {
   search?: string;
@@ -30,117 +26,14 @@ export class WorkflowService {
     this.prisma = prisma;
   }
 
-  /**
-   * Extract triggers from trigger nodes in the workflow
-   */
-  private extractTriggersFromNodes(nodes: any[]): any[] {
-    if (!Array.isArray(nodes)) {
-      return [];
-    }
 
-    const nodeService = global.nodeService;
-    if (!nodeService) {
-      console.warn("NodeService not available, cannot extract triggers");
-      return [];
-    }
 
-    return nodes
-      .filter((node) => {
-        const nodeDef = nodeService.getNodeDefinitionSync(node.type);
-        return nodeDef?.triggerType !== undefined;
-      })
-      .map((node) => {
-        const nodeDef = nodeService.getNodeDefinitionSync(node.type);
-        const triggerType = nodeDef?.triggerType;
-        
-        return {
-          id: `trigger-${node.id}`,
-          type: triggerType,
-          nodeId: node.id,
-          active: !node.disabled,
-          settings: {
-            description: node.parameters?.description || `${triggerType} trigger`,
-            ...node.parameters,
-          },
-        };
-      });
-  }
 
-  /**
-   * Normalize triggers to ensure they have the active property set
-   */
-  private normalizeTriggers(triggers: any[]): any[] {
-    if (!Array.isArray(triggers)) {
-      return [];
-    }
-
-    return triggers.map((trigger) => ({
-      ...trigger,
-      // Set active to true if not explicitly set
-      active: trigger.active !== undefined ? trigger.active : true,
-    }));
-  }
-
-  /**
-   * Migrate existing workflows to ensure triggers have active property
-   */
-  async migrateTriggersActiveProperty(): Promise<{ updated: number }> {
-    try {
-      // Get all workflows
-      const workflows = await this.prisma.workflow.findMany({
-        select: {
-          id: true,
-          triggers: true,
-        },
-      });
-
-      let updatedCount = 0;
-
-      for (const workflow of workflows) {
-        const triggers = workflow.triggers as any[];
-        if (Array.isArray(triggers) && triggers.length > 0) {
-          // Check if any trigger is missing the active property
-          const needsUpdate = triggers.some(
-            (trigger) => trigger.active === undefined
-          );
-
-          if (needsUpdate) {
-            const normalizedTriggers = this.normalizeTriggers(triggers);
-
-            await this.prisma.workflow.update({
-              where: { id: workflow.id },
-              data: {
-                triggers: normalizedTriggers,
-                updatedAt: new Date(),
-              },
-            });
-
-            updatedCount++;
-          }
-        }
-      }
-
-      return { updated: updatedCount };
-    } catch (error) {
-      console.error("Error migrating triggers active property:", error);
-      throw new AppError(
-        "Failed to migrate triggers",
-        500,
-        "TRIGGER_MIGRATION_ERROR"
-      );
-    }
-  }
 
   async createWorkflow(userId: string, data: CreateWorkflowRequest) {
     try {
-      // Extract triggers from nodes if triggers array is empty or not provided
-      let triggersToSave = data.triggers || [];
-      if (data.nodes && triggersToSave.length === 0) {
-        triggersToSave = this.extractTriggersFromNodes(data.nodes);
-      }
-
-      // Normalize triggers to ensure they have active property
-      const normalizedTriggers = this.normalizeTriggers(triggersToSave);
+      // Prepare triggers (extract, convert, normalize)
+      const normalizedTriggers = prepareTriggersForSave(data, global.nodeService) || [];
 
       const workflow = await this.prisma.workflow.create({
         data: {
@@ -196,121 +89,134 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * Validate workflow structure if nodes or connections are being updated
+   */
+  private async validateWorkflowUpdate(data: UpdateWorkflowRequest): Promise<void> {
+    if (!data.nodes && !data.connections) {
+      return;
+    }
+
+    // Only validate if we have nodes data
+    if (data.nodes) {
+      const triggersToValidate = prepareTriggersForSave(data, global.nodeService);
+      
+      const workflowData = {
+        nodes: data.nodes,
+        connections: data.connections,
+        triggers: triggersToValidate,
+        settings: data.settings,
+      };
+
+      const validation = validateWorkflow(workflowData);
+      if (!validation.isValid) {
+        throw new AppError(
+          `Workflow validation failed: ${validation.errors.join(", ")}`,
+          400,
+          "WORKFLOW_VALIDATION_ERROR"
+        );
+      }
+    }
+  }
+
+  /**
+   * Build the update data object for Prisma
+   */
+  private buildUpdateData(data: UpdateWorkflowRequest, normalizedTriggers?: any[]): any {
+    return {
+      ...(data.name && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.category !== undefined && { category: data.category }),
+      ...(data.tags !== undefined && { tags: data.tags }),
+      ...(data.teamId !== undefined && { teamId: data.teamId }),
+      ...(data.nodes && { nodes: data.nodes as any }),
+      ...(data.connections && { connections: data.connections as any }),
+      ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
+      ...(data.settings !== undefined && { settings: data.settings as any }),
+      ...(data.active !== undefined && { active: data.active }),
+      updatedAt: new Date(),
+    };
+  }
+
+  /**
+   * Sync triggers with TriggerService asynchronously
+   */
+  private syncTriggersAsync(workflowId: string, normalizedTriggers?: any[], activeChanged?: boolean): void {
+    const shouldSync = normalizedTriggers || activeChanged;
+    
+    if (!isTriggerServiceInitialized() || !shouldSync) {
+      console.log(`⏭️  Skipping trigger sync for workflow ${workflowId}`, {
+        triggerServiceInitialized: isTriggerServiceInitialized(),
+        hasNormalizedTriggers: !!normalizedTriggers,
+        hasActiveChange: activeChanged,
+      });
+      return;
+    }
+
+    // Fire and forget - don't await
+    getTriggerService()
+      .syncWorkflowTriggers(workflowId)
+      .then(() => {
+        console.log(`✅ Triggers synced successfully for workflow ${workflowId}`);
+      })
+      .catch((error) => {
+        console.error(`❌ Error syncing triggers for workflow ${workflowId}:`, error);
+      });
+    
+    console.log(`🔄 Trigger sync initiated for workflow ${workflowId} (async)`);
+  }
+
+  /**
+   * Sync schedule jobs with ScheduleJobManager asynchronously
+   */
+  private syncScheduleJobsAsync(workflowId: string, normalizedTriggers?: any[], activeChanged?: boolean): void {
+    const shouldSync = normalizedTriggers || activeChanged;
+    
+    if (!global.scheduleJobManager || !shouldSync) {
+      return;
+    }
+
+    // Fire and forget - don't await
+    global.scheduleJobManager
+      .syncWorkflowJobs(workflowId)
+      .then(() => {
+        console.log(`✅ Schedule jobs synced successfully for workflow ${workflowId}`);
+      })
+      .catch((error) => {
+        console.error(`❌ Error syncing schedule jobs for workflow ${workflowId}:`, error);
+      });
+    
+    console.log(`🔄 Schedule job sync initiated for workflow ${workflowId} (async)`);
+  }
+
   async updateWorkflow(
     id: string,
     userId: string,
     data: UpdateWorkflowRequest
   ) {
     try {
-      // Check if workflow exists and belongs to user
+      // Verify workflow exists and belongs to user
       await this.getWorkflow(id, userId);
 
-      // Validate workflow data if nodes or connections are being updated
-      if (data.nodes || data.connections) {
-        // Extract triggers from nodes if triggers array is empty or not provided
-        let triggersToValidate = data.triggers;
-        if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
-          triggersToValidate = this.extractTriggersFromNodes(data.nodes);
-        }
+      // Validate workflow structure if needed
+      await this.validateWorkflowUpdate(data);
 
-        const workflowData = {
-          nodes: data.nodes,
-          connections: data.connections,
-          triggers: triggersToValidate,
-          settings: data.settings,
-        };
+      // Prepare triggers for update
+      const normalizedTriggers = prepareTriggersForSave(data, global.nodeService);
 
-        // Only validate if we have nodes data
-        if (data.nodes) {
-          const validation = await this.validateWorkflow(workflowData);
-          if (!validation.isValid) {
-            throw new AppError(
-              `Workflow validation failed: ${validation.errors.join(", ")}`,
-              400,
-              "WORKFLOW_VALIDATION_ERROR"
-            );
-          }
-        }
-      }
+      // Build update data
+      const updateData = this.buildUpdateData(data, normalizedTriggers);
 
-      // Extract triggers from nodes if triggers array is empty or not provided
-      let triggersToSave = data.triggers;
-      if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
-        triggersToSave = this.extractTriggersFromNodes(data.nodes);
-        console.log('🔍 Extracted triggers from nodes:', JSON.stringify(triggersToSave, null, 2));
-      }
-
-      // Normalize triggers if they are being updated
-      const normalizedTriggers = triggersToSave
-        ? this.normalizeTriggers(triggersToSave)
-        : undefined;
-      
-      if (normalizedTriggers) {
-        console.log('🔍 Normalized triggers:', JSON.stringify(normalizedTriggers, null, 2));
-      }
-
-
-
-      console.log('🔍 Updating workflow with settings:', data.settings);
-      
+      // Update workflow in database
       const workflow = await this.prisma.workflow.update({
         where: { id },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(data.description !== undefined && {
-            description: data.description,
-          }),
-          ...(data.category !== undefined && { category: data.category }),
-          ...(data.tags !== undefined && { tags: data.tags }),
-          ...(data.teamId !== undefined && { teamId: data.teamId }),
-          ...(data.nodes && { nodes: data.nodes as any }),
-          ...(data.connections && { connections: data.connections as any }),
-          ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
-          ...(data.settings !== undefined && { settings: data.settings as any }), // Changed to check undefined instead of truthy
-          ...(data.active !== undefined && { active: data.active }),
-          updatedAt: new Date(),
-        },
+        data: updateData,
       });
-      
-      console.log('✅ Workflow updated, settings saved:', workflow.settings);
 
-
-      // Sync triggers with TriggerService if triggers or active status changed
-      // Run asynchronously to avoid blocking the HTTP response
-      if (
-        isTriggerServiceInitialized() &&
-        (normalizedTriggers || data.active !== undefined)
-      ) {
-        // Fire and forget - don't await
-        getTriggerService().syncWorkflowTriggers(id)
-          .then(() => {
-            console.log(`✅ Triggers synced successfully for workflow ${id}`);
-          })
-          .catch((error) => {
-            console.error(`❌ Error syncing triggers for workflow ${id}:`, error);
-          });
-        console.log(`🔄 Trigger sync initiated for workflow ${id} (async)`);
-      } else {
-        console.log(`⏭️  Skipping trigger sync for workflow ${id}`, {
-          triggerServiceInitialized: isTriggerServiceInitialized(),
-          hasNormalizedTriggers: !!normalizedTriggers,
-          hasActiveChange: data.active !== undefined,
-        });
-      }
-
-      // Sync schedule jobs with ScheduleJobManager
-      // Run asynchronously to avoid blocking the HTTP response
-      if (global.scheduleJobManager && (normalizedTriggers || data.active !== undefined)) {
-        // Fire and forget - don't await
-        global.scheduleJobManager.syncWorkflowJobs(id)
-          .then(() => {
-            console.log(`✅ Schedule jobs synced successfully for workflow ${id}`);
-          })
-          .catch((error) => {
-            console.error(`❌ Error syncing schedule jobs for workflow ${id}:`, error);
-          });
-        console.log(`🔄 Schedule job sync initiated for workflow ${id} (async)`);
-      }
+      // Sync triggers and schedule jobs asynchronously
+      const activeChanged = data.active !== undefined;
+      this.syncTriggersAsync(id, normalizedTriggers, activeChanged);
+      this.syncScheduleJobsAsync(id, normalizedTriggers, activeChanged);
 
       return workflow;
     } catch (error) {
@@ -549,230 +455,7 @@ export class WorkflowService {
     }
   }
 
-  async validateWorkflow(workflowData: any): Promise<ValidationResult> {
-    const errors: string[] = [];
-    const warnings: string[] = [];
 
-    // Basic validation
-    if (!workflowData.nodes || workflowData.nodes.length === 0) {
-      errors.push("Workflow must contain at least one node");
-      return { isValid: false, errors, warnings };
-    }
-
-    const nodeIds = new Set(workflowData.nodes.map((node: any) => node.id));
-    const nodeIdArray = Array.from(nodeIds);
-
-    // Check for duplicate node IDs
-    if (nodeIdArray.length !== workflowData.nodes.length) {
-      errors.push("Workflow contains duplicate node IDs");
-    }
-
-    // Validate individual nodes
-    for (const node of workflowData.nodes) {
-      if (!node.id || typeof node.id !== "string") {
-        errors.push("All nodes must have a valid ID");
-      }
-      if (!node.type || typeof node.type !== "string") {
-        errors.push(`Node ${node.id} must have a valid type`);
-      }
-      // Allow empty names for group nodes, but require valid string type
-      if (node.type === "group") {
-        if (typeof node.name !== "string") {
-          errors.push(`Node ${node.id} must have a valid name`);
-        }
-      } else {
-        if (!node.name || typeof node.name !== "string") {
-          errors.push(`Node ${node.id} must have a valid name`);
-        }
-      }
-      // Validate optional description field
-      if (
-        node.description !== undefined &&
-        typeof node.description !== "string"
-      ) {
-        errors.push(
-          `Node ${node.id} must have a valid description (string or undefined)`
-        );
-      }
-      if (
-        !node.position ||
-        typeof node.position.x !== "number" ||
-        typeof node.position.y !== "number"
-      ) {
-        errors.push(`Node ${node.id} must have valid position coordinates`);
-      }
-      if (!node.parameters || typeof node.parameters !== "object") {
-        errors.push(`Node ${node.id} must have valid parameters object`);
-      }
-    }
-
-    // Validate node connections
-    const connectionIds = new Set();
-    if (workflowData.connections && workflowData.connections.length > 0) {
-      for (const connection of workflowData.connections) {
-        // Check for duplicate connection IDs
-        if (connectionIds.has(connection.id)) {
-          errors.push(`Duplicate connection ID: ${connection.id}`);
-        }
-        connectionIds.add(connection.id);
-
-        // Validate connection structure
-        if (!connection.id || typeof connection.id !== "string") {
-          errors.push("All connections must have a valid ID");
-        }
-        if (!connection.sourceNodeId || !nodeIds.has(connection.sourceNodeId)) {
-          errors.push(
-            `Invalid connection: source node ${connection.sourceNodeId} not found`
-          );
-        }
-        if (!connection.targetNodeId || !nodeIds.has(connection.targetNodeId)) {
-          errors.push(
-            `Invalid connection: target node ${connection.targetNodeId} not found`
-          );
-        }
-        if (
-          !connection.sourceOutput ||
-          typeof connection.sourceOutput !== "string"
-        ) {
-          errors.push(
-            `Connection ${connection.id} must have a valid source output`
-          );
-        }
-        if (
-          !connection.targetInput ||
-          typeof connection.targetInput !== "string"
-        ) {
-          errors.push(
-            `Connection ${connection.id} must have a valid target input`
-          );
-        }
-
-        // Check for self-connections
-        if (connection.sourceNodeId === connection.targetNodeId) {
-          errors.push(
-            `Node ${connection.sourceNodeId} cannot connect to itself`
-          );
-        }
-      }
-    }
-
-    // Check for circular dependencies
-    const circularDependency = this.detectCircularDependencies(
-      workflowData.nodes,
-      workflowData.connections || []
-    );
-    if (circularDependency) {
-      errors.push("Workflow contains circular dependencies");
-    }
-
-    // Check for orphaned nodes (nodes with no connections)
-    if (workflowData.connections && workflowData.connections.length > 0) {
-      const connectedNodes = new Set();
-      workflowData.connections.forEach((conn: any) => {
-        connectedNodes.add(conn.sourceNodeId);
-        connectedNodes.add(conn.targetNodeId);
-      });
-
-      const orphanedNodes = nodeIdArray.filter(
-        (nodeId) => !connectedNodes.has(nodeId)
-      );
-      if (orphanedNodes.length > 0) {
-        warnings.push(`Orphaned nodes detected: ${orphanedNodes.join(", ")}`);
-      }
-    }
-
-    // Validate triggers
-    if (workflowData.triggers && workflowData.triggers.length > 0) {
-      for (const trigger of workflowData.triggers) {
-        if (!trigger.id || typeof trigger.id !== "string") {
-          errors.push("All triggers must have a valid ID");
-        }
-        if (!trigger.type || typeof trigger.type !== "string") {
-          errors.push(`Trigger ${trigger.id} must have a valid type`);
-        }
-        if (!trigger.nodeId || !nodeIds.has(trigger.nodeId)) {
-          errors.push(
-            `Trigger ${trigger.id} references non-existent node ${trigger.nodeId}`
-          );
-        }
-      }
-    }
-
-    // Validate workflow settings
-    if (workflowData.settings) {
-      const settings = workflowData.settings;
-      if (settings.timezone && typeof settings.timezone !== "string") {
-        errors.push("Workflow timezone must be a valid string");
-      }
-      if (
-        settings.saveExecutionProgress !== undefined &&
-        typeof settings.saveExecutionProgress !== "boolean"
-      ) {
-        errors.push("saveExecutionProgress must be a boolean");
-      }
-      if (
-        settings.saveDataErrorExecution !== undefined &&
-        !["all", "none"].includes(settings.saveDataErrorExecution)
-      ) {
-        errors.push('saveDataErrorExecution must be "all" or "none"');
-      }
-      if (
-        settings.saveDataSuccessExecution !== undefined &&
-        !["all", "none"].includes(settings.saveDataSuccessExecution)
-      ) {
-        errors.push('saveDataSuccessExecution must be "all" or "none"');
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-    };
-  }
-
-  private detectCircularDependencies(
-    nodes: any[],
-    connections: any[]
-  ): boolean {
-    const graph = new Map<string, string[]>();
-    const visited = new Set<string>();
-    const recursionStack = new Set<string>();
-
-    // Build adjacency list
-    nodes.forEach((node) => graph.set(node.id, []));
-    connections.forEach((conn) => {
-      const sourceConnections = graph.get(conn.sourceNodeId) || [];
-      sourceConnections.push(conn.targetNodeId);
-      graph.set(conn.sourceNodeId, sourceConnections);
-    });
-
-    // DFS to detect cycles
-    const hasCycle = (nodeId: string): boolean => {
-      if (recursionStack.has(nodeId)) return true;
-      if (visited.has(nodeId)) return false;
-
-      visited.add(nodeId);
-      recursionStack.add(nodeId);
-
-      const neighbors = graph.get(nodeId) || [];
-      for (const neighbor of neighbors) {
-        if (hasCycle(neighbor)) return true;
-      }
-
-      recursionStack.delete(nodeId);
-      return false;
-    };
-
-    // Check each node for cycles
-    for (const node of nodes) {
-      if (!visited.has(node.id) && hasCycle(node.id)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
 
   async getWorkflowStats(userId: string) {
     try {
@@ -910,144 +593,7 @@ export class WorkflowService {
     }
   }
 
-  async getAvailableCategories(userId: string) {
-    try {
-      // Get categories from the database
-      const categories = await this.prisma.category.findMany({
-        where: {
-          active: true,
-        },
-        select: {
-          name: true,
-          displayName: true,
-          description: true,
-          color: true,
-          icon: true,
-        },
-        orderBy: {
-          name: "asc",
-        },
-      });
 
-      // If no categories found in database, return some defaults
-      if (categories.length === 0) {
-        return [
-          "automation",
-          "integration",
-          "communication",
-          "data-processing",
-          "other",
-        ];
-      }
-
-      // Return just the category names for the API response
-      // Frontend can fetch full category details if needed
-      return categories.map((category) => category.name);
-    } catch (error) {
-      console.error("Error getting available categories:", error);
-      throw new AppError(
-        "Failed to get available categories",
-        500,
-        "CATEGORIES_FETCH_ERROR"
-      );
-    }
-  }
-
-  async createCategory(
-    userId: string,
-    categoryData: {
-      name: string;
-      displayName: string;
-      description?: string;
-      color?: string;
-      icon?: string;
-    }
-  ) {
-    try {
-      // Check if category already exists
-      const existingCategory = await this.prisma.category.findUnique({
-        where: { name: categoryData.name },
-      });
-
-      if (existingCategory) {
-        throw new AppError(
-          "Category with this name already exists",
-          400,
-          "CATEGORY_EXISTS"
-        );
-      }
-
-      // Create the category
-      const category = await this.prisma.category.create({
-        data: {
-          name: categoryData.name.toLowerCase().replace(/\s+/g, "-"),
-          displayName: categoryData.displayName,
-          description: categoryData.description,
-          color: categoryData.color || "#6B7280",
-          icon: categoryData.icon || "📁",
-          active: true,
-        },
-      });
-
-      return category;
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      console.error("Error creating category:", error);
-      throw new AppError(
-        "Failed to create category",
-        500,
-        "CATEGORY_CREATE_ERROR"
-      );
-    }
-  }
-
-  async deleteCategory(userId: string, categoryName: string) {
-    try {
-      // Check if category exists
-      const category = await this.prisma.category.findUnique({
-        where: { name: categoryName },
-      });
-
-      if (!category) {
-        throw new AppError("Category not found", 404, "CATEGORY_NOT_FOUND");
-      }
-
-      // Check if any workflows are using this category
-      const workflowsWithCategory = await this.prisma.workflow.findFirst({
-        where: {
-          category: categoryName,
-          userId: userId,
-        },
-      });
-
-      if (workflowsWithCategory) {
-        throw new AppError(
-          "Cannot delete category that is being used by workflows",
-          400,
-          "CATEGORY_IN_USE"
-        );
-      }
-
-      // Delete the category
-      await this.prisma.category.delete({
-        where: { name: categoryName },
-      });
-
-      return { message: "Category deleted successfully" };
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      console.error("Error deleting category:", error);
-      throw new AppError(
-        "Failed to delete category",
-        500,
-        "CATEGORY_DELETE_ERROR"
-      );
-    }
-  }
 
   /**
    * Get upcoming scheduled executions for a workflow

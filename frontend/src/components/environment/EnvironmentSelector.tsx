@@ -125,22 +125,22 @@ export function EnvironmentSelector({
       <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className={`flex items-center gap-2 text-sm hover:text-foreground transition-colors cursor-pointer px-0 bg-transparent border-0 ${
+          className={`flex items-center gap-2 text-sm hover:text-foreground transition-colors cursor-pointer px-2 -mx-2 py-1 bg-transparent border-0 min-h-[36px] rounded-md hover:bg-accent/50 ${
             currentSummary ? '' : 'text-muted-foreground'
           }`}
         >
           <EnvironmentIcon iconName={currentSummary ? getEnvironmentIcon(currentEnvironment!) : 'package'} />
-          <span className="flex-1 text-left font-medium">
+          <span className="flex-1 text-left font-medium truncate max-w-[120px] sm:max-w-none">
             {currentSummary
               ? getEnvironmentLabel(currentEnvironment!)
               : 'Select Environment'}
           </span>
           {currentSummary && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusBadgeColor(currentSummary)}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${getStatusBadgeColor(currentSummary)}`}>
               v{currentSummary.version}
             </span>
           )}
-          <ChevronDown className="w-3 h-3 opacity-50" />
+          <ChevronDown className="w-3 h-3 opacity-50 flex-shrink-0" />
         </button>
       </DropdownMenuTrigger>
 

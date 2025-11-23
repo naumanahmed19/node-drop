@@ -8,6 +8,8 @@ import {
   validateQuery,
 } from "../middleware/validation";
 import { WorkflowService } from "../services/WorkflowService";
+import { CategoryService } from "../services/CategoryService";
+import { validateWorkflow } from "../utils/workflowValidator";
 import {
   ApiResponse,
   CreateWorkflowSchema,
@@ -19,25 +21,7 @@ import {
 const router = Router();
 const prisma = new PrismaClient();
 const workflowService = new WorkflowService(prisma);
-
-// POST /api/workflows/migrate-triggers - Migrate existing workflows to add active property to triggers
-router.post(
-  "/migrate-triggers",
-  authenticateToken,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const result = await workflowService.migrateTriggersActiveProperty();
-
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        ...result,
-        message: `Updated ${result.updated} workflows`,
-      },
-    };
-
-    res.json(response);
-  })
-);
+const categoryService = new CategoryService(prisma);
 
 // GET /api/workflows/for-trigger - Get workflows with active triggers for triggering
 router.get(
@@ -150,7 +134,7 @@ router.get(
   "/categories",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const categories = await workflowService.getAvailableCategories(
+    const categories = await categoryService.getAvailableCategories(
       req.user!.id
     );
 
@@ -168,7 +152,7 @@ router.post(
   "/categories",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const category = await workflowService.createCategory(
+    const category = await categoryService.createCategory(
       req.user!.id,
       req.body
     );
@@ -187,7 +171,7 @@ router.delete(
   "/categories/:name",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const result = await workflowService.deleteCategory(
+    const result = await categoryService.deleteCategory(
       req.user!.id,
       req.params.name
     );
@@ -333,7 +317,7 @@ router.post(
       req.params.id,
       req.user!.id
     );
-    const validation = await workflowService.validateWorkflow(workflow);
+    const validation = validateWorkflow(workflow);
 
     const response: ApiResponse = {
       success: true,

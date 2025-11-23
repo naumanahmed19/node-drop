@@ -234,7 +234,7 @@ export function WorkflowToolbar({
           <SidebarTrigger className="-ml-1 h-7 w-7" />
 
           {/* Workflow Breadcrumb with Team Selector and Environment Selector */}
-          <div className="flex-shrink-0">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <WorkflowBreadcrumb
               category={workflow?.category}
               title={mainWorkflowTitle}

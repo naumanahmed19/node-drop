@@ -67,19 +67,19 @@ export function TeamSelectorBreadcrumb({
         <DropdownMenuTrigger asChild>
           <button
             disabled={disabled}
-            className={`flex items-center gap-2 text-sm hover:text-foreground transition-colors cursor-pointer px-0 bg-transparent border-0 ${
+            className={`flex items-center gap-2 text-sm hover:text-foreground transition-colors cursor-pointer px-2 -mx-2 py-1 bg-transparent border-0 min-h-[36px] rounded-md hover:bg-accent/50 ${
               disabled ? 'opacity-50 cursor-not-allowed' : ''
             } ${isPersonal ? 'text-muted-foreground' : ''}`}
           >
             {isPersonal ? (
-              <User className="w-4 h-4" />
+              <User className="w-4 h-4 flex-shrink-0" />
             ) : (
-              <Users className="w-4 h-4" />
+              <Users className="w-4 h-4 flex-shrink-0" />
             )}
-            <span className="flex-1 text-left font-medium">
+            <span className="flex-1 text-left font-medium truncate">
               {isPersonal ? 'Personal' : currentTeam?.name || 'Team'}
             </span>
-            {!disabled && <ChevronDown className="w-3 h-3 opacity-50" />}
+            {!disabled && <ChevronDown className="w-3 h-3 opacity-50 flex-shrink-0" />}
           </button>
         </DropdownMenuTrigger>
 
