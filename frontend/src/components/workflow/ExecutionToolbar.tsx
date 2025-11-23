@@ -64,7 +64,7 @@ export function ExecutionToolbar({
           <Separator orientation="vertical" className="h-4" />
 
           {/* Workflow Breadcrumb - Read Only */}
-          <div className="flex-shrink-0">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <WorkflowBreadcrumb
               category={workflow?.category}
               title={mainWorkflowTitle}
