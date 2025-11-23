@@ -196,121 +196,163 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * Validate workflow structure if nodes or connections are being updated
+   */
+  private async validateWorkflowUpdate(data: UpdateWorkflowRequest): Promise<void> {
+    if (!data.nodes && !data.connections) {
+      return;
+    }
+
+    // Extract triggers from nodes if not provided
+    let triggersToValidate = data.triggers;
+    if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
+      triggersToValidate = this.extractTriggersFromNodes(data.nodes);
+    }
+
+    // Only validate if we have nodes data
+    if (data.nodes) {
+      const workflowData = {
+        nodes: data.nodes,
+        connections: data.connections,
+        triggers: triggersToValidate,
+        settings: data.settings,
+      };
+
+      const validation = await this.validateWorkflow(workflowData);
+      if (!validation.isValid) {
+        throw new AppError(
+          `Workflow validation failed: ${validation.errors.join(", ")}`,
+          400,
+          "WORKFLOW_VALIDATION_ERROR"
+        );
+      }
+    }
+  }
+
+  /**
+   * Prepare triggers for saving - extract from nodes if needed and normalize
+   */
+  private prepareTriggersForUpdate(data: UpdateWorkflowRequest): any[] | undefined {
+    let triggersToSave = data.triggers;
+
+    // Extract triggers from nodes if not provided
+    if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
+      triggersToSave = this.extractTriggersFromNodes(data.nodes);
+      console.log('🔍 Extracted triggers from nodes:', JSON.stringify(triggersToSave, null, 2));
+    }
+
+    // Normalize triggers if they exist
+    if (triggersToSave) {
+      const normalizedTriggers = this.normalizeTriggers(triggersToSave);
+      console.log('🔍 Normalized triggers:', JSON.stringify(normalizedTriggers, null, 2));
+      return normalizedTriggers;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Build the update data object for Prisma
+   */
+  private buildUpdateData(data: UpdateWorkflowRequest, normalizedTriggers?: any[]): any {
+    return {
+      ...(data.name && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.category !== undefined && { category: data.category }),
+      ...(data.tags !== undefined && { tags: data.tags }),
+      ...(data.teamId !== undefined && { teamId: data.teamId }),
+      ...(data.nodes && { nodes: data.nodes as any }),
+      ...(data.connections && { connections: data.connections as any }),
+      ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
+      ...(data.settings !== undefined && { settings: data.settings as any }),
+      ...(data.active !== undefined && { active: data.active }),
+      updatedAt: new Date(),
+    };
+  }
+
+  /**
+   * Sync triggers with TriggerService asynchronously
+   */
+  private syncTriggersAsync(workflowId: string, normalizedTriggers?: any[], activeChanged?: boolean): void {
+    const shouldSync = normalizedTriggers || activeChanged;
+    
+    if (!isTriggerServiceInitialized() || !shouldSync) {
+      console.log(`⏭️  Skipping trigger sync for workflow ${workflowId}`, {
+        triggerServiceInitialized: isTriggerServiceInitialized(),
+        hasNormalizedTriggers: !!normalizedTriggers,
+        hasActiveChange: activeChanged,
+      });
+      return;
+    }
+
+    // Fire and forget - don't await
+    getTriggerService()
+      .syncWorkflowTriggers(workflowId)
+      .then(() => {
+        console.log(`✅ Triggers synced successfully for workflow ${workflowId}`);
+      })
+      .catch((error) => {
+        console.error(`❌ Error syncing triggers for workflow ${workflowId}:`, error);
+      });
+    
+    console.log(`🔄 Trigger sync initiated for workflow ${workflowId} (async)`);
+  }
+
+  /**
+   * Sync schedule jobs with ScheduleJobManager asynchronously
+   */
+  private syncScheduleJobsAsync(workflowId: string, normalizedTriggers?: any[], activeChanged?: boolean): void {
+    const shouldSync = normalizedTriggers || activeChanged;
+    
+    if (!global.scheduleJobManager || !shouldSync) {
+      return;
+    }
+
+    // Fire and forget - don't await
+    global.scheduleJobManager
+      .syncWorkflowJobs(workflowId)
+      .then(() => {
+        console.log(`✅ Schedule jobs synced successfully for workflow ${workflowId}`);
+      })
+      .catch((error) => {
+        console.error(`❌ Error syncing schedule jobs for workflow ${workflowId}:`, error);
+      });
+    
+    console.log(`🔄 Schedule job sync initiated for workflow ${workflowId} (async)`);
+  }
+
   async updateWorkflow(
     id: string,
     userId: string,
     data: UpdateWorkflowRequest
   ) {
     try {
-      // Check if workflow exists and belongs to user
+      // Verify workflow exists and belongs to user
       await this.getWorkflow(id, userId);
 
-      // Validate workflow data if nodes or connections are being updated
-      if (data.nodes || data.connections) {
-        // Extract triggers from nodes if triggers array is empty or not provided
-        let triggersToValidate = data.triggers;
-        if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
-          triggersToValidate = this.extractTriggersFromNodes(data.nodes);
-        }
+      // Validate workflow structure if needed
+      await this.validateWorkflowUpdate(data);
 
-        const workflowData = {
-          nodes: data.nodes,
-          connections: data.connections,
-          triggers: triggersToValidate,
-          settings: data.settings,
-        };
+      // Prepare triggers for update
+      const normalizedTriggers = this.prepareTriggersForUpdate(data);
 
-        // Only validate if we have nodes data
-        if (data.nodes) {
-          const validation = await this.validateWorkflow(workflowData);
-          if (!validation.isValid) {
-            throw new AppError(
-              `Workflow validation failed: ${validation.errors.join(", ")}`,
-              400,
-              "WORKFLOW_VALIDATION_ERROR"
-            );
-          }
-        }
-      }
-
-      // Extract triggers from nodes if triggers array is empty or not provided
-      let triggersToSave = data.triggers;
-      if (data.nodes && (!data.triggers || data.triggers.length === 0)) {
-        triggersToSave = this.extractTriggersFromNodes(data.nodes);
-        console.log('🔍 Extracted triggers from nodes:', JSON.stringify(triggersToSave, null, 2));
-      }
-
-      // Normalize triggers if they are being updated
-      const normalizedTriggers = triggersToSave
-        ? this.normalizeTriggers(triggersToSave)
-        : undefined;
-      
-      if (normalizedTriggers) {
-        console.log('🔍 Normalized triggers:', JSON.stringify(normalizedTriggers, null, 2));
-      }
-
-
-
+      // Build update data
       console.log('🔍 Updating workflow with settings:', data.settings);
-      
+      const updateData = this.buildUpdateData(data, normalizedTriggers);
+
+      // Update workflow in database
       const workflow = await this.prisma.workflow.update({
         where: { id },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(data.description !== undefined && {
-            description: data.description,
-          }),
-          ...(data.category !== undefined && { category: data.category }),
-          ...(data.tags !== undefined && { tags: data.tags }),
-          ...(data.teamId !== undefined && { teamId: data.teamId }),
-          ...(data.nodes && { nodes: data.nodes as any }),
-          ...(data.connections && { connections: data.connections as any }),
-          ...(normalizedTriggers && { triggers: normalizedTriggers as any }),
-          ...(data.settings !== undefined && { settings: data.settings as any }), // Changed to check undefined instead of truthy
-          ...(data.active !== undefined && { active: data.active }),
-          updatedAt: new Date(),
-        },
+        data: updateData,
       });
       
       console.log('✅ Workflow updated, settings saved:', workflow.settings);
 
-
-      // Sync triggers with TriggerService if triggers or active status changed
-      // Run asynchronously to avoid blocking the HTTP response
-      if (
-        isTriggerServiceInitialized() &&
-        (normalizedTriggers || data.active !== undefined)
-      ) {
-        // Fire and forget - don't await
-        getTriggerService().syncWorkflowTriggers(id)
-          .then(() => {
-            console.log(`✅ Triggers synced successfully for workflow ${id}`);
-          })
-          .catch((error) => {
-            console.error(`❌ Error syncing triggers for workflow ${id}:`, error);
-          });
-        console.log(`🔄 Trigger sync initiated for workflow ${id} (async)`);
-      } else {
-        console.log(`⏭️  Skipping trigger sync for workflow ${id}`, {
-          triggerServiceInitialized: isTriggerServiceInitialized(),
-          hasNormalizedTriggers: !!normalizedTriggers,
-          hasActiveChange: data.active !== undefined,
-        });
-      }
-
-      // Sync schedule jobs with ScheduleJobManager
-      // Run asynchronously to avoid blocking the HTTP response
-      if (global.scheduleJobManager && (normalizedTriggers || data.active !== undefined)) {
-        // Fire and forget - don't await
-        global.scheduleJobManager.syncWorkflowJobs(id)
-          .then(() => {
-            console.log(`✅ Schedule jobs synced successfully for workflow ${id}`);
-          })
-          .catch((error) => {
-            console.error(`❌ Error syncing schedule jobs for workflow ${id}:`, error);
-          });
-        console.log(`🔄 Schedule job sync initiated for workflow ${id} (async)`);
-      }
+      // Sync triggers and schedule jobs asynchronously
+      const activeChanged = data.active !== undefined;
+      this.syncTriggersAsync(id, normalizedTriggers, activeChanged);
+      this.syncScheduleJobsAsync(id, normalizedTriggers, activeChanged);
 
       return workflow;
     } catch (error) {
