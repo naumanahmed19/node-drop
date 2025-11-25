@@ -84,11 +84,14 @@ export function CredentialForm({
         }
       }
 
-      // Initialize remaining fields with default values
+      // Initialize remaining fields with default values from property definitions
       credentialType.properties.forEach(prop => {
         // Only set default if not already set by backend defaults
         if (!(prop.name in initialData)) {
-          if (prop.type === 'boolean') {
+          // Use the property's default value if available
+          if (prop.default !== undefined) {
+            initialData[prop.name] = prop.default
+          } else if (prop.type === 'boolean') {
             initialData[prop.name] = false
           } else {
             initialData[prop.name] = ''

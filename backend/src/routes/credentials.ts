@@ -77,9 +77,27 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const credentialTypes = getCredentialService().getCredentialTypes();
 
+    // Serialize credential types to evaluate getter functions
+    const serializedTypes = credentialTypes.map(type => ({
+      ...type,
+      properties: type.properties.map(prop => {
+        const serializedProp: any = { ...prop };
+        
+        // Evaluate getter functions for placeholder and default
+        if (prop.placeholder !== undefined) {
+          serializedProp.placeholder = prop.placeholder;
+        }
+        if (prop.default !== undefined) {
+          serializedProp.default = prop.default;
+        }
+        
+        return serializedProp;
+      })
+    }));
+
     res.json({
       success: true,
-      data: credentialTypes,
+      data: serializedTypes,
     });
   })
 );
@@ -137,10 +155,28 @@ router.get(
       }
     }
 
+    // Serialize credential type to evaluate getter functions
+    const serializedType = {
+      ...contextualCredentialType,
+      properties: contextualCredentialType.properties.map(prop => {
+        const serializedProp: any = { ...prop };
+        
+        // Evaluate getter functions for placeholder and default
+        if (prop.placeholder !== undefined) {
+          serializedProp.placeholder = prop.placeholder;
+        }
+        if (prop.default !== undefined) {
+          serializedProp.default = prop.default;
+        }
+        
+        return serializedProp;
+      })
+    };
+
     res.json({
       success: true,
       data: {
-        credentialType: contextualCredentialType,
+        credentialType: serializedType,
         defaults,
       },
     });

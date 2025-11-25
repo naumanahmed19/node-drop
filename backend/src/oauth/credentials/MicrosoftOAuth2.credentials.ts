@@ -36,7 +36,11 @@ export const MicrosoftOAuth2Credentials: CredentialType = {
       type: "string",
       readonly: true,
       description: "Add this to Redirect URIs in Azure App Registration",
-      default: `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth/callback`,
+      // Use getter function to evaluate at runtime instead of module load time
+      get default() {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+        return `${frontendUrl}/oauth/callback`;
+      },
     },
   ],
 

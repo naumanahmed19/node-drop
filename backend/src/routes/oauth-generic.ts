@@ -1,12 +1,14 @@
-import { Router } from "express"
+import { Router, Response } from "express"
 import { oauthProviderRegistry } from "../oauth/OAuthProviderRegistry"
 import { CredentialService } from "../services/CredentialService"
 import { AppError } from "../utils/errors"
 import { logger } from "../utils/logger"
 import * as crypto from "crypto"
+import { authenticateToken, AuthenticatedRequest } from "../middleware/auth"
 
 const router = Router()
-const credentialService = new CredentialService()
+// Use the global credential service instance (has core credentials registered)
+const getCredentialService = () => global.credentialService
 
 // Store pending OAuth sessions (in production, use Redis)
 const pendingOAuthSessions = new Map<string, {
@@ -20,11 +22,14 @@ const pendingOAuthSessions = new Map<string, {
   expiresAt: number
 }>()
 
+// Expose for debugging (remove in production)
+;(global as any).pendingOAuthSessions = pendingOAuthSessions
+
 /**
  * Generic OAuth authorization endpoint
  * Works with any registered OAuth provider
  */
-router.get("/oauth/:provider/authorize", async (req, res, next) => {
+router.get("/oauth/:provider/authorize", authenticateToken, async (req: AuthenticatedRequest, res: Response, next) => {
   try {
     const { provider } = req.params
     const { clientId, clientSecret, credentialName, credentialType, credentialId, services, useCustomScopes, customScopes } = req.query
@@ -35,8 +40,8 @@ router.get("/oauth/:provider/authorize", async (req, res, next) => {
       throw new AppError(`OAuth provider '${provider}' not found`, 400)
     }
 
-    // Get user ID from session/auth
-    const userId = (req as any).user?.id || "default-user" // TODO: Get from auth middleware
+    // Get user ID from authenticated request
+    const userId = req.user!.id
 
     // Generate state for CSRF protection
     const state = crypto.randomBytes(32).toString("hex")
@@ -51,7 +56,7 @@ router.get("/oauth/:provider/authorize", async (req, res, next) => {
     }
 
     // Store session data
-    pendingOAuthSessions.set(state, {
+    const sessionData = {
       provider,
       clientId: clientId as string,
       clientSecret: clientSecret as string,
@@ -60,10 +65,19 @@ router.get("/oauth/:provider/authorize", async (req, res, next) => {
       userId,
       scopes,
       expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    }
+    pendingOAuthSessions.set(state, sessionData)
+    
+    logger.info(`OAuth session created`, {
+      state,
+      provider,
+      credentialType: credentialType as string,
+      sessionCount: pendingOAuthSessions.size
     })
 
-    // Build redirect URI
-    const redirectUri = `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth/callback`
+    // Build redirect URI - frontend callback URL (frontend handles the OAuth popup)
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000"
+    const redirectUri = `${frontendUrl}/oauth/callback`
 
     // Get authorization URL
     const authorizationUrl = oauthProvider.getAuthorizationUrl({
@@ -77,7 +91,7 @@ router.get("/oauth/:provider/authorize", async (req, res, next) => {
       success: true,
       data: {
         authorizationUrl,
-        callbackUrl: redirectUri,
+        callbackUrl: redirectUri, // Return the backend callback URL for user to add to OAuth app
       },
     })
   } catch (error) {
@@ -86,19 +100,28 @@ router.get("/oauth/:provider/authorize", async (req, res, next) => {
 })
 
 /**
- * Generic OAuth callback endpoint
- * Handles the callback from any OAuth provider
+ * OAuth callback endpoint - NOT USED
+ * Google/Microsoft redirect to the FRONTEND /oauth/callback page
+ * The frontend then POSTs to /oauth/:provider/callback with the code
  */
-router.get("/oauth/:provider/callback", async (req, res, next) => {
+
+/**
+ * Backend endpoint to exchange OAuth code for tokens
+ * Called by the frontend after receiving the code from OAuth provider
+ */
+router.post("/oauth/:provider/callback", async (req, res, next) => {
   try {
     const { provider } = req.params
-    const { code, state, error, error_description } = req.query
+    const { code, state } = req.body
 
-    // Handle OAuth errors
-    if (error) {
-      const errorMessage = error_description || error
-      return res.redirect(`${process.env.FRONTEND_URL}/oauth/error?error=${encodeURIComponent(errorMessage as string)}`)
-    }
+    logger.info(`OAuth callback received`, {
+      provider,
+      hasCode: !!code,
+      hasState: !!state,
+      stateLength: state?.length,
+      sessionCount: pendingOAuthSessions.size,
+      availableStates: Array.from(pendingOAuthSessions.keys()).map(s => s.substring(0, 8) + '...')
+    })
 
     if (!code || !state) {
       throw new AppError("Missing authorization code or state", 400)
@@ -111,24 +134,29 @@ router.get("/oauth/:provider/callback", async (req, res, next) => {
     }
 
     // Retrieve session data
-    const session = pendingOAuthSessions.get(state as string)
+    const session = pendingOAuthSessions.get(state)
     if (!session) {
+      logger.error(`OAuth session not found`, {
+        state: state.substring(0, 8) + '...',
+        sessionCount: pendingOAuthSessions.size
+      })
       throw new AppError("Invalid or expired OAuth session", 400)
     }
 
     // Check expiration
     if (Date.now() > session.expiresAt) {
-      pendingOAuthSessions.delete(state as string)
+      pendingOAuthSessions.delete(state)
       throw new AppError("OAuth session expired", 400)
     }
 
-    // Clean up session
-    pendingOAuthSessions.delete(state as string)
+    // Don't delete session yet - only delete after successful credential creation
+    // This prevents issues with duplicate requests
 
-    // Exchange code for tokens
-    const redirectUri = `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth/callback`
+    // Exchange code for tokens - must match the redirectUri used in authorization
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000"
+    const redirectUri = `${frontendUrl}/oauth/callback`
     const tokens = await oauthProvider.exchangeCodeForTokens({
-      code: code as string,
+      code,
       clientId: session.clientId,
       clientSecret: session.clientSecret,
       redirectUri,
@@ -144,19 +172,32 @@ router.get("/oauth/:provider/callback", async (req, res, next) => {
       expiresIn: tokens.expiresIn,
     }
 
-    const credential = await credentialService.createCredential(
+    const credential = await getCredentialService().createCredential(
       session.userId,
       session.credentialName,
       session.credentialType,
       credentialData
     )
 
-    // Redirect to success page
-    res.redirect(`${process.env.FRONTEND_URL}/oauth/success?credentialId=${credential.id}`)
+    // Clean up session after successful credential creation
+    pendingOAuthSessions.delete(state)
+    
+    logger.info(`OAuth credential created successfully`, {
+      credentialId: credential.id,
+      provider,
+      credentialType: session.credentialType
+    })
+
+    // Return success response to frontend
+    res.json({
+      success: true,
+      data: {
+        credential
+      }
+    })
   } catch (error) {
     logger.error("OAuth callback error:", error)
-    const errorMessage = error instanceof Error ? error.message : "OAuth authentication failed"
-    res.redirect(`${process.env.FRONTEND_URL}/oauth/error?error=${encodeURIComponent(errorMessage)}`)
+    next(error)
   }
 })
 
@@ -244,6 +285,12 @@ function getScopesForService(provider: string, service: string): string[] {
         "https://www.googleapis.com/auth/userinfo.profile",
       ],
       drive: [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+      ],
+      "google-drive": [ // Alias for drive
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/drive",
         "https://www.googleapis.com/auth/userinfo.email",

@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Copy,
   Database,
+  Download,
   Edit,
   Pin,
   PinOff,
@@ -129,6 +130,43 @@ export function OutputColumn({ node }: OutputColumnProps) {
   const isShowingMockData = mockDataPinned && mockData
   const isBranchingNode = displayData?.type === 'branches'
 
+  // Helper to detect if data contains downloadable content
+  const hasDownloadableContent = (data: any): boolean => {
+    if (!data || isBranchingNode) return false
+    return !!(data?.content && data?.contentType)
+  }
+
+  // Download file from content field
+  const handleDownload = () => {
+    if (!displayData?.content || !displayData?.contentType) return
+    
+    try {
+      // Decode base64 data
+      const byteCharacters = atob(displayData.content)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: displayData.contentType })
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = displayData.file?.name || displayData.fileName || 'download'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      toast.success('File downloaded successfully')
+    } catch (error) {
+      console.error('Failed to download file:', error)
+      toast.error('Failed to download file')
+    }
+  }
+
   return (
     <div className="flex w-full h-full border-l flex-col bg-background">
       {/* Header */}
@@ -149,6 +187,19 @@ export function OutputColumn({ node }: OutputColumnProps) {
             <Edit className="h-3 w-3" />
             Edit
           </Button>
+
+          {/* Download Button - Show if data has downloadable content */}
+          {hasDownloadableContent(displayData) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownload}
+              className="h-7 px-2 text-xs gap-1"
+            >
+              <Download className="h-3 w-3" />
+              Download
+            </Button>
+          )}
 
           {/* Copy Button */}
           {displayData && (
