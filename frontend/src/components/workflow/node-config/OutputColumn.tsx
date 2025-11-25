@@ -15,13 +15,15 @@ import {
   Edit,
   Pin,
   PinOff,
-  Table as TableIcon
+  Table as TableIcon,
+  ScrollText
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ImagePreviewOutput } from './output-components/ImagePreviewOutput'
 import { getOutputComponent } from './output-components/OutputComponentRegistry'
 import { TableView } from './output-components/TableView'
+import { LogsTabContent } from '../tabs/LogsTabContent'
 
 interface OutputColumnProps {
   node: WorkflowNode
@@ -29,8 +31,8 @@ interface OutputColumnProps {
 }
 
 export function OutputColumn({ node }: OutputColumnProps) {
-  const [viewMode, setViewMode] = useState<'json' | 'table'>('json')
-  const { getNodeExecutionResult } = useWorkflowStore()
+  const [viewMode, setViewMode] = useState<'json' | 'table' | 'logs'>('json')
+  const { getNodeExecutionResult, executionLogs } = useWorkflowStore()
   const { getNodeTypeById } = useNodeTypesStore()
   const {
     mockData,
@@ -387,8 +389,8 @@ export function OutputColumn({ node }: OutputColumnProps) {
                         </div>
                       </>
                     ) : (
-                      /* Regular JSON/Table output for nodes without custom output component */
-                      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'json' | 'table')} className="flex-1 flex flex-col min-h-0">
+                      /* Regular JSON/Table/Logs output for nodes without custom output component */
+                      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'json' | 'table' | 'logs')} className="flex-1 flex flex-col min-h-0">
                         <div className="flex items-center justify-between flex-shrink-0">
                           <TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-auto">
                             <TabsTrigger value="json" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
@@ -398,6 +400,10 @@ export function OutputColumn({ node }: OutputColumnProps) {
                             <TabsTrigger value="table" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
                               <TableIcon className="h-3 w-3 mr-1" />
                               Table
+                            </TabsTrigger>
+                            <TabsTrigger value="logs" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                              <ScrollText className="h-3 w-3 mr-1" />
+                              Logs
                             </TabsTrigger>
                           </TabsList>
                           <div className="flex items-center gap-2">
@@ -423,6 +429,12 @@ export function OutputColumn({ node }: OutputColumnProps) {
                         <TabsContent value="table" className="flex-1 min-h-0 mt-0 p-3">
                           <div className="rounded-md border bg-muted/30 h-full">
                             <TableView data={displayData} />
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="logs" className="flex-1 min-h-0 mt-0">
+                          <div className="h-full">
+                            <LogsTabContent logs={executionLogs} nodeId={node.id} />
                           </div>
                         </TabsContent>
                       </Tabs>

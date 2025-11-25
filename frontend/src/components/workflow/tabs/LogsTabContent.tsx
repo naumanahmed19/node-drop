@@ -1,341 +1,294 @@
-import { useWorkflowStore } from '@/stores/workflow'
-import { ExecutionLogEntry } from '@/types'
-import { ChevronDown, Filter, Search, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExecutionLogEntry } from '@/types/execution'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+import { 
+  ChevronRight, 
+  ChevronDown, 
+  Clock, 
+  AlertCircle, 
+  Info, 
+  AlertTriangle,
+  Wrench,
+  Bot,
+  Database
+} from 'lucide-react'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 interface LogsTabContentProps {
-  executionLogs: ExecutionLogEntry[]
-  isActive: boolean
-  onClearLogs?: () => void
+  logs: ExecutionLogEntry[]
+  nodeId?: string
 }
 
-type SortOption = 'time-desc' | 'time-asc' | 'node-asc' | 'level-desc'
-type FilterOption = 'all' | 'info' | 'warn' | 'error' | 'debug'
+interface ToolCallLog {
+  id: string
+  toolName: string
+  timestamp: string
+  duration?: number
+  input: any
+  output: any
+  success: boolean
+  error?: string
+  level: 'info' | 'warn' | 'error' | 'debug'
+}
 
-export function LogsTabContent({ executionLogs, isActive, onClearLogs }: LogsTabContentProps) {
-  const logsEndRef = useRef<HTMLDivElement>(null)
-  const [sortBy, setSortBy] = useState<SortOption>('time-desc')
-  const [filterLevel, setFilterLevel] = useState<FilterOption>('all')
-  const [filterNode, setFilterNode] = useState<string>('all')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
+export function LogsTabContent({ logs, nodeId }: LogsTabContentProps) {
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set())
+  const [showAllLogs, setShowAllLogs] = useState(false)
 
-  // Get workflow to access node names
-  const workflow = useWorkflowStore(state => state.workflow)
+  // Filter logs for this specific node if nodeId is provided
+  const filteredLogs = nodeId 
+    ? logs.filter(log => log.nodeId === nodeId)
+    : logs
 
-  // Get unique node IDs for filtering
-  const uniqueNodeIds = useMemo(() => {
-    const nodeIds = new Set(executionLogs.map(log => log.nodeId).filter(Boolean) as string[])
-    return Array.from(nodeIds).sort()
-  }, [executionLogs])
-
-  // Get node display name from workflow
-  const getNodeDisplayName = (nodeId: string) => {
-    if (!workflow) return nodeId
-    const node = workflow.nodes.find(n => n.id === nodeId)
-    return node ? node.name : nodeId
-  }
-
-  // Filter and sort logs
-  const filteredAndSortedLogs = useMemo(() => {
-    let filtered = executionLogs
-
-    // Filter by log level
-    if (filterLevel !== 'all') {
-      filtered = filtered.filter(log => log.level === filterLevel)
-    }
-
-    // Filter by node
-    if (filterNode !== 'all') {
-      filtered = filtered.filter(log => log.nodeId === filterNode)
-    }
-
-    // Filter by search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(log =>
-        log.message.toLowerCase().includes(term) ||
-        (log.nodeId && log.nodeId.toLowerCase().includes(term)) ||
-        (log.nodeId && getNodeDisplayName(log.nodeId).toLowerCase().includes(term)) ||
-        log.level.toLowerCase().includes(term)
-      )
-    }
-
-    // Sort logs
-    const sorted = [...filtered].sort((a, b) => {
-      switch (sortBy) {
-        case 'time-desc':
-          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        case 'time-asc':
-          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        case 'node-asc':
-          if (!a.nodeId && !b.nodeId) return 0
-          if (!a.nodeId) return 1
-          if (!b.nodeId) return -1
-          const nameA = getNodeDisplayName(a.nodeId)
-          const nameB = getNodeDisplayName(b.nodeId)
-          return nameA.localeCompare(nameB)
-        case 'level-desc':
-          const levelPriority = { error: 3, warn: 2, info: 1, debug: 0 }
-          return levelPriority[b.level] - levelPriority[a.level]
-        default:
-          return 0
+  // Parse logs to extract tool calls and service calls
+  const parsedLogs: ToolCallLog[] = filteredLogs
+    .filter(log => log.data?.toolCall || log.data?.serviceCall)
+    .map((log, index) => {
+      const toolCall = log.data?.toolCall || log.data?.serviceCall
+      return {
+        id: `${log.timestamp}-${index}`,
+        toolName: toolCall?.name || toolCall?.toolName || 'Unknown',
+        timestamp: typeof log.timestamp === 'string' ? log.timestamp : new Date(log.timestamp).toISOString(),
+        duration: toolCall?.duration,
+        input: toolCall?.input || toolCall?.arguments || {},
+        output: toolCall?.output || toolCall?.result || {},
+        success: toolCall?.success !== false,
+        error: toolCall?.error,
+        level: log.level,
       }
     })
 
-    return sorted
-  }, [executionLogs, filterLevel, filterNode, searchTerm, sortBy, workflow])
+  console.log('[LogsTabContent] Debug info:', {
+    totalLogs: logs.length,
+    filteredLogs: filteredLogs.length,
+    parsedLogs: parsedLogs.length,
+    nodeId,
+    sampleLog: filteredLogs[0],
+  })
 
-  // Auto-scroll logs to bottom when new logs arrive (only if sorted by time-desc)
-  useEffect(() => {
-    if (isActive && logsEndRef.current && sortBy === 'time-desc') {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  const toggleExpanded = (logId: string) => {
+    const newExpanded = new Set(expandedLogs)
+    if (newExpanded.has(logId)) {
+      newExpanded.delete(logId)
+    } else {
+      newExpanded.add(logId)
     }
-  }, [executionLogs, isActive, sortBy])
-
-  const formatTimestamp = (timestamp: string | Date) => {
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
-    return date.toLocaleTimeString()
+    setExpandedLogs(newExpanded)
   }
 
-  const getLogLevelBadgeColor = (level: string) => {
+  const getLevelIcon = (level: string) => {
     switch (level) {
-      case 'error': return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800'
-      case 'warn': return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-400 dark:border-yellow-800'
-      case 'info': return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800'
-      case 'debug': return 'bg-muted text-muted-foreground border-border'
-      default: return 'bg-muted text-muted-foreground border-border'
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-red-600" />
+      case 'warn':
+        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+      case 'info':
+        return <Info className="h-4 w-4 text-blue-600" />
+      default:
+        return <Info className="h-4 w-4 text-muted-foreground" />
     }
   }
 
-  const getNodeBadgeColor = (nodeId: string) => {
-    // Generate a consistent color based on node name hash for better visual consistency
-    const nodeName = getNodeDisplayName(nodeId)
-    const hash = nodeName.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0)
-      return a & a
-    }, 0)
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp)
+      const timeStr = date.toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit'
+      })
+      const ms = date.getMilliseconds().toString().padStart(3, '0')
+      return `${timeStr}.${ms}`
+    } catch {
+      return timestamp
+    }
+  }
 
-    const colors = [
-      'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800',
-      'bg-green-100 text-green-800 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800',
-      'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800',
-      'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-950/30 dark:text-pink-400 dark:border-pink-800',
-      'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800',
-      'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-950/30 dark:text-cyan-400 dark:border-cyan-800',
-    ]
+  const formatDuration = (ms?: number) => {
+    if (!ms) return 'N/A'
+    if (ms < 1000) return `${ms}ms`
+    return `${(ms / 1000).toFixed(2)}s`
+  }
 
-    return colors[Math.abs(hash) % colors.length]
+  if (filteredLogs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Database className="h-12 w-12 text-muted-foreground/50 mb-4" />
+        <h3 className="font-medium text-sm mb-2">No Logs Available</h3>
+        <p className="text-xs text-muted-foreground max-w-[250px]">
+          Execute the workflow to see detailed logs of tool and service calls
+        </p>
+      </div>
+    )
+  }
+
+  if (parsedLogs.length === 0) {
+    return (
+      <div className="p-4">
+        <div className="text-sm text-muted-foreground text-center py-8">
+          <p className="mb-4">No tool or service calls logged for this execution</p>
+          {filteredLogs.length > 0 && (
+            <div className="text-left max-w-2xl mx-auto">
+              <p className="text-xs mb-2">Debug: Found {filteredLogs.length} logs but none contain tool/service call data.</p>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-blue-600 hover:text-blue-700">Show all logs for debugging</summary>
+                <div className="mt-2 space-y-2 max-h-96 overflow-auto">
+                  {filteredLogs.map((log, i) => (
+                    <div key={i} className="bg-muted p-2 rounded border">
+                      <div className="font-semibold">{log.message}</div>
+                      <div className="text-muted-foreground">Level: {log.level}</div>
+                      {log.data && (
+                        <pre className="mt-1 text-xs overflow-auto">
+                          {JSON.stringify(log.data, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="bg-background">
-      {/* Controls Bar */}
-      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
-        <div className="flex items-center space-x-2">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search logs..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-3 py-1 text-sm border border-input rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring"
-            />
-          </div>
-
-          {/* Advanced filters toggle */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors ${showFilters ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
-          >
-            <Filter className="w-3 h-3" />
-            <span>Filters</span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* Clear logs button */}
-          {onClearLogs && executionLogs.length > 0 && (
+    <ScrollArea className="h-full">
+      <div className="p-4 space-y-2">
+        {/* Debug toggle */}
+        {filteredLogs.length > parsedLogs.length && (
+          <div className="flex items-center justify-between p-2 bg-muted/50 rounded border mb-4">
+            <span className="text-xs text-muted-foreground">
+              Showing {parsedLogs.length} tool/service calls ({filteredLogs.length - parsedLogs.length} other logs hidden)
+            </span>
             <button
-              onClick={onClearLogs}
-              className="flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              title="Clear all logs"
+              onClick={() => setShowAllLogs(!showAllLogs)}
+              className="text-xs text-blue-600 hover:text-blue-700 underline"
             >
-              <Trash2 className="w-3 h-3" />
-              <span>Clear</span>
+              {showAllLogs ? 'Hide' : 'Show'} all logs
             </button>
-          )}
-        </div>
-
-        {/* Sort options */}
-        <div className="flex items-center space-x-2">
-          <span className="text-xs text-muted-foreground">Sort by:</span>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="text-xs border border-input rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="time-desc">Latest first</option>
-            <option value="time-asc">Oldest first</option>
-            <option value="node-asc">Node A-Z</option>
-            <option value="level-desc">Level (Error first)</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Advanced Filters Panel */}
-      {showFilters && (
-        <div className="p-3 border-b border-border bg-muted/30 space-y-2">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-medium text-foreground">Log Level:</span>
-              <select
-                value={filterLevel}
-                onChange={(e) => setFilterLevel(e.target.value as FilterOption)}
-                className="text-xs border border-input rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="all">All levels</option>
-                <option value="error">Error</option>
-                <option value="warn">Warning</option>
-                <option value="info">Info</option>
-                <option value="debug">Debug</option>
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-medium text-foreground">Node:</span>
-              <select
-                value={filterNode}
-                onChange={(e) => setFilterNode(e.target.value)}
-                className="text-xs border border-input rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="all">All nodes</option>
-                {uniqueNodeIds.map(nodeId => (
-                  <option key={nodeId} value={nodeId}>{getNodeDisplayName(nodeId)}</option>
-                ))}
-              </select>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Logs Content */}
-
-      <div className="h-[calc(100dvh-540px)] overflow-y-auto p-4 bg-background">
-        {filteredAndSortedLogs.length === 0 ? (
-          <div className="text-muted-foreground text-center py-8">
-            {executionLogs.length === 0 ? 'No logs available' : 'No logs match your filters'}
-          </div>
-        ) : (
-          <div className="p-3 space-y-2">
-            {filteredAndSortedLogs.map((log, index) => (
-              <div key={index} className="flex items-start space-x-3 p-2 rounded hover:bg-accent border-l-2 border-l-transparent hover:border-l-primary transition-colors">
-                {/* Timestamp */}
-                <span className="text-muted-foreground text-xs w-16 flex-shrink-0 font-mono">
-                  {formatTimestamp(log.timestamp)}
-                </span>
-
-                {/* Level Badge */}
-                <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getLogLevelBadgeColor(log.level)} flex-shrink-0`}>
-                  {log.level.toUpperCase()}
-                </span>
-
-                {/* Node Badge */}
-                {log.nodeId && (
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getNodeBadgeColor(log.nodeId)} flex-shrink-0 max-w-32 truncate`}
-                    title={`${getNodeDisplayName(log.nodeId)} (${log.nodeId})`}>
-                    {getNodeDisplayName(log.nodeId)}
+        {/* Show all logs if debug mode is on */}
+        {showAllLogs && (
+          <div className="space-y-2 mb-4">
+            <div className="text-xs font-semibold text-muted-foreground mb-2">All Execution Logs:</div>
+            {filteredLogs.map((log, i) => (
+              <div key={`all-${i}`} className="border rounded p-2 bg-muted/30 text-xs">
+                <div className="flex items-center gap-2 mb-1">
+                  {getLevelIcon(log.level)}
+                  <span className="font-medium">{log.message}</span>
+                  <span className="text-muted-foreground ml-auto">
+                    {formatTimestamp(typeof log.timestamp === 'string' ? log.timestamp : new Date(log.timestamp).toISOString())}
                   </span>
-                )}
-
-                {/* Message */}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm break-words text-foreground">
-                    {log.message}
-                  </div>
-                  {log.data && (
-                    <details className="mt-2">
-                      <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                        View details
-                      </summary>
-                      <div className="mt-2 space-y-2">
-                        {/* Show parameters if available */}
-                        {log.data.parameters && (
-                          <div>
-                            <div className="text-xs font-medium text-foreground mb-1">Parameters:</div>
-                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
-                              {JSON.stringify(log.data.parameters, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        
-                        {/* Show input data if available */}
-                        {log.data.inputData && (
-                          <div>
-                            <div className="text-xs font-medium text-foreground mb-1">Input Data:</div>
-                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
-                              {JSON.stringify(log.data.inputData, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        
-                        {/* Show output data if available */}
-                        {log.data.outputData && (
-                          <div>
-                            <div className="text-xs font-medium text-foreground mb-1">Output Data:</div>
-                            <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
-                              {JSON.stringify(log.data.outputData, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        
-                        {/* Show duration if available */}
-                        {log.data.duration !== undefined && (
-                          <div className="text-xs text-muted-foreground">
-                            Duration: {log.data.duration}ms
-                          </div>
-                        )}
-                        
-                        {/* Show error details if available */}
-                        {log.data.error && (
-                          <div>
-                            <div className="text-xs font-medium text-destructive mb-1">Error Details:</div>
-                            <pre className="text-xs bg-destructive/10 p-2 rounded overflow-auto max-h-32 border border-destructive/20">
-                              {JSON.stringify(log.data.error, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        
-                        {/* Show full data if none of the above matched */}
-                        {!log.data.parameters && !log.data.inputData && !log.data.outputData && !log.data.error && (
-                          <pre className="text-xs bg-muted/50 p-2 rounded overflow-auto max-h-32 border border-border">
-                            {JSON.stringify(log.data, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    </details>
-                  )}
                 </div>
+                {log.data && (
+                  <pre className="text-xs overflow-auto max-h-32 mt-2 p-2 bg-background rounded">
+                    {JSON.stringify(log.data, null, 2)}
+                  </pre>
+                )}
               </div>
             ))}
-            {sortBy === 'time-desc' && <div ref={logsEndRef} />}
           </div>
         )}
-      </div>
 
+        {/* Tool/Service call logs */}
+        {parsedLogs.map((log) => {
+          const isExpanded = expandedLogs.has(log.id)
+          
+          return (
+            <div
+              key={log.id}
+              className={cn(
+                "border rounded-lg overflow-hidden transition-colors",
+                log.success ? "border-border" : "border-red-200 bg-red-50/50"
+              )}
+            >
+              {/* Log Header */}
+              <div
+                className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/50"
+                onClick={() => toggleExpanded(log.id)}
+              >
+                <div className="flex-shrink-0">
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
 
-      {/* Summary Footer */}
-      <div className="border-t border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        Showing {filteredAndSortedLogs.length} of {executionLogs.length} logs
-        {uniqueNodeIds.length > 0 && (
-          <span className="ml-2">• {uniqueNodeIds.length} nodes</span>
-        )}
+                <div className="flex-shrink-0">
+                  {getLevelIcon(log.level)}
+                </div>
+
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Wrench className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  <span className="font-medium text-sm truncate">{log.toolName}</span>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {log.duration && (
+                    <Badge variant="outline" className="text-xs">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {formatDuration(log.duration)}
+                    </Badge>
+                  )}
+                  <Badge 
+                    variant={log.success ? "default" : "destructive"}
+                    className="text-xs"
+                  >
+                    {log.success ? 'Success' : 'Failed'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {formatTimestamp(log.timestamp)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Expanded Content */}
+              {isExpanded && (
+                <div className="border-t bg-muted/30">
+                  {/* Input Section */}
+                  <div className="p-3 border-b">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Bot className="h-3.5 w-3.5 text-blue-600" />
+                      <span className="text-xs font-semibold text-blue-600">Input</span>
+                    </div>
+                    <div className="bg-background rounded border p-2">
+                      <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                        {JSON.stringify(log.input, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* Output Section */}
+                  <div className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Database className="h-3.5 w-3.5 text-green-600" />
+                      <span className="text-xs font-semibold text-green-600">Output</span>
+                    </div>
+                    <div className="bg-background rounded border p-2">
+                      {log.error ? (
+                        <div className="text-xs text-red-600 font-mono whitespace-pre-wrap">
+                          {log.error}
+                        </div>
+                      ) : (
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                          {JSON.stringify(log.output, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
-    </div>
+    </ScrollArea>
   )
 }
-
-export type { ExecutionLogEntry }
-

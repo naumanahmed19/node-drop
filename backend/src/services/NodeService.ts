@@ -538,6 +538,22 @@ export class NodeService {
       const context = Object.create(nodeDefinition);
       Object.assign(context, baseContext);
 
+      // Add execution metadata for logging and event emission
+      context._executionId = execId;
+      context._nodeId = options?.nodeId;
+      context._serviceNodeId = options?.nodeId; // Alias for consistency with service nodes
+
+      // Inject logging methods into context (automatic logging for all nodes)
+      try {
+        const { injectLoggingMethods } = require('../../custom-nodes/utils/serviceLogger');
+        injectLoggingMethods(context);
+      } catch (error) {
+        logger.warn('Failed to inject logging methods into node context', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          nodeType,
+        });
+      }
+
       // Execute the node in secure context
       const result = await nodeDefinition.execute.call(
         context,

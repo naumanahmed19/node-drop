@@ -82,15 +82,22 @@ export function AddNodeCommandDialog({
     const targetInput = insertionContext?.targetInput
     
     // If connecting to a service input, filter by output type
-    if (targetInput === 'model') {
-      // Only show nodes with 'model' output
-      return activeNodeTypes.filter(node => node.outputs.includes('model'))
-    } else if (targetInput === 'memory') {
-      // Only show nodes with 'memory' output
-      return activeNodeTypes.filter(node => node.outputs.includes('memory'))
-    } else if (targetInput === 'tools') {
-      // Only show nodes with 'tool' output
-      return activeNodeTypes.filter(node => node.outputs.includes('tool'))
+    // Service inputs use the 'Service' suffix convention (e.g., 'modelService', 'memoryService', 'toolService')
+    if (targetInput === 'modelService') {
+      // Only show nodes with 'modelService' output
+      return activeNodeTypes.filter(node => node.outputs.includes('modelService'))
+    } else if (targetInput === 'memoryService') {
+      // Only show nodes with 'memoryService' output
+      return activeNodeTypes.filter(node => node.outputs.includes('memoryService'))
+    } else if (targetInput === 'toolService') {
+      // Only show nodes with 'toolService' output
+      return activeNodeTypes.filter(node => node.outputs.includes('toolService'))
+    } else if (targetInput === 'embeddingsService') {
+      // Only show nodes with 'embeddingsService' output
+      return activeNodeTypes.filter(node => node.outputs.includes('embeddingsService'))
+    } else if (targetInput && targetInput.endsWith('Service')) {
+      // Generic service input - filter by matching service output
+      return activeNodeTypes.filter(node => node.outputs.includes(targetInput))
     }
     
     // No service filter, return all nodes

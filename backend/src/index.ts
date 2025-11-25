@@ -219,6 +219,18 @@ realtimeExecutionEngine.on("execution-cancelled", (data) => {
   });
 });
 
+// Listen for execution-log events (tool calls, service calls, etc.)
+realtimeExecutionEngine.on("execution-log", (logEntry) => {
+  logger.debug('📝 [RealtimeEngine] execution-log event received', {
+    executionId: logEntry.executionId,
+    nodeId: logEntry.nodeId,
+    level: logEntry.level,
+    message: logEntry.message,
+  });
+  
+  socketService.broadcastExecutionLog(logEntry.executionId, logEntry);
+});
+
 // Make services available globally for other services
 declare global {
   var socketService: SocketService;

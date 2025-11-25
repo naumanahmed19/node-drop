@@ -2903,6 +2903,34 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
             get().setExecutionError(data.error?.message || "Execution failed");
             break;
+
+          case "execution-log":
+            // Handle detailed execution logs (tool calls, service calls, etc.)
+            if (data.executionId) {
+              const timestamp = typeof data.timestamp === 'string' 
+                ? data.timestamp 
+                : new Date(data.timestamp).toISOString();
+
+              const logEntry = {
+                executionId: data.executionId,
+                nodeId: data.nodeId,
+                level: data.level || 'info',
+                message: data.message || '',
+                timestamp,
+                data: data.data,
+              };
+
+              console.log('📝 [Frontend] execution-log event received:', {
+                executionId: logEntry.executionId,
+                nodeId: logEntry.nodeId,
+                level: logEntry.level,
+                message: logEntry.message,
+                hasToolCall: !!logEntry.data?.toolCall,
+              });
+
+              get().addExecutionLog(logEntry);
+            }
+            break;
         }
       },
 

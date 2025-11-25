@@ -206,9 +206,10 @@ export const NodeHandles = memo(function NodeHandles({
       {outputs && outputs.length > 0 && (
         <>
           {outputs.map((output, index) => {
-            // Check if this is a service output (tool, memory, model)
-            const serviceOutputTypes = ['tool', 'memory', 'model']
-            const isServiceOutput = serviceOutputTypes.includes(output)
+            // Check if this is a service output (positioned at top of node)
+            // Service outputs: any output ending with 'Service' (e.g., 'toolService', 'memoryService', 'embeddingsService')
+            // To add a new service type, just name it with 'Service' suffix (e.g., outputs: ['myCustomService'])
+            const isServiceOutput = output.endsWith('Service')
             
             // For service outputs at top, use horizontal positioning
             // For regular outputs on right, use vertical positioning
