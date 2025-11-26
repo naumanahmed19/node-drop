@@ -1,5 +1,6 @@
 import { ExecutionFlowStatus, ExecutionMetrics, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { TabType } from './ExecutionPanelTabs'
+import { InspectTabContent } from './tabs/InspectTabContent'
 import { ExecutionLogEntry, LogsTabContent } from './tabs/LogsTabContent'
 import { MetricsTabContent } from './tabs/MetricsTabContent'
 import { ProgressTabContent } from './tabs/ProgressTabContent'
@@ -33,7 +34,7 @@ export function ExecutionPanelContent({
   const displayResults = executionState.status === 'running' ? currentResults : finalResults
 
   return (
-    <div className="flex-1 min-h-0">
+    <div className="flex-1 min-h-0 relative">
       {activeTab === 'progress' && (
         <ProgressTabContent executionState={executionState} />
       )}
@@ -51,7 +52,7 @@ export function ExecutionPanelContent({
       
       {activeTab === 'logs' && (
         <LogsTabContent 
-          executionLogs={executionLogs}
+          logs={executionLogs}
           isActive={activeTab === 'logs'}
           onClearLogs={onClearLogs}
         />
@@ -59,6 +60,10 @@ export function ExecutionPanelContent({
       
       {activeTab === 'results' && (
         <ResultsTabContent displayResults={displayResults} />
+      )}
+      
+      {activeTab === 'inspect' && (
+        <InspectTabContent displayResults={displayResults} />
       )}
     </div>
   )
