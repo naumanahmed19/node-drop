@@ -1,5 +1,5 @@
 import { useAddNodeDialogStore, useWorkflowStore } from '@/stores';
-import { EdgeLabelRenderer, useReactFlow } from '@xyflow/react';
+import { EdgeLabelRenderer } from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CSSProperties, useCallback } from 'react';
 
@@ -28,7 +28,6 @@ export function EdgeButton({
   onMouseLeave,
 }: EdgeButtonProps) {
   const { openDialog } = useAddNodeDialogStore();
-  const reactFlowInstance = useReactFlow();
   // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
   const workflow = useWorkflowStore(state => state.workflow);
   const removeConnection = useWorkflowStore(state => state.removeConnection);

@@ -527,10 +527,18 @@ export function WorkflowEditor({
                                                 >
                                                     Apply
                                                 </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => useReactFlowUIStore.getState().toggleCodePanel()}
+                                                    title="Close code panel"
+                                                >
+                                                    ×
+                                                </Button>
                                             </div>
                                         </div>
                                         <TabsContent value="full" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto px-4">
+                                            <div className="absolute inset-0 overflow-auto">
                                                 <JsonEditor
                                                     value={codeContent}
                                                     onValueChange={(value) => {
@@ -542,7 +550,7 @@ export function WorkflowEditor({
                                             </div>
                                         </TabsContent>
                                         <TabsContent value="selected" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto px-4">
+                                            <div className="absolute inset-0 overflow-auto">
                                                 <JsonEditor
                                                     value={codeContent}
                                                     onValueChange={(value) => {
