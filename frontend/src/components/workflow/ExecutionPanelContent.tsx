@@ -1,10 +1,11 @@
 import { ExecutionFlowStatus, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { TabType } from './ExecutionPanelTabs'
 import { InspectTabContent } from './tabs/InspectTabContent'
-import { ExecutionLogEntry, LogsTabContent } from './tabs/LogsTabContent'
+import { LogsTabContent } from './tabs/LogsTabContent'
 import { ProgressTabContent } from './tabs/ProgressTabContent'
 import { ResultsTabContent } from './tabs/ResultsTabContent'
 import { TimelineTabContent } from './tabs/TimelineTabContent'
+import type { ExecutionLogEntry } from '@/types/execution'
 
 interface ExecutionPanelContentProps {
   activeTab: TabType
