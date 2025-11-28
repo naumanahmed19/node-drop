@@ -40,11 +40,16 @@ export class NodeService {
     nodeType: string,
     request: TestNodeRequest
   ): Promise<TestNodeResponse> {
-    const response = await apiClient.post<TestNodeResponse>(
-      `/nodes/${nodeType}/test`,
+    const response = await apiClient.post<any>(
+      `/nodes/${nodeType}/execute`,
       request
     );
-    return response.data || { success: false, error: "Unknown error" };
+    // Backend returns { success: true/false, data: {...}, error: {...} }
+    return {
+      success: response.success || false,
+      data: response.data,
+      error: typeof response.error === 'string' ? response.error : response.error?.message,
+    };
   }
 
   async validateNodeParameters(
