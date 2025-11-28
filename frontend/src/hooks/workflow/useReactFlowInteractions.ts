@@ -405,18 +405,15 @@ export function useReactFlowInteractions() {
   }, []);
 
   // Handle node drop from palette
+  /**
+   * Handle dropping a node from the sidebar onto the canvas
+   * Uses React Flow's standard drag and drop pattern
+   */
   const handleDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
 
       if (!reactFlowInstance) return;
-
-      // Get the ReactFlow wrapper element from the DOM
-      const reactFlowWrapper = document.querySelector(
-        ".react-flow"
-      ) as HTMLElement;
-      const reactFlowBounds = reactFlowWrapper?.getBoundingClientRect();
-      if (!reactFlowBounds) return;
 
       const nodeTypeData = event.dataTransfer.getData("application/reactflow");
       if (!nodeTypeData) return;
@@ -424,49 +421,37 @@ export function useReactFlowInteractions() {
       try {
         const nodeType: NodeType & { isTemplate?: boolean; templateData?: any } = JSON.parse(nodeTypeData);
 
-        console.log('🎯 Node dropped:', {
-          type: nodeType.identifier,
-          isTemplate: nodeType.isTemplate,
-          hasTemplateData: !!nodeType.templateData,
-          templateData: nodeType.templateData
-        });
-
+        // Convert screen coordinates to flow coordinates
         const position = reactFlowInstance.screenToFlowPosition({
-          x: event.clientX - reactFlowBounds.left,
-          y: event.clientY - reactFlowBounds.top,
+          x: event.clientX,
+          y: event.clientY,
         });
 
-        // Check if this is a template node
+        // Handle template nodes
         if (isTemplateNode(nodeType)) {
           handleTemplateExpansion(nodeType, position);
-          return; // Exit early for templates
-        } else {
-          // Regular node drop (not a template)
-          // Initialize parameters with defaults from node type and properties
-          const parameters: Record<string, any> = { ...nodeType.defaults };
-
-          // Add default values from properties
-          nodeType.properties.forEach((property) => {
-            if (
-              property.default !== undefined &&
-              parameters[property.name] === undefined
-            ) {
-              parameters[property.name] = property.default;
-            }
-          });
-
-          const newNode: WorkflowNode = {
-            id: `node-${Date.now()}`,
-            type: nodeType.identifier,
-            name: nodeType.displayName,
-            parameters,
-            position,
-            credentials: [],
-            disabled: false,
-          };
-
-          addNode(newNode);
+          return;
         }
+
+        // Create regular node with default parameters
+        const parameters: Record<string, any> = { ...nodeType.defaults };
+        nodeType.properties.forEach((property) => {
+          if (property.default !== undefined && parameters[property.name] === undefined) {
+            parameters[property.name] = property.default;
+          }
+        });
+
+        const newNode: WorkflowNode = {
+          id: `node-${Date.now()}`,
+          type: nodeType.identifier,
+          name: nodeType.displayName,
+          parameters,
+          position,
+          credentials: [],
+          disabled: false,
+        };
+
+        addNode(newNode);
       } catch (error) {
         console.error("Failed to parse dropped node data:", error);
       }

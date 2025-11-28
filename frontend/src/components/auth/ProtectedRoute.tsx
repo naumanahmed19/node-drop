@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/stores'
+import { useAuthStore, usePinnedNodesStore } from '@/stores'
 import { socketService } from '@/services/socket'
 import { Loader2 } from 'lucide-react'
 import React, { useEffect } from 'react'
@@ -29,18 +29,25 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     // Remove automatic guest login - users must explicitly choose guest mode
   }, [token, isAuthenticated, isLoading, getCurrentUser, hasTriedAuth])
 
-  // Initialize socket connection when user is authenticated
+  // Initialize socket connection and pinned nodes when user is authenticated
+  const { initialize: initializePinnedNodes } = usePinnedNodesStore()
+  
   useEffect(() => {
     if (isAuthenticated && token && token !== 'guest-token') {
       // Initialize socket connection with current token
       socketService.initialize(token).catch(error => {
         console.error('Failed to initialize socket connection:', error)
       })
+      
+      // Initialize pinned nodes from user preferences
+      initializePinnedNodes().catch(error => {
+        console.error('Failed to initialize pinned nodes:', error)
+      })
     } else if (!isAuthenticated) {
       // Disconnect socket when user is not authenticated
       socketService.disconnect()
     }
-  }, [isAuthenticated, token])
+  }, [isAuthenticated, token, initializePinnedNodes])
 
   // Show loading spinner while checking authentication
   // Don't show loading for auth pages (login/register) as they have their own loading states

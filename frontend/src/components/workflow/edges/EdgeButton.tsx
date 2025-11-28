@@ -1,5 +1,5 @@
 import { useAddNodeDialogStore, useWorkflowStore } from '@/stores';
-import { EdgeLabelRenderer } from '@xyflow/react';
+import { EdgeLabelRenderer, useReactFlow } from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CSSProperties, useCallback } from 'react';
 
@@ -28,6 +28,7 @@ export function EdgeButton({
   onMouseLeave,
 }: EdgeButtonProps) {
   const { openDialog } = useAddNodeDialogStore();
+  const reactFlowInstance = useReactFlow();
   // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
   const workflow = useWorkflowStore(state => state.workflow);
   const removeConnection = useWorkflowStore(state => state.removeConnection);
@@ -36,15 +37,27 @@ export function EdgeButton({
   // Don't render buttons in read-only mode (only when viewing past execution)
   const isReadOnly = readOnly;
 
+  /**
+   * Handle clicking the + button on an edge (connection line)
+   * Opens the add node dialog to insert a new node between two connected nodes
+   * 
+   * Position calculation:
+   * - We don't pass screen coordinates (x, y) to openDialog()
+   * - Instead, calculateInsertBetweenPosition() will automatically:
+   *   1. Place the new node horizontally between source and target
+   *   2. Align it on the Y-axis with the source node
+   *   3. Shift downstream nodes to the right if needed to make space
+   * - This ensures consistent horizontal layout and proper auto-layout behavior
+   */
   const handleAddClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
       
-      // Open the dialog with insertion context
+      // Pass undefined position - let auto-layout handle positioning
       if (source && target) {
         openDialog(
-          { x, y },
+          undefined,
           {
             sourceNodeId: source,
             targetNodeId: target,
@@ -54,7 +67,7 @@ export function EdgeButton({
         );
       }
     },
-    [openDialog, x, y, source, target, sourceHandleId, targetHandleId]
+    [openDialog, source, target, sourceHandleId, targetHandleId]
   );
 
   const handleDeleteClick = useCallback(

@@ -10,7 +10,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { useSidebarContext } from '@/contexts'
 import { globalToastManager } from '@/hooks/useToast'
 import { nodeTypeService } from '@/services/nodeType'
-import { useNodeTypes } from '@/stores'
+import { useNodeTypes, usePinnedNodesStore } from '@/stores'
 import { NodeType } from '@/types'
 import {
   ChevronDown,
@@ -18,6 +18,8 @@ import {
   Command,
   FolderOpen,
   GripVertical,
+  Pin,
+  PinOff,
   Power,
   PowerOff,
   Trash2,
@@ -55,6 +57,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
     refetchNodeTypes,
     hasFetched
   } = useNodeTypes()
+  const { isPinned, togglePin } = usePinnedNodesStore()
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
   const [activeTab, setActiveTab] = useState<string>('available')
   const [processingNode, setProcessingNode] = useState<string | null>(null)
@@ -348,6 +351,11 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                       <div className="font-medium">
                         <div className="flex items-start gap-2 flex-wrap">
                           <span className="break-words min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{nodeType.displayName}</span>
+                          {isPinned(nodeType.identifier) && (
+                            <Badge variant="secondary" className="text-xs h-4 px-1 shrink-0">
+                              <Pin className="h-2 w-2" />
+                            </Badge>
+                          )}
                           {(nodeType as ExtendedNodeType).active === false && (
                             <Badge variant="outline" className="text-xs h-4 px-1 shrink-0">
                               <PowerOff className="h-2 w-2 mr-1" />
@@ -393,6 +401,21 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                       {nodeElement}
                     </ContextMenuTrigger>
                     <ContextMenuContent className="w-48">
+                      <ContextMenuItem
+                        onClick={() => togglePin(nodeType.identifier)}
+                      >
+                        {isPinned(nodeType.identifier) ? (
+                          <>
+                            <PinOff className="h-4 w-4 mr-2" />
+                            Unpin from Toolbar
+                          </>
+                        ) : (
+                          <>
+                            <Pin className="h-4 w-4 mr-2" />
+                            Pin to Toolbar
+                          </>
+                        )}
+                      </ContextMenuItem>
                       <ContextMenuItem
                         onClick={() => !isCore && handleToggleNodeStatus(nodeType)}
                         disabled={isCore || processingNode === nodeType.identifier}

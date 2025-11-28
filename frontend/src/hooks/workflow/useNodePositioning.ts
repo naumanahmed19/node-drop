@@ -85,6 +85,18 @@ export function useNodePositioning() {
     [reactFlowInstance]
   )
 
+  /**
+   * Calculate position when adding a service provider node (model, tool, memory)
+   * 
+   * Auto-layout strategy:
+   * - Place new node vertically below the target node
+   * - Align on X-axis with target node
+   * - Use smaller gap (SERVICE_GAP) for service connections
+   * - Find non-overlapping position if needed
+   * 
+   * This is used when clicking a node's service input handle (bottom/top + button)
+   * Example: Adding a model provider below an LLM node
+   */
   const calculateServiceInputPosition = useCallback(
     (targetNodeId: string): PositionResult => {
       const targetNode = reactFlowInstance?.getNode(targetNodeId)
@@ -96,7 +108,7 @@ export function useNodePositioning() {
 
       const targetHeight = targetNode.height || DEFAULT_NODE_HEIGHT
       const initialPosition = {
-        x: targetNode.position.x,
+        x: targetNode.position.x, // Align vertically
         y: targetNode.position.y + targetHeight + SERVICE_GAP,
       }
 
@@ -113,6 +125,20 @@ export function useNodePositioning() {
     [reactFlowInstance, findNonOverlappingPosition]
   )
 
+  /**
+   * Calculate position when adding a node from a source node's output handle
+   * 
+   * Two scenarios:
+   * 1. User dragged and dropped at a specific position - use that exact position
+   * 2. User clicked the + button - auto-position to the right of source node
+   * 
+   * Auto-layout strategy (when no position provided):
+   * - Place new node horizontally to the right of source
+   * - Align on Y-axis with source node
+   * - Find non-overlapping position if needed
+   * 
+   * This is used when clicking a node's output handle + button
+   */
   const calculateCanvasDropPosition = useCallback(
     (sourceNodeId: string, position?: { x: number; y: number }): PositionResult => {
       const sourceNode = reactFlowInstance?.getNode(sourceNodeId)
@@ -127,12 +153,12 @@ export function useNodePositioning() {
         }
       }
 
-      // Fallback: position to the right of source node
+      // Auto-layout: position to the right of source node
       if (sourceNode) {
         const sourceWidth = sourceNode.width || DEFAULT_NODE_WIDTH
         const initialPosition = {
           x: sourceNode.position.x + sourceWidth + DEFAULT_GAP,
-          y: sourceNode.position.y,
+          y: sourceNode.position.y, // Align horizontally
         }
 
         return {
@@ -155,6 +181,24 @@ export function useNodePositioning() {
     [reactFlowInstance, findNonOverlappingPosition]
   )
 
+  /**
+   * Calculate position when inserting a node between two connected nodes
+   * 
+   * Auto-layout strategy:
+   * 1. Place new node horizontally to the right of source node
+   * 2. Align new node on Y-axis with source node (horizontal alignment)
+   * 3. If target node is too close, shift it and all downstream nodes to the right
+   * 
+   * This ensures:
+   * - Nodes stay in a clean horizontal line
+   * - Proper spacing is maintained (DEFAULT_GAP)
+   * - Downstream nodes are automatically repositioned
+   * - No diagonal or misaligned layouts
+   * 
+   * Example:
+   * Before: [Source] -----> [Target]
+   * After:  [Source] -> [New] -> [Target (shifted if needed)]
+   */
   const calculateInsertBetweenPosition = useCallback(
     (
       sourceNodeId: string,
@@ -171,38 +215,23 @@ export function useNodePositioning() {
 
       const parentGroupId = sourceNode.parentId
       const sourceWidth = sourceNode.width || DEFAULT_NODE_WIDTH
-      const targetWidth = targetNode.width || DEFAULT_NODE_WIDTH
       const newNodeWidth = DEFAULT_NODE_WIDTH
-      const gap = SERVICE_GAP
+      const gap = DEFAULT_GAP
 
-      // Calculate the vector from source to target
-      const deltaX = targetNode.position.x - sourceNode.position.x
-      const deltaY = targetNode.position.y - sourceNode.position.y
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+      // Calculate new node position - horizontally to the right of source, aligned on Y-axis
+      const newNodeX = sourceNode.position.x + sourceWidth + gap
+      const newNodeY = sourceNode.position.y // Keep same Y position for horizontal alignment
 
-      // Calculate direction vector (normalized)
-      const directionX = deltaX / distance
-      const directionY = deltaY / distance
+      // Calculate how much space we need for: source + gap + newNode + gap
+      const spaceNeeded = newNodeX + newNodeWidth + gap
+      const currentTargetX = targetNode.position.x
 
-      // Calculate minimum distance needed for all three nodes
-      const minDistanceNeeded = sourceWidth + gap + newNodeWidth + gap
+      // Check if we need to shift the target node to make room
+      if (currentTargetX < spaceNeeded) {
+        const shiftAmount = spaceNeeded - currentTargetX
 
-      let nodePosition: { x: number; y: number }
-
-      if (distance >= minDistanceNeeded + targetWidth) {
-        // Enough space - place in the middle
-        const distanceFromSource = sourceWidth + gap
-        nodePosition = {
-          x: sourceNode.position.x + directionX * distanceFromSource,
-          y: sourceNode.position.y + directionY * distanceFromSource,
-        }
-      } else {
-        // Not enough space - shift target and downstream nodes
-        const additionalSpace = minDistanceNeeded - distance + targetWidth
-        const shiftX = directionX * additionalSpace
-        const shiftY = directionY * additionalSpace
-
-        // Helper function to recursively shift nodes
+        // Helper function to recursively shift nodes to the right
+        // This maintains the workflow structure by shifting all downstream nodes
         const shiftNodeAndDownstream = (
           nodeId: string,
           visited = new Set<string>()
@@ -213,15 +242,17 @@ export function useNodePositioning() {
           const node = reactFlowInstance?.getNode(nodeId)
           if (!node) return
 
-          // Shift this node
+          // Shift this node horizontally to the right only
+          // Y position stays the same to maintain horizontal alignment
           updateNode(nodeId, {
             position: {
-              x: node.position.x + shiftX,
-              y: node.position.y + shiftY,
+              x: node.position.x + shiftAmount,
+              y: node.position.y, // Keep Y position unchanged
             },
           })
 
           // Find all connections where this node is the source and shift their targets
+          // This recursively shifts the entire downstream chain
           workflow?.connections.forEach((conn: any) => {
             if (conn.sourceNodeId === nodeId) {
               shiftNodeAndDownstream(conn.targetNodeId, visited)
@@ -231,16 +262,12 @@ export function useNodePositioning() {
 
         // Start shifting from the target node
         shiftNodeAndDownstream(targetNodeId)
-
-        // Now position the new node
-        const distanceFromSource = sourceWidth + gap
-        nodePosition = {
-          x: sourceNode.position.x + directionX * distanceFromSource,
-          y: sourceNode.position.y + directionY * distanceFromSource,
-        }
       }
 
-      return { nodePosition, parentGroupId }
+      return { 
+        nodePosition: { x: newNodeX, y: newNodeY }, 
+        parentGroupId 
+      }
     },
     [reactFlowInstance]
   )
@@ -274,6 +301,32 @@ export function useNodePositioning() {
     [reactFlowInstance, findNonOverlappingPosition]
   )
 
+  /**
+   * Main entry point for calculating node position based on insertion context
+   * 
+   * Routing logic:
+   * 1. No insertion context:
+   *    - If one node selected: position to the right of it
+   *    - If position provided: use that exact position
+   *    - Otherwise: center of viewport
+   * 
+   * 2. Service input connection (targetNodeId only):
+   *    - Position below the target node (vertical layout)
+   *    - Used for adding service providers (model, tool, memory)
+   * 
+   * 3. Canvas drop connection (sourceNodeId only):
+   *    - Position to the right of source node (horizontal layout)
+   *    - Used when clicking node output handle + button
+   * 
+   * 4. Insert between nodes (both sourceNodeId and targetNodeId):
+   *    - Position between source and target with auto-layout
+   *    - Shift downstream nodes if needed
+   *    - Used when clicking edge + button
+   * 
+   * Important: We don't pass screen coordinates from UI events
+   * Instead, we let these functions calculate proper flow coordinates
+   * This ensures consistent auto-layout and prevents positioning bugs
+   */
   const calculateNodePosition = useCallback(
     (
       params: PositionCalculationParams,
@@ -310,7 +363,7 @@ export function useNodePositioning() {
         }
       }
 
-      // Service input connection
+      // Service input connection (targetNodeId only)
       const isServiceInputConnection =
         insertionContext.targetNodeId && !insertionContext.sourceNodeId
 
@@ -318,12 +371,12 @@ export function useNodePositioning() {
         return calculateServiceInputPosition(insertionContext.targetNodeId)
       }
 
-      // Canvas drop connection
+      // Canvas drop connection (sourceNodeId only)
       if (insertionContext.sourceNodeId && !insertionContext.targetNodeId) {
         return calculateCanvasDropPosition(insertionContext.sourceNodeId, position)
       }
 
-      // Insert between nodes
+      // Insert between nodes (both sourceNodeId and targetNodeId)
       if (insertionContext.targetNodeId && insertionContext.sourceNodeId) {
         return calculateInsertBetweenPosition(
           insertionContext.sourceNodeId,

@@ -13,6 +13,7 @@ export interface UserPreferences {
     canvasBoundaryY?: number;
   };
   theme?: "light" | "dark" | "system";
+  pinnedNodes?: string[]; // Array of node type identifiers
   // Future: language, etc.
 }
 
@@ -88,6 +89,22 @@ export class UserService {
       }
     );
     return response.data?.preferences || {};
+  }
+
+  /**
+   * Get pinned nodes from user preferences
+   */
+  async getPinnedNodes(): Promise<string[]> {
+    const preferences = await this.getPreferences();
+    return preferences.pinnedNodes || [];
+  }
+
+  /**
+   * Update pinned nodes in user preferences
+   */
+  async updatePinnedNodes(pinnedNodes: string[]): Promise<string[]> {
+    const preferences = await this.patchPreferences({ pinnedNodes });
+    return preferences.pinnedNodes || [];
   }
 }
 

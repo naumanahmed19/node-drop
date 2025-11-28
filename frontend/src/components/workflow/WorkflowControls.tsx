@@ -1,11 +1,13 @@
+import { NodeIconRenderer } from '@/components/common/NodeIconRenderer'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { useAddNodeDialogStore, useWorkflowStore } from '@/stores'
-import { WorkflowNode } from '@/types'
+import { useAddNodeDialogStore, useNodeTypes, usePinnedNodesStore, useWorkflowStore } from '@/stores'
+import { NodeType, WorkflowNode } from '@/types'
+import { createWorkflowNode } from '@/utils/nodeCreation'
 import { canExecuteWorkflow } from '@/utils/workflowExecutionGuards'
 import { useReactFlow, useStore } from '@xyflow/react'
 import { Box, Maximize2, MessageSquare, Plus, Redo, Undo, ZoomIn, ZoomOut } from 'lucide-react'
-import { ReactNode, useCallback, useState } from 'react'
+import { ReactNode, useCallback, useMemo, useState } from 'react'
 import { WorkflowExecuteButton } from './WorkflowExecuteButton'
 
 interface WorkflowControlsProps {
@@ -18,8 +20,17 @@ interface WorkflowControlsProps {
 export function WorkflowControls({ className, showAddNode = true, showExecute = true, showUndoRedo = true }: WorkflowControlsProps) {
   const { zoomIn, zoomOut, fitView, screenToFlowPosition, setNodes, getNodes, getNodesBounds } = useReactFlow()
   const { openDialog } = useAddNodeDialogStore()
-  const { workflow, undo, redo, canUndo, canRedo, updateWorkflow, saveToHistory, setDirty } = useWorkflowStore()
+  const { workflow, undo, redo, canUndo, canRedo, updateWorkflow, saveToHistory, setDirty, addNode } = useWorkflowStore()
   const [isSaving] = useState(false)
+  const { pinnedNodeIds } = usePinnedNodesStore()
+  const { getNodeTypeById } = useNodeTypes()
+
+  // Get pinned node types
+  const pinnedNodeTypes = useMemo(() => {
+    return pinnedNodeIds
+      .map(id => getNodeTypeById(id))
+      .filter((nodeType): nodeType is NodeType => nodeType !== undefined)
+  }, [pinnedNodeIds, getNodeTypeById])
 
   // Get selected nodes count for the group button
   // Only count top-level, non-group nodes that are selected
@@ -50,6 +61,34 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
     // Open add node dialog at center
     openDialog(viewportCenter)
   }
+
+  const handleAddPinnedNode = useCallback((nodeType: NodeType) => {
+    // Take snapshot for undo/redo
+    saveToHistory(`Add pinned node: ${nodeType.displayName}`)
+
+    // Calculate center of viewport
+    const viewportCenter = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    })
+
+    // Create the workflow node
+    const workflowNode = createWorkflowNode(nodeType, viewportCenter)
+
+    // Add to Zustand workflow store (this will trigger sync to React Flow)
+    addNode(workflowNode)
+    setDirty(true)
+
+    // Auto-select the newly added node after a brief delay to ensure it's rendered
+    setTimeout(() => {
+      setNodes((nodes) =>
+        nodes.map((node) => ({
+          ...node,
+          selected: node.id === workflowNode.id,
+        }))
+      )
+    }, 50)
+  }, [screenToFlowPosition, saveToHistory, setNodes, addNode, setDirty])
 
   const handleAddGroup = () => {
     // Take snapshot for undo/redo
@@ -276,6 +315,36 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
             onExecute={handleExecuteWorkflow}
             disabled={isSaving}
           />
+          <div className="mx-1 h-6 w-px bg-border" />
+        </>
+      )}
+
+      {/* Pinned Nodes */}
+      {pinnedNodeTypes.length > 0 && (
+        <>
+          {pinnedNodeTypes.map((nodeType) => (
+            <Tooltip key={nodeType.identifier}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => handleAddPinnedNode(nodeType)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  aria-label={`Add ${nodeType.displayName}`}
+                >
+                  <NodeIconRenderer
+                    icon={nodeType.icon}
+                    nodeType={nodeType.identifier}
+                    nodeGroup={nodeType.group}
+                    displayName={nodeType.displayName}
+                    backgroundColor={nodeType.color}
+                    size="sm"
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p>Add {nodeType.displayName}</p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
           <div className="mx-1 h-6 w-px bg-border" />
         </>
       )}
