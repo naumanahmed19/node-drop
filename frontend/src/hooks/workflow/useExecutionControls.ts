@@ -81,14 +81,6 @@ export function useExecutionControls() {
     [getExecutionFlowStatus]
   );
 
-  // Get execution metrics
-  const getExecutionMetrics = useCallback(
-    (executionId: string) => {
-      return progressTracker.getExecutionMetrics(executionId);
-    },
-    [progressTracker]
-  );
-
   return {
     // Execution methods
     executeNode: handleExecuteNode,
@@ -99,7 +91,6 @@ export function useExecutionControls() {
     // Getters
     getNodeResult,
     getFlowStatus,
-    getExecutionMetrics,
 
     // State
     executionState,

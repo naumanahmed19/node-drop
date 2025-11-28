@@ -1,8 +1,7 @@
-import { ExecutionFlowStatus, ExecutionMetrics, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
+import { ExecutionFlowStatus, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { TabType } from './ExecutionPanelTabs'
 import { InspectTabContent } from './tabs/InspectTabContent'
 import { ExecutionLogEntry, LogsTabContent } from './tabs/LogsTabContent'
-import { MetricsTabContent } from './tabs/MetricsTabContent'
 import { ProgressTabContent } from './tabs/ProgressTabContent'
 import { ResultsTabContent } from './tabs/ResultsTabContent'
 import { TimelineTabContent } from './tabs/TimelineTabContent'
@@ -14,7 +13,6 @@ interface ExecutionPanelContentProps {
   executionLogs: ExecutionLogEntry[]
   realTimeResults: Map<string, NodeExecutionResult>
   flowExecutionStatus?: ExecutionFlowStatus | null
-  executionMetrics?: ExecutionMetrics | null
   onClearLogs?: () => void
 }
 
@@ -25,7 +23,6 @@ export function ExecutionPanelContent({
   executionLogs,
   realTimeResults,
   flowExecutionStatus,
-  executionMetrics,
   onClearLogs
 }: ExecutionPanelContentProps) {
   // Get current and final results for display
@@ -44,10 +41,6 @@ export function ExecutionPanelContent({
           flowExecutionStatus={flowExecutionStatus}
           realTimeResults={realTimeResults}
         />
-      )}
-      
-      {activeTab === 'metrics' && (
-        <MetricsTabContent executionMetrics={executionMetrics} />
       )}
       
       {activeTab === 'logs' && (

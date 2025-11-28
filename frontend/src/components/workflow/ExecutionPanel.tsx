@@ -1,4 +1,4 @@
-import { ExecutionFlowStatus, ExecutionLogEntry, ExecutionMetrics, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
+import { ExecutionFlowStatus, ExecutionLogEntry, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { useState } from 'react'
 import { ExecutionPanelContent } from './ExecutionPanelContent'
 import { ExecutionPanelHeader } from './ExecutionPanelHeader'
@@ -10,7 +10,6 @@ interface ExecutionPanelProps {
   executionLogs: ExecutionLogEntry[]
   realTimeResults: Map<string, NodeExecutionResult>
   flowExecutionStatus?: ExecutionFlowStatus | null
-  executionMetrics?: ExecutionMetrics | null
   isExpanded?: boolean
   onToggle?: () => void
   onClose?: () => void
@@ -23,7 +22,6 @@ export function ExecutionPanel({
   executionLogs,
   realTimeResults,
   flowExecutionStatus,
-  executionMetrics,
   isExpanded = true,
   onToggle,
   onClose,
@@ -67,7 +65,6 @@ export function ExecutionPanel({
             executionLogs={executionLogs}
             realTimeResults={realTimeResults}
             flowExecutionStatus={flowExecutionStatus}
-            executionMetrics={executionMetrics}
             onClearLogs={onClearLogs}
           />
         </div>

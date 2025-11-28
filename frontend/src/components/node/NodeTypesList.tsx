@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from 'react'
 interface ExtendedNodeType extends NodeType {
   id?: string;
   active?: boolean;
+  isCore?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -193,6 +194,12 @@ export function NodeTypesList({ }: NodeTypesListProps) {
     setDeleteDialogOpen(true);
   };
 
+  // Check if a node is a core system node that cannot be deleted
+  const isCoreNode = (nodeType: NodeType): boolean => {
+    const extendedNode = nodeType as ExtendedNodeType;
+    return extendedNode.isCore === true;
+  };
+
   // Delete/uninstall a custom node
   const handleDeleteNode = async () => {
     if (!nodeToDelete) return;
@@ -201,25 +208,7 @@ export function NodeTypesList({ }: NodeTypesListProps) {
     setDeleteDialogOpen(false);
 
     try {
-      console.log('Attempting to delete node:', nodeToDelete.identifier);
-      console.log('Full node details:', nodeToDelete);
-
-      // Check if this is a database node (has id) vs a service node (only has identifier)
-      const extendedNode = nodeToDelete as ExtendedNodeType;
-      console.log('Extended node properties:', {
-        id: extendedNode.id,
-        identifier: nodeToDelete.identifier,
-        hasId: !!extendedNode.id,
-        createdAt: extendedNode.createdAt
-      });
-
-      // For database nodes, we might need to check if they actually exist in the database
-      if (!extendedNode.id || !extendedNode.createdAt) {
-        throw new Error('This appears to be a core system node that cannot be uninstalled. Only custom uploaded nodes can be removed.');
-      }
-
       await nodeTypeService.deleteNodeType(nodeToDelete.identifier);
-      console.log('Delete successful');
 
       globalToastManager.showSuccess(
         'Node Uninstalled',
@@ -231,18 +220,11 @@ export function NodeTypesList({ }: NodeTypesListProps) {
 
     } catch (error: any) {
       console.error('Failed to delete node:', error);
-      console.error('Error details:', {
-        status: error?.response?.status,
-        statusText: error?.response?.statusText,
-        data: error?.response?.data,
-        message: error?.message,
-        url: error?.config?.url
-      });
 
       let errorMessage = `Failed to uninstall ${nodeToDelete.displayName}`;
 
       if (error?.response?.status === 404) {
-        errorMessage = 'This node was not found in the database. It may be a core system node that cannot be uninstalled, or it may have already been removed.';
+        errorMessage = 'This node was not found in the database.';
       } else if (error?.response?.status === 401) {
         errorMessage = 'You are not authorized to delete this node.';
       } else if (error?.response?.status === 403) {
@@ -401,7 +383,8 @@ export function NodeTypesList({ }: NodeTypesListProps) {
 
                 // Check if this is a deletable custom node
                 const extendedNode = nodeType as ExtendedNodeType;
-                const isDeletable = !!(extendedNode.id && extendedNode.createdAt);
+                const isCore = isCoreNode(nodeType);
+                const isDeletable = !isCore && !!(extendedNode.id && extendedNode.createdAt);
 
                 // Wrap with context menu
                 return (
@@ -411,8 +394,8 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                     </ContextMenuTrigger>
                     <ContextMenuContent className="w-48">
                       <ContextMenuItem
-                        onClick={() => handleToggleNodeStatus(nodeType)}
-                        disabled={processingNode === nodeType.identifier}
+                        onClick={() => !isCore && handleToggleNodeStatus(nodeType)}
+                        disabled={isCore || processingNode === nodeType.identifier}
                       >
                         {(nodeType as ExtendedNodeType).active !== false ? (
                           <>
@@ -427,21 +410,12 @@ export function NodeTypesList({ }: NodeTypesListProps) {
                         )}
                       </ContextMenuItem>
                       <ContextMenuItem
-                        onClick={() => {
-                          if (isDeletable) {
-                            showDeleteDialog(nodeType);
-                          } else {
-                            globalToastManager.showError(
-                              'Cannot Uninstall',
-                              { message: 'This is a core system node that cannot be uninstalled. Only custom uploaded nodes can be removed.' }
-                            );
-                          }
-                        }}
-                        disabled={processingNode === nodeType.identifier}
-                        className={isDeletable ? "text-destructive focus:text-destructive" : "text-muted-foreground"}
+                        onClick={() => isDeletable && showDeleteDialog(nodeType)}
+                        disabled={!isDeletable || processingNode === nodeType.identifier}
+                        className={isDeletable ? "text-destructive focus:text-destructive" : ""}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
-                        {isDeletable ? 'Uninstall Node' : 'Cannot Uninstall (Core)'}
+                        Uninstall Node
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>

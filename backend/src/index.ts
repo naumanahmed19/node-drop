@@ -272,33 +272,6 @@ async function initializeNodeSystems() {
       } catch (registrationError) {
         console.error("Failed to register nodes:", registrationError);
       }
-    } else {
-      // Nodes already registered
-
-      // Even if some nodes were found, try to register any missing ones
-      try {
-        // Import and use node discovery directly
-        const { nodeDiscovery } = await import("./utils/NodeDiscovery");
-        const allNodeDefinitions = await nodeDiscovery.getAllNodeDefinitions();
-
-        let newRegistrations = 0;
-        for (const nodeDefinition of allNodeDefinitions) {
-          try {
-            const result = await nodeService.registerNode(nodeDefinition);
-            if (result.success) {
-              newRegistrations++;
-            }
-          } catch (error) {
-            // Silently continue on registration errors
-          }
-        }
-
-        if (newRegistrations > 0) {
-          console.log(`✅ Registered ${newRegistrations} nodes`);
-        }
-      } catch (registrationError) {
-        console.warn("Failed to register additional nodes");
-      }
     }
 
     // Then, load custom nodes

@@ -222,6 +222,22 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
   try {
     const { packageName } = req.params;
 
+    // Check if this is a core node that cannot be deleted
+    const coreNodeCheck = await prisma.nodeType.findFirst({
+      where: {
+        identifier: packageName,
+        isCore: true,
+      },
+    });
+
+    if (coreNodeCheck) {
+      logger.warn("Attempted to delete core node", { packageName });
+      return res.status(403).json({
+        success: false,
+        error: `Cannot delete core system node: ${packageName}. Core nodes are essential to the system and cannot be uninstalled.`,
+      });
+    }
+
     logger.info("Starting node package uninstall", { packageName });
 
     // Step 1: Check if package directory exists (but allow deletion even if it doesn't)
@@ -378,6 +394,14 @@ router.delete("/packages/:packageName", async (req: Request, res: Response) => {
     const deletedNodeTypes = [];
     for (const nodeType of packageNodeTypes) {
       try {
+        // Double-check that this is not a core node
+        if (nodeType.isCore) {
+          const errorMsg = `Skipped deletion of core node: ${nodeType.identifier}`;
+          logger.warn(errorMsg);
+          errors.push(errorMsg);
+          continue;
+        }
+
         await prisma.nodeType.delete({
           where: { identifier: nodeType.identifier },
         });
@@ -748,6 +772,22 @@ router.patch("/templates/:type", async (req: Request, res: Response) => {
 router.delete("/templates/:type", async (req: Request, res: Response) => {
   try {
     const { type } = req.params;
+
+    // Check if this is a core node that cannot be deleted
+    const coreNodeCheck = await prisma.nodeType.findFirst({
+      where: {
+        identifier: type,
+        isCore: true,
+      },
+    });
+
+    if (coreNodeCheck) {
+      logger.warn("Attempted to delete core node as template", { type });
+      return res.status(403).json({
+        success: false,
+        error: `Cannot delete core system node: ${type}. Core nodes are essential to the system and cannot be uninstalled.`,
+      });
+    }
 
     const result = await prisma.nodeType.deleteMany({
       where: {
