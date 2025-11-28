@@ -166,3 +166,32 @@
 .node-glow-queued {
   animation: glow-pulse-queued 3s ease-in-out infinite;
 }
+
+/* Config toolbar hover visibility */
+.config-toolbar-hover {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.config-toolbar-hover:hover,
+.config-toolbar-hover:focus-within {
+  opacity: 1;
+}
+
+/* Show config toolbar when parent node is hovered */
+.react-flow__node:hover + .react-flow__node-toolbar .config-toolbar-hover,
+.react-flow__node.selected .config-toolbar-hover {
+  opacity: 1;
+}
+
+/* Output button hover visibility */
+.output-button-wrapper {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Show output button on node hover or when toolbar is hovered */
+.node-toolbar-container:hover .output-button-wrapper,
+.output-button-wrapper:has([data-state="open"]) {
+  opacity: 1;
+}
