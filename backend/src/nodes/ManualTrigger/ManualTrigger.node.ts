@@ -41,7 +41,7 @@ export const ManualTriggerNode: NodeDefinition = {
   version: 1,
   description:
     "Triggers workflow execution manually when requested by the user",
-  icon: "?",
+  icon: "lucide:mouse-pointer-click",
   color: "#4CAF50",
   defaults: {
     description: "",

@@ -34,6 +34,7 @@ import {
   Mail,
   MessageCircle,
   MessageSquare,
+  MousePointerClick,
   PanelTop,
   Phone,
   Play,
@@ -90,6 +91,7 @@ const LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   link: Link,
   phone: Phone,
   "phone-call": Phone,
+  "mouse-pointer-click": MousePointerClick,
 
   // Action icons
   globe: Globe,

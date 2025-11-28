@@ -144,41 +144,49 @@ export const ChatInterfaceNode = memo(function ChatInterfaceNode({ data, selecte
       const userMessage = chatNode?.parameters?.userMessage
       
       if (userMessage) {
-        // Check if this message already exists in history
         const currentMessages = (parameters.conversationHistory as Message[]) || []
-        const userMsgId = `${executionId}-user`
-        const alreadyExists = currentMessages.some(msg => msg.id === userMsgId)
         
-        if (alreadyExists) {
+        // Check if we already have a user message with this execution ID
+        const userMsgId = `${executionId}-user`
+        const hasUserMsg = currentMessages.some(msg => msg.id === userMsgId)
+        
+        // Get AI response if available
+        const aiResponse = getConnectedNodeResponse()
+        const assistantMsgId = `${executionId}-assistant`
+        const hasAssistantMsg = currentMessages.some(msg => msg.id === assistantMsgId)
+        
+        // If both messages already exist, we're done
+        if (hasUserMsg && (hasAssistantMsg || !aiResponse)) {
           setLastProcessedExecutionId(executionId)
           processingRef.current = false
           return
         }
         
-        const newMessages: Message[] = []
+        let updatedHistory = [...currentMessages]
         
-        // Add user message - ensure it's a string
-        newMessages.push({
-          id: userMsgId,
-          role: 'user',
-          content: typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage),
-          timestamp: new Date(chatNodeResult.startTime || Date.now())
-        })
+        // Replace temporary user message with permanent one (if not already added)
+        if (!hasUserMsg) {
+          // Find and remove any temporary user message
+          updatedHistory = updatedHistory.filter(msg => !msg.id.startsWith('temp-'))
+          
+          // Add permanent user message
+          updatedHistory.push({
+            id: userMsgId,
+            role: 'user',
+            content: typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage),
+            timestamp: new Date(chatNodeResult.startTime || Date.now())
+          })
+        }
         
-        // Add AI response if available
-        const aiResponse = getConnectedNodeResponse()
-        
-        if (aiResponse) {
-          newMessages.push({
-            id: `${executionId}-assistant`,
+        // Add AI response if available and not already added
+        if (aiResponse && !hasAssistantMsg) {
+          updatedHistory.push({
+            id: assistantMsgId,
             role: 'assistant',
             content: typeof aiResponse === 'string' ? aiResponse : JSON.stringify(aiResponse),
             timestamp: new Date(chatNodeResult.endTime || Date.now())
           })
         }
-        
-        // Append to conversation history
-        const updatedHistory = [...currentMessages, ...newMessages]
         
         // Update node parameters with new conversation history
         updateNode(id, {
@@ -264,10 +272,21 @@ export const ChatInterfaceNode = memo(function ChatInterfaceNode({ data, selecte
     }, 0)
 
     try {
+      // Optimistically add user message to conversation history immediately
+      const userMessage: Message = {
+        id: `temp-${Date.now()}`, // Temporary ID, will be replaced after execution
+        role: 'user',
+        content: messageToSend,
+        timestamp: new Date()
+      }
+      
+      const updatedHistory = [...storedMessages, userMessage]
+      
       updateNode(id, {
         parameters: {
           ...parameters,
-          userMessage: messageToSend
+          userMessage: messageToSend,
+          conversationHistory: updatedHistory
         },
         disabled: false
       })

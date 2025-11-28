@@ -1,6 +1,6 @@
-import { Activity, BarChart3, Clock } from 'lucide-react'
+import { Activity, Clock, Search } from 'lucide-react'
 
-type TabType = 'progress' | 'timeline' | 'metrics' | 'logs' | 'results'
+type TabType = 'progress' | 'timeline' | 'logs' | 'results' | 'inspect'
 
 interface ExecutionPanelTabsProps {
   activeTab: TabType
@@ -42,14 +42,6 @@ export function ExecutionPanelTabs({
       </button>
       
       <button
-        onClick={() => onTabChange('metrics')}
-        className={`${getTabClassName('metrics')} flex items-center space-x-1`}
-      >
-        <BarChart3 className="w-4 h-4" />
-        <span>Metrics</span>
-      </button>
-      
-      <button
         onClick={() => onTabChange('logs')}
         className={getTabClassName('logs')}
       >
@@ -61,6 +53,14 @@ export function ExecutionPanelTabs({
         className={getTabClassName('results')}
       >
         Results ({resultsCount})
+      </button>
+      
+      <button
+        onClick={() => onTabChange('inspect')}
+        className={`${getTabClassName('inspect')} flex items-center space-x-1`}
+      >
+        <Search className="w-4 h-4" />
+        <span>Inspect</span>
       </button>
     </div>
   )

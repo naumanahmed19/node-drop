@@ -2622,10 +2622,15 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
           case "node-completed":
             if (data.nodeId && data.executionId) {
               // Extract the actual output data from the node execution result
-              // data.data contains the full node execution result: { nodeId, status, data, duration }
-              // We need to extract just the 'data' property which contains the actual output
+              // Socket event structure: data.data = NodeExecutionResult { identifier, status, data: StandardizedNodeOutput, duration }
+              // StandardizedNodeOutput = { main: [], branches: {}, metadata: {} }
               const nodeExecutionResult = data.data;
-              const actualOutputData = nodeExecutionResult?.data || nodeExecutionResult?.outputData || nodeExecutionResult;
+              
+              // The standardized output is in nodeExecutionResult.data
+              const standardizedOutput = nodeExecutionResult?.data || nodeExecutionResult?.outputData || nodeExecutionResult;
+              
+              // For backward compatibility, also use the main array as actualOutputData
+              const actualOutputData = standardizedOutput;
               
               // Update node execution result for Results tab
               get().updateNodeExecutionResult(data.nodeId, {
@@ -2897,6 +2902,34 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             }
 
             get().setExecutionError(data.error?.message || "Execution failed");
+            break;
+
+          case "execution-log":
+            // Handle detailed execution logs (tool calls, service calls, etc.)
+            if (data.executionId) {
+              const timestamp = typeof data.timestamp === 'string' 
+                ? data.timestamp 
+                : new Date(data.timestamp).toISOString();
+
+              const logEntry = {
+                executionId: data.executionId,
+                nodeId: data.nodeId,
+                level: data.level || 'info',
+                message: data.message || '',
+                timestamp,
+                data: data.data,
+              };
+
+              console.log('📝 [Frontend] execution-log event received:', {
+                executionId: logEntry.executionId,
+                nodeId: logEntry.nodeId,
+                level: logEntry.level,
+                message: logEntry.message,
+                hasToolCall: !!logEntry.data?.toolCall,
+              });
+
+              get().addExecutionLog(logEntry);
+            }
             break;
         }
       },

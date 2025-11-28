@@ -14,7 +14,7 @@ export const ScheduleTriggerNode: NodeDefinition = {
   version: 1,
   description:
     "Triggers workflow execution on a schedule using cron expressions or specific date/time",
-  icon: "?",
+  icon: "lucide:calendar",
   color: "#9C27B0",
   defaults: {
     scheduleMode: "simple",

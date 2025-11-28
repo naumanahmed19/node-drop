@@ -153,7 +153,6 @@ export function WorkflowEditor({
         executionLogs,
         getNodeResult,
         getFlowStatus,
-        getExecutionMetrics,
         clearLogs,
     } = useExecutionControls()
 
@@ -188,10 +187,9 @@ export function WorkflowEditor({
     } = useCodePanel({ workflow, nodes, isCodeMode })
 
     // Execution panel data
-    const { flowExecutionStatus, executionMetrics } = useExecutionPanelData({
+    const { flowExecutionStatus } = useExecutionPanelData({
         executionId: executionState.executionId,
         getFlowStatus,
-        getExecutionMetrics,
     })
 
     // Sync ReactFlow instance to store (hook gets it automatically via useReactFlow)
@@ -479,7 +477,6 @@ export function WorkflowEditor({
                                             executionLogs={executionLogs}
                                             realTimeResults={realTimeResults}
                                             flowExecutionStatus={flowExecutionStatus}
-                                            executionMetrics={executionMetrics}
                                             isExpanded={showExecutionPanel}
                                             onToggle={toggleExecutionPanel}
                                             onClearLogs={clearLogs}

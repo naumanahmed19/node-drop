@@ -11,16 +11,19 @@ import {
   AlertCircle,
   Copy,
   Database,
+  Download,
   Edit,
   Pin,
   PinOff,
-  Table as TableIcon
+  Table as TableIcon,
+  ScrollText
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ImagePreviewOutput } from './output-components/ImagePreviewOutput'
 import { getOutputComponent } from './output-components/OutputComponentRegistry'
 import { TableView } from './output-components/TableView'
+import { LogsTabContent } from '../tabs/LogsTabContent'
 
 interface OutputColumnProps {
   node: WorkflowNode
@@ -28,8 +31,8 @@ interface OutputColumnProps {
 }
 
 export function OutputColumn({ node }: OutputColumnProps) {
-  const [viewMode, setViewMode] = useState<'json' | 'table'>('json')
-  const { getNodeExecutionResult } = useWorkflowStore()
+  const [viewMode, setViewMode] = useState<'json' | 'table' | 'logs'>('json')
+  const { getNodeExecutionResult, executionLogs } = useWorkflowStore()
   const { getNodeTypeById } = useNodeTypesStore()
   const {
     mockData,
@@ -129,6 +132,43 @@ export function OutputColumn({ node }: OutputColumnProps) {
   const isShowingMockData = mockDataPinned && mockData
   const isBranchingNode = displayData?.type === 'branches'
 
+  // Helper to detect if data contains downloadable content
+  const hasDownloadableContent = (data: any): boolean => {
+    if (!data || isBranchingNode) return false
+    return !!(data?.content && data?.contentType)
+  }
+
+  // Download file from content field
+  const handleDownload = () => {
+    if (!displayData?.content || !displayData?.contentType) return
+    
+    try {
+      // Decode base64 data
+      const byteCharacters = atob(displayData.content)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: displayData.contentType })
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = displayData.file?.name || displayData.fileName || 'download'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      toast.success('File downloaded successfully')
+    } catch (error) {
+      console.error('Failed to download file:', error)
+      toast.error('Failed to download file')
+    }
+  }
+
   return (
     <div className="flex w-full h-full border-l flex-col bg-background">
       {/* Header */}
@@ -149,6 +189,19 @@ export function OutputColumn({ node }: OutputColumnProps) {
             <Edit className="h-3 w-3" />
             Edit
           </Button>
+
+          {/* Download Button - Show if data has downloadable content */}
+          {hasDownloadableContent(displayData) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownload}
+              className="h-7 px-2 text-xs gap-1"
+            >
+              <Download className="h-3 w-3" />
+              Download
+            </Button>
+          )}
 
           {/* Copy Button */}
           {displayData && (
@@ -253,148 +306,163 @@ export function OutputColumn({ node }: OutputColumnProps) {
                 </div>
               )}
 
-              {displayData ? (
-                isBranchingNode ? (
-                  /* Branching Node Display - Show each branch separately */
-                  <div className="flex flex-col h-full space-y-4">
-                    <div className="flex items-center justify-between flex-shrink-0">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <Database className="h-4 w-4" />
-                          <h3 className="text-sm font-medium">
-                            Branch Outputs ({displayData.metadata?.nodeType || 'Conditional'})
-                          </h3>
-                        </div>
-                        <Badge variant="default">
-                          {Object.keys(displayData.branches || {}).length} Branches
-                        </Badge>
+              {isBranchingNode ? (
+                /* Branching Node Display - Show each branch separately */
+                <div className="flex flex-col h-full space-y-4">
+                  <div className="flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <Database className="h-4 w-4" />
+                        <h3 className="text-sm font-medium">
+                          Branch Outputs ({displayData.metadata?.nodeType || 'Conditional'})
+                        </h3>
                       </div>
-                    </div>
-
-                    <div className="flex-1 min-h-0 space-y-3">
-                      {Object.entries(displayData.branches || {}).map(([branchName, branchData]) => (
-                        <div key={branchName} className="border rounded-lg">
-                          {/* Branch Header */}
-                          <div className="flex items-center justify-between p-3 bg-muted/50 border-b rounded-t-lg">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-3 h-3 rounded-full ${branchName === 'true' ? 'bg-green-500' :
-                                branchName === 'false' ? 'bg-red-500' : 'bg-blue-500'
-                                }`} />
-                              <span className="font-medium text-sm capitalize">{branchName} Path</span>
-                            </div>
-                            <Badge variant="outline" className="text-xs">
-                              {Array.isArray(branchData) ? branchData.length : 0} items
-                            </Badge>
-                          </div>
-
-                          {/* Branch Content */}
-                          <div className="p-3">
-                            {Array.isArray(branchData) && branchData.length > 0 ? (
-                              <ScrollArea className="h-32 w-full">
-                                <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                                  {JSON.stringify(branchData, null, 2)}
-                                </pre>
-                              </ScrollArea>
-                            ) : (
-                              <div className="text-xs text-muted-foreground italic text-center py-4">
-                                No data in this branch
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      <Badge variant="default">
+                        {Object.keys(displayData.branches || {}).length} Branches
+                      </Badge>
                     </div>
                   </div>
-                ) : (
-                  /* Regular Node Display - Single output */
-                  <div className="flex flex-col h-full space-y-4">
-                    {/* Render custom output component if available, otherwise show JSON/Table tabs */}
-                    {CustomOutputComponent ? (
-                      <>
-                        <div className="flex items-center justify-between flex-shrink-0">
+
+                  <div className="flex-1 min-h-0 space-y-3">
+                    {Object.entries(displayData.branches || {}).map(([branchName, branchData]) => (
+                      <div key={branchName} className="border rounded-lg">
+                        {/* Branch Header */}
+                        <div className="flex items-center justify-between p-3 bg-muted/50 border-b rounded-t-lg">
                           <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
-                              <Database className="h-4 w-4" />
-                              <h3 className="text-sm font-medium">
-                                {isShowingMockData ? 'Mock Data Output' : 'Execution Output'}
-                              </h3>
-                            </div>
-                            <Badge
-                              variant={isShowingMockData ? "secondary" : "default"}
-                              className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
-                            >
-                              {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
-                            </Badge>
+                            <div className={`w-3 h-3 rounded-full ${branchName === 'true' ? 'bg-green-500' :
+                              branchName === 'false' ? 'bg-red-500' : 'bg-blue-500'
+                              }`} />
+                            <span className="font-medium text-sm capitalize">{branchName} Path</span>
                           </div>
-                        </div>
-                        <div className="flex-1 min-h-0">
-                          <CustomOutputComponent
-                            data={displayData}
-                            nodeType={node.type}
-                            executionStatus={nodeExecutionResult?.status}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      /* Regular JSON/Table output for nodes without custom output component */
-                      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'json' | 'table')} className="flex-1 flex flex-col min-h-0">
-                        <div className="flex items-center justify-between flex-shrink-0">
-                          <TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-auto">
-                            <TabsTrigger value="json" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
-                              <Database className="h-3 w-3 mr-1" />
-                              JSON
-                            </TabsTrigger>
-                            <TabsTrigger value="table" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
-                              <TableIcon className="h-3 w-3 mr-1" />
-                              Table
-                            </TabsTrigger>
-                          </TabsList>
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={isShowingMockData ? "secondary" : "default"}
-                              className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
-                            >
-                              {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
-                            </Badge>
-                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {Array.isArray(branchData) ? branchData.length : 0} items
+                          </Badge>
                         </div>
 
-                        <TabsContent value="json" className="flex-1 min-h-0 mt-0 p-3">
-                          <div className="rounded-md border bg-muted/30 p-3 h-full">
-                            <ScrollArea className="h-full w-full">
+                        {/* Branch Content */}
+                        <div className="p-3">
+                          {Array.isArray(branchData) && branchData.length > 0 ? (
+                            <ScrollArea className="h-32 w-full">
                               <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                                {JSON.stringify(displayData, null, 2)}
+                                {JSON.stringify(branchData, null, 2)}
                               </pre>
                             </ScrollArea>
-                          </div>
-                        </TabsContent>
-
-                        <TabsContent value="table" className="flex-1 min-h-0 mt-0 p-3">
-                          <div className="rounded-md border bg-muted/30 h-full">
-                            <TableView data={displayData} />
-                          </div>
-                        </TabsContent>
-                      </Tabs>
-                    )}
+                          ) : (
+                            <div className="text-xs text-muted-foreground italic text-center py-4">
+                              No data in this branch
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Database className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <h3 className="font-medium text-sm mb-2">No Output Data</h3>
-                  <p className="text-xs text-muted-foreground mb-4 max-w-[200px]">
-                    Execute the workflow or create mock data to see output
-                  </p>
-                  <Button
-                    onClick={openMockDataEditor}
-                    size="sm"
-                    variant="outline"
-                    className="gap-1"
-                  >
-                    <Edit className="h-3 w-3" />
-                    Create Mock Data
-                  </Button>
                 </div>
+              ) : CustomOutputComponent && displayData ? (
+                /* Custom Output Component Display */
+                <div className="flex flex-col h-full space-y-4">
+                  <div className="flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <Database className="h-4 w-4" />
+                        <h3 className="text-sm font-medium">
+                          {isShowingMockData ? 'Mock Data Output' : 'Execution Output'}
+                        </h3>
+                      </div>
+                      <Badge
+                        variant={isShowingMockData ? "secondary" : "default"}
+                        className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
+                      >
+                        {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <CustomOutputComponent
+                      data={displayData}
+                      nodeType={node.type}
+                      executionStatus={nodeExecutionResult?.status}
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* Regular JSON/Table/Logs output - Always show tabs even without data */
+                <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'json' | 'table' | 'logs')} className="flex-1 flex flex-col min-h-0">
+                  <div className="flex items-center justify-between flex-shrink-0">
+                    <TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-auto">
+                      <TabsTrigger value="json" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                        <Database className="h-3 w-3 mr-1" />
+                        JSON
+                      </TabsTrigger>
+                      <TabsTrigger value="table" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                        <TableIcon className="h-3 w-3 mr-1" />
+                        Table
+                      </TabsTrigger>
+                      <TabsTrigger value="logs" className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium">
+                        <ScrollText className="h-3 w-3 mr-1" />
+                        Logs
+                      </TabsTrigger>
+                    </TabsList>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={isShowingMockData ? "secondary" : "default"}
+                        className={isShowingMockData ? "bg-amber-100 text-amber-800" : ""}
+                      >
+                        {isShowingMockData ? 'Mock' : nodeExecutionResult?.status || 'Ready'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <TabsContent value="json" className="flex-1 min-h-0 mt-0 p-3">
+                    {displayData ? (
+                      <div className="rounded-md border bg-muted/30 p-3 h-full">
+                        <ScrollArea className="h-full w-full">
+                          <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                            {JSON.stringify(displayData, null, 2)}
+                          </pre>
+                        </ScrollArea>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Database className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                        <h3 className="font-medium text-sm mb-2">No Output Data</h3>
+                        <p className="text-xs text-muted-foreground mb-4 max-w-[200px]">
+                          Execute the workflow or create mock data to see output
+                        </p>
+                        <Button
+                          onClick={openMockDataEditor}
+                          size="sm"
+                          variant="outline"
+                          className="gap-1"
+                        >
+                          <Edit className="h-3 w-3" />
+                          Create Mock Data
+                        </Button>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="table" className="flex-1 min-h-0 mt-0 p-3">
+                    {displayData ? (
+                      <div className="rounded-md border bg-muted/30 h-full">
+                        <TableView data={displayData} />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <TableIcon className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                        <h3 className="font-medium text-sm mb-2">No Data for Table View</h3>
+                        <p className="text-xs text-muted-foreground mb-4 max-w-[200px]">
+                          Execute the workflow to see data in table format
+                        </p>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="logs" className="flex-1 min-h-0 mt-0">
+                    <div className="h-full">
+                      <LogsTabContent logs={executionLogs} nodeId={node.id} />
+                    </div>
+                  </TabsContent>
+                </Tabs>
               )}
             </div>
           </ScrollArea>

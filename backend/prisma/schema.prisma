@@ -321,6 +321,7 @@ model NodeType {
   color              String?
   outputComponent    String? // Custom output component identifier for dynamic rendering
   active             Boolean  @default(true)
+  isCore             Boolean  @default(false) // Flag to identify core system nodes that cannot be deleted
   isTemplate         Boolean  @default(false) // Flag to identify template nodes
   templateData       Json? // Template structure (nodes and connections)
   nodeCategory       String? // Category for execution control: 'service' or 'tool'

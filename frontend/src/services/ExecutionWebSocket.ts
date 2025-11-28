@@ -13,14 +13,17 @@ export interface ExecutionEventData {
     | "node-failed"
     | "completed"
     | "failed"
-    | "cancelled";
+    | "cancelled"
+    | "execution-log";
   executionId: string;
   nodeId?: string;
   status?: NodeExecutionStatus;
   progress?: number;
   data?: any;
   error?: any;
-  timestamp: number;
+  timestamp: number | string;
+  level?: 'info' | 'warn' | 'error' | 'debug';
+  message?: string;
 }
 
 export class ExecutionWebSocket {
@@ -131,6 +134,15 @@ export class ExecutionWebSocket {
       this.socket.on("execution-progress", (data: ExecutionEventData) => {
         console.log("🟡 ExecutionWebSocket received execution-progress:", data);
         this.handleExecutionEvent(data);
+      });
+
+      // Listen for execution logs (tool calls, service calls, etc.)
+      this.socket.on("execution-log", (data: any) => {
+        console.log("📝 ExecutionWebSocket received execution-log:", data);
+        this.handleExecutionEvent({
+          ...data,
+          type: "execution-log",
+        });
       });
     });
   }

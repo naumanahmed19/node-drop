@@ -37,7 +37,8 @@ export interface FormFieldConfig {
   | "conditionRow"
   | "keyValueRow"
   | "columnsMap"
-  | "hidden";
+  | "hidden"
+  | "button";
   required?: boolean;
   default?: any;
   description?: string;
@@ -53,7 +54,14 @@ export interface FormFieldConfig {
     multipleValueButtonText?: string;
     loadOptionsMethod?: string; // Method name for dynamic options loading
     loadOptionsDependsOn?: string[]; // Fields that this field depends on for loading options
+    // Button-specific options
+    buttonText?: string; // Text to display on button
+    variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'; // Button variant
+    size?: 'default' | 'sm' | 'lg' | 'icon'; // Button size
+    className?: string; // Additional CSS classes
+    action?: string; // Special action identifier (e.g., 'clearMemory')
   };
+  onClick?: (context: { value: any; allValues: Record<string, any>; field: FormFieldConfig }) => void; // Button click handler
   component?: string; // Component name for custom rendering
   componentProps?: {
     fields?: FormFieldConfig[]; // Nested fields for collection type

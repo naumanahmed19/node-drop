@@ -613,14 +613,14 @@ export class FlowExecutionEngine extends EventEmitter {
       });
 
       // Log execution start
-      const nodeName =
-        workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
       const node = workflow.nodes.find((n) => n.id === nodeId);
+      const nodeName = node?.name || "Unknown Node";
+      const nodeType = node?.type || "Unknown Type";
       
       this.executionHistoryService.addExecutionLog(
         context.executionId,
         "info",
-        `Starting execution of node: ${nodeName}`,
+        `Starting execution: ${nodeName} (${nodeType})`,
         nodeId,
         {
           parameters: node?.parameters,
@@ -643,14 +643,15 @@ export class FlowExecutionEngine extends EventEmitter {
 
         if (result.status === FlowNodeStatus.COMPLETED) {
           // Log execution completion
-          const nodeName =
-            workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const node = workflow.nodes.find((n) => n.id === nodeId);
+          const nodeName = node?.name || "Unknown Node";
+          const nodeType = node?.type || "Unknown Type";
           const nodeState = context.nodeStates.get(nodeId);
           
           this.executionHistoryService.addExecutionLog(
             context.executionId,
             "info",
-            `Node execution completed successfully: ${nodeName}`,
+            `Completed: ${nodeName} (${nodeType})`,
             nodeId,
             {
               inputData: nodeState?.inputData,
@@ -678,8 +679,9 @@ export class FlowExecutionEngine extends EventEmitter {
           });
 
           // Log execution failure
-          const nodeName =
-            workflow.nodes.find((n) => n.id === nodeId)?.name || "Unknown Node";
+          const node = workflow.nodes.find((n) => n.id === nodeId);
+          const nodeName = node?.name || "Unknown Node";
+          const nodeType = node?.type || "Unknown Type";
           const nodeState = context.nodeStates.get(nodeId);
           const errorMessage =
             result.error instanceof Error
@@ -688,7 +690,7 @@ export class FlowExecutionEngine extends EventEmitter {
           this.executionHistoryService.addExecutionLog(
             context.executionId,
             "error",
-            `Node execution failed: ${nodeName} - ${errorMessage}`,
+            `Failed: ${nodeName} (${nodeType}) - ${errorMessage}`,
             nodeId,
             {
               inputData: nodeState?.inputData,

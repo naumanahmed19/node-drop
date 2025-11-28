@@ -53,12 +53,15 @@ export const GoogleOAuth2Credentials: CredentialType = {
       readonly: true,
       description:
         "Copy this URL and add it to 'Authorized redirect URIs' in your Google Cloud Console OAuth2 credentials",
-      placeholder: `${
-        process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`,
-      default: `${
-        process.env.FRONTEND_URL || "http://localhost:3000"
-      }/oauth/callback`,
+      // Use getter functions to evaluate at runtime instead of module load time
+      get placeholder() {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+        return `${frontendUrl}/oauth/callback`;
+      },
+      get default() {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+        return `${frontendUrl}/oauth/callback`;
+      },
     },
     {
       displayName: "Use Custom Scopes",

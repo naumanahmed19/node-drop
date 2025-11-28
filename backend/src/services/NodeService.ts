@@ -153,7 +153,8 @@ export class NodeService {
    * Register a new node type
    */
   async registerNode(
-    nodeDefinition: NodeDefinition
+    nodeDefinition: NodeDefinition,
+    isCore: boolean = false
   ): Promise<NodeRegistrationResult> {
     try {
       // Validate node definition
@@ -188,6 +189,7 @@ export class NodeService {
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
           nodeCategory: nodeDefinition.nodeCategory, // Include node category
+          isCore: isCore, // Update isCore flag
           // Don't update active status on update - preserve user's choice
         },
         create: {
@@ -206,6 +208,7 @@ export class NodeService {
           color: nodeDefinition.color,
           outputComponent: nodeDefinition.outputComponent,
           nodeCategory: nodeDefinition.nodeCategory, // Include node category
+          isCore: isCore, // Set isCore flag for new nodes
           active: true,
         },
       });
@@ -537,6 +540,22 @@ export class NodeService {
       // This allows private methods to be called via this.methodName()
       const context = Object.create(nodeDefinition);
       Object.assign(context, baseContext);
+
+      // Add execution metadata for logging and event emission
+      context._executionId = execId;
+      context._nodeId = options?.nodeId;
+      context._serviceNodeId = options?.nodeId; // Alias for consistency with service nodes
+
+      // Inject logging methods into context (automatic logging for all nodes)
+      try {
+        const { injectLoggingMethods } = require('../../custom-nodes/utils/serviceLogger');
+        injectLoggingMethods(context);
+      } catch (error) {
+        logger.warn('Failed to inject logging methods into node context', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          nodeType,
+        });
+      }
 
       // Execute the node in secure context
       const result = await nodeDefinition.execute.call(
@@ -910,17 +929,27 @@ export class NodeService {
     const { nodeDiscovery } = await import("../utils/NodeDiscovery");
 
     try {
-      const nodeDefinitions = await nodeDiscovery.getAllNodeDefinitions();
+      // Load built-in nodes separately from custom nodes
+      const builtInNodeInfos = await nodeDiscovery.loadAllNodes();
+      const customNodeInfos = await nodeDiscovery.loadCustomNodes();
 
-      if (nodeDefinitions.length === 0) {
-        return;
+      // Register built-in nodes with isCore: true
+      for (const nodeInfo of builtInNodeInfos) {
+        try {
+          // Mark built-in nodes as core (cannot be deleted)
+          await this.registerNode(nodeInfo.definition, true);
+        } catch (error) {
+          logger.error(`Error registering built-in node ${nodeInfo.definition.displayName}:`, error);
+        }
       }
 
-      for (const nodeDefinition of nodeDefinitions) {
+      // Register custom nodes with isCore: false
+      for (const nodeInfo of customNodeInfos) {
         try {
-          await this.registerNode(nodeDefinition);
+          // Custom nodes are not core (can be deleted)
+          await this.registerNode(nodeInfo.definition, false);
         } catch (error) {
-          logger.error(`Error registering ${nodeDefinition.displayName}:`, error);
+          logger.error(`Error registering custom node ${nodeInfo.definition.displayName}:`, error);
         }
       }
     } catch (error) {

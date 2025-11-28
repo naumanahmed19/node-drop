@@ -805,6 +805,58 @@ export function FieldRenderer({
       );
     }
 
+    case 'button':
+      const handleButtonClick = async () => {
+        const action = field.typeOptions?.action;
+        
+        // Handle special actions
+        if (action === 'clearMemory') {
+          const sessionId = allValues?.sessionId || 'default';
+          
+          if (!confirm(`Are you sure you want to clear all messages for session "${sessionId}"?`)) {
+            return;
+          }
+          
+          try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/memory/clear', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({ sessionId }),
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              alert(`✓ Memory cleared for session: ${sessionId}`);
+            } else {
+              alert(`✗ Failed to clear memory: ${data.error}`);
+            }
+          } catch (error: any) {
+            alert(`✗ Error clearing memory: ${error.message}`);
+          }
+        } else if (field.onClick) {
+          // Call custom onClick handler if provided
+          field.onClick({ value, allValues, field });
+        }
+      };
+      
+      return (
+        <Button
+          type="button"
+          onClick={handleButtonClick}
+          disabled={disabled || field.disabled}
+          variant={field.typeOptions?.variant || 'default'}
+          size={field.typeOptions?.size || 'default'}
+          className={field.typeOptions?.className}
+        >
+          {field.typeOptions?.buttonText || field.displayName || 'Click'}
+        </Button>
+      )
+
     default:
       return (
         <Input

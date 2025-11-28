@@ -492,7 +492,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 credentialsMapping, // Pass credentials mapping
                 executionId,
                 context.userId,
-                { timeout: 30000 },
+                { timeout: 30000, nodeId }, // Pass nodeId for logging
                 context.workflowId,
                 node.settings // Pass node settings (includes continueOnFail)
             );

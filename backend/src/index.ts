@@ -15,6 +15,7 @@ import environmentRoutes from "./routes/environment";
 import executionControlRoutes from "./routes/execution-control";
 import executionHistoryRoutes from "./routes/execution-history";
 import executionRecoveryRoutes from "./routes/execution-recovery";
+import executionResumeRoutes from "./routes/execution-resume";
 import { executionRoutes } from "./routes/executions";
 import flowExecutionRoutes from "./routes/flow-execution";
 import googleRoutes from "./routes/google";
@@ -219,6 +220,18 @@ realtimeExecutionEngine.on("execution-cancelled", (data) => {
   });
 });
 
+// Listen for execution-log events (tool calls, service calls, etc.)
+realtimeExecutionEngine.on("execution-log", (logEntry) => {
+  logger.debug('📝 [RealtimeEngine] execution-log event received', {
+    executionId: logEntry.executionId,
+    nodeId: logEntry.nodeId,
+    level: logEntry.level,
+    message: logEntry.message,
+  });
+  
+  socketService.broadcastExecutionLog(logEntry.executionId, logEntry);
+});
+
 // Make services available globally for other services
 declare global {
   var socketService: SocketService;
@@ -258,33 +271,6 @@ async function initializeNodeSystems() {
         console.log(`✅ Registered ${newNodeTypes.length} nodes`);
       } catch (registrationError) {
         console.error("Failed to register nodes:", registrationError);
-      }
-    } else {
-      // Nodes already registered
-
-      // Even if some nodes were found, try to register any missing ones
-      try {
-        // Import and use node discovery directly
-        const { nodeDiscovery } = await import("./utils/NodeDiscovery");
-        const allNodeDefinitions = await nodeDiscovery.getAllNodeDefinitions();
-
-        let newRegistrations = 0;
-        for (const nodeDefinition of allNodeDefinitions) {
-          try {
-            const result = await nodeService.registerNode(nodeDefinition);
-            if (result.success) {
-              newRegistrations++;
-            }
-          } catch (error) {
-            // Silently continue on registration errors
-          }
-        }
-
-        if (newRegistrations > 0) {
-          console.log(`✅ Registered ${newRegistrations} nodes`);
-        }
-      } catch (registrationError) {
-        console.warn("Failed to register additional nodes");
       }
     }
 
@@ -466,6 +452,7 @@ app.use("/api/flow-execution", flowExecutionRoutes);
 app.use("/api/execution-control", executionControlRoutes);
 app.use("/api/execution-history", executionHistoryRoutes);
 app.use("/api/execution-recovery", executionRecoveryRoutes);
+app.use("/api/executions", executionResumeRoutes);
 app.use("/api", oauthGenericRoutes);
 app.use("/api/google", googleRoutes);
 app.use("/api/ai-memory", aiMemoryRoutes);
