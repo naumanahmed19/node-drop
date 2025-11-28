@@ -1,10 +1,5 @@
 import { create } from 'zustand'
 
-interface PinnedOutput {
-  nodeId: string
-  isPinned: boolean
-}
-
 interface PinnedOutputsStore {
   pinnedOutputs: Map<string, boolean>
   setPinned: (nodeId: string, pinned: boolean) => void
