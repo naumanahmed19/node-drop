@@ -49,7 +49,7 @@ import {
     ZoomOut,
 } from "lucide-react"
 import * as React from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 
 // This is sample data for the workflow editor
 const data = {
@@ -133,6 +133,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { open, setOpen } = useSidebar()
   const { user } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const { id: workflowId } = useParams<{ id: string }>()
   const { 
     activeWorkflowItem, 
@@ -178,7 +179,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       if (!confirmed) return
     }
 
-    navigate(url)
+    // Pass current location as state when navigating to /workflows/new
+    if (url === "/workflows/new") {
+      navigate(url, { state: { from: location.pathname } })
+    } else {
+      navigate(url)
+    }
   }
 
   return (

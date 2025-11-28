@@ -18,11 +18,12 @@ import { useAuthStore, useNodeTypes, useWorkflowStore } from '@/stores'
 import { Workflow } from '@/types'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 export function WorkflowEditorPage() {
   const { id, executionId } = useParams<{ id: string; executionId?: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     workflow,
     setWorkflow,
@@ -39,6 +40,7 @@ export function WorkflowEditorPage() {
   const [execution, setExecution] = useState<ExecutionDetails | null>(null)
   const [isLoadingExecution, setIsLoadingExecution] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [returnPath, setReturnPath] = useState<string | null>(null)
 
   // Workflow operations for toolbar
   const {
@@ -318,6 +320,10 @@ export function WorkflowEditorPage() {
       }
 
       if (id === 'new') {
+        // Get the return path from location state, or use /workflows as fallback
+        const fromPath = (location.state as any)?.from || '/workflows'
+        setReturnPath(fromPath)
+        
         // Show onboarding dialog for new workflows
         setShowOnboarding(true)
         // Create temporary workflow
@@ -447,7 +453,11 @@ export function WorkflowEditorPage() {
       <WorkflowOnboardingDialog
         isOpen={showOnboarding}
         onStartBuilding={handleOnboardingComplete}
-        onClose={() => navigate('/workflows')}
+        onClose={() => {
+          setShowOnboarding(false)
+          const targetPath = returnPath || '/workflows'
+          navigate(targetPath, { replace: true })
+        }}
       />
     </TooltipProvider>
   )

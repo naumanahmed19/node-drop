@@ -336,7 +336,10 @@ export function WorkflowsList({ }: WorkflowsListProps) {
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => navigate('/workflows/new')}
+              onClick={() => {
+                const currentPath = window.location.pathname
+                navigate('/workflows/new', { state: { from: currentPath } })
+              }}
             >
               Create Your First Workflow
             </Button>
