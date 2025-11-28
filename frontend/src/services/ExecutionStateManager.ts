@@ -174,7 +174,7 @@ export class ExecutionStateManager {
       case 'node-started':
         if (data.nodeId) {
           this.updateNodeStatus(executionId, data.nodeId, NodeExecutionStatus.RUNNING, {
-            startTime: data.timestamp
+            startTime: typeof data.timestamp === 'number' ? data.timestamp : Date.now()
           })
         }
         break
@@ -182,7 +182,7 @@ export class ExecutionStateManager {
       case 'node-completed':
         if (data.nodeId) {
           this.updateNodeStatus(executionId, data.nodeId, NodeExecutionStatus.COMPLETED, {
-            endTime: data.timestamp,
+            endTime: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
             outputData: data.data
           })
         }
@@ -191,7 +191,7 @@ export class ExecutionStateManager {
       case 'node-failed':
         if (data.nodeId) {
           this.updateNodeStatus(executionId, data.nodeId, NodeExecutionStatus.FAILED, {
-            endTime: data.timestamp,
+            endTime: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
             error: data.error
           })
         }

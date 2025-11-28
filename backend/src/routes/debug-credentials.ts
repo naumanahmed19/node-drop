@@ -10,7 +10,8 @@ router.get("/debug/oauth-sessions", (req, res) => {
   try {
     // Access the pendingOAuthSessions from oauth-generic route
     // This is a hack for debugging - in production use Redis
-    const sessions = Array.from((global as any).pendingOAuthSessions?.entries() || []).map(([state, session]: [string, any]) => ({
+    const entries = Array.from((global as any).pendingOAuthSessions?.entries() || []) as [string, any][];
+    const sessions = entries.map(([state, session]) => ({
       state: state.substring(0, 16) + '...',
       provider: session.provider,
       credentialType: session.credentialType,

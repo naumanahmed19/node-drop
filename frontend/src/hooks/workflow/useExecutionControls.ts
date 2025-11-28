@@ -28,7 +28,6 @@ export function useExecutionControls() {
   const getExecutionFlowStatus = useWorkflowStore(
     (state) => state.getExecutionFlowStatus
   );
-  const progressTracker = useWorkflowStore((state) => state.progressTracker);
 
   // Initialize real-time updates on component mount
   useEffect(() => {
