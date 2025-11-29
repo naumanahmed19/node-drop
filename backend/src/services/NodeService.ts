@@ -784,6 +784,7 @@ export class NodeService {
       "custom", // Support for custom components
       "conditionRow", // Support for condition row (key-expression-value)
       "columnsMap", // Support for columns map (dynamic column-to-value mapping)
+      "expression", // Support for expression fields
     ];
     if (!validTypes.includes(property.type)) {
       errors.push({

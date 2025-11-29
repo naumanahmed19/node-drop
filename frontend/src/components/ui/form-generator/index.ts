@@ -1,5 +1,6 @@
-export * from "./CustomComponentRegistry.tsx";
 export { ConditionRow } from "./ConditionRow";
+export * from "./CustomComponentRegistry.tsx";
+export { ExpressionField } from "./ExpressionField";
 export { FieldRenderer } from "./FieldRenderer";
 export { FieldValidator } from "./FieldValidator";
 export { FieldVisibilityManager } from "./FieldVisibilityManager";

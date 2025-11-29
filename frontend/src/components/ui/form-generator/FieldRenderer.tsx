@@ -16,13 +16,14 @@ import { CalendarDays, CheckCircle, Copy, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { CollectionField } from './CollectionField'
 import { ConditionRow } from './ConditionRow'
-import { KeyValueRow } from './KeyValueRow'
 import { getCustomComponent } from './customComponentRegistry'
 import { DynamicAutocomplete } from './DynamicAutocomplete'
 import { ExpressionInput } from './ExpressionInput'
+import { KeyValueRow } from './KeyValueRow'
 import { RepeatingField } from './RepeatingField'
 import { SimpleRepeater } from './SimpleRepeater'
-import { FormFieldRendererProps, FormFieldOption } from './types'
+import { FormFieldOption, FormFieldRendererProps } from './types'
+import { WorkflowExpressionField } from './WorkflowExpressionField'
 
 export function FieldRenderer({
   field,
@@ -855,6 +856,19 @@ export function FieldRenderer({
         >
           {field.typeOptions?.buttonText || field.displayName || 'Click'}
         </Button>
+      )
+
+    case 'expression':
+      return (
+        <WorkflowExpressionField
+          value={value || ''}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder={field.placeholder}
+          error={error}
+          nodeId={nodeId}
+          customVariableCategories={field.componentProps?.variableCategories}
+        />
       )
 
     default:

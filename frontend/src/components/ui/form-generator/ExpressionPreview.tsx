@@ -578,8 +578,8 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
       }
       
       // Check if it's a json.* or json[*].* expression (with or without methods)
-      // Match both json.field and json[0].field patterns
-      const jsonArrayMatch = trimmedExpr.match(/^json\[(\d+)\]\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
+      // Match patterns like json.field, json[0].field, json[0][0].field, etc.
+      const jsonArrayMatch = trimmedExpr.match(/^json(\[[\d\]]+)\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
       const jsonObjectMatch = trimmedExpr.match(/^json\.(.+?)(?:\.(\w+)\((.*?)\))?$/)
       
       if (jsonArrayMatch || jsonObjectMatch) {
@@ -587,13 +587,20 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
         let fieldPath: string
         let method: string | undefined
         let methodArgs: string | undefined
+        let arrayAccessors: string = '' // For nested array access like [0][0]
         
         if (jsonArrayMatch) {
-          // Array-based: json[0].field
-          inputIndex = parseInt(jsonArrayMatch[1], 10)
+          // Array-based: json[0].field or json[0][0].field
+          arrayAccessors = jsonArrayMatch[1] // e.g., "[0]" or "[0][0]"
           fieldPath = jsonArrayMatch[2]
           method = jsonArrayMatch[3]
           methodArgs = jsonArrayMatch[4]
+          
+          // Extract the first index for backward compatibility
+          const firstIndexMatch = arrayAccessors.match(/^\[(\d+)\]/)
+          if (firstIndexMatch) {
+            inputIndex = parseInt(firstIndexMatch[1], 10)
+          }
         } else {
           // Object-based: json.field
           fieldPath = jsonObjectMatch![1]
@@ -664,11 +671,32 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
             : trimmedExpr
         }
         
+        // Apply array accessors first (e.g., [0][0] from json[0][0].field)
+        let dataAfterAccessors = itemData
+        if (arrayAccessors) {
+          // Parse all array indices from the accessor string (e.g., "[0][0]" -> [0, 0])
+          const indices = arrayAccessors.match(/\d+/g) || []
+          for (const indexStr of indices) {
+            const index = parseInt(indexStr, 10)
+            if (Array.isArray(dataAfterAccessors)) {
+              dataAfterAccessors = dataAfterAccessors[index]
+            } else {
+              return `[Cannot access index ${index} on non-array]`
+            }
+            
+            if (dataAfterAccessors === undefined) {
+              return `[Array index out of bounds: ${indexStr}]`
+            }
+          }
+        }
+        
         // Get the field value
-        const fieldValue = getNestedValue(itemData, fieldPath)
+        const fieldValue = getNestedValue(dataAfterAccessors, fieldPath)
         
         if (fieldValue === undefined) {
-          return inputIndex !== null
+          return arrayAccessors
+            ? `[Field not found: json${arrayAccessors}.${fieldPath}]`
+            : inputIndex !== null
             ? `[Field not found: json[${inputIndex}].${fieldPath}]`
             : `[Field not found: json.${fieldPath}]`
         }
