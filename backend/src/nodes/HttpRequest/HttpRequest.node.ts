@@ -62,7 +62,7 @@ export const HttpRequestNode: NodeDefinition = {
     {
       displayName: "URL",
       name: "url",
-      type: "string",
+      type: "expression",
       required: true,
       default: "",
       description: "The URL to make the request to",

@@ -236,6 +236,115 @@ export class SecureExecutionService {
       ? {} // Empty mapping if array (legacy format)
       : credentialIds; // Use the mapping directly
 
+    // PRE-RESOLVE ALL PARAMETERS AT ONCE for better performance
+    // Build expression context once (instead of on every getNodeParameter call)
+    const items = normalizeInputItems(inputData.main || []);
+    const processedItems = extractJsonData(items);
+    
+    // Build $node context from nodeOutputs map (once)
+    const nodeContext: Record<string, { json: any }> = {};
+    if (nodeOutputs) {
+      for (const [nId, outputData] of nodeOutputs.entries()) {
+        let jsonData = outputData;
+        if (outputData?.main && Array.isArray(outputData.main)) {
+          const mainData = outputData.main;
+          if (mainData.length > 0) {
+            jsonData = mainData[0]?.json || mainData[0] || mainData;
+          }
+        }
+        nodeContext[nId] = { json: jsonData };
+      }
+    }
+    
+    const expressionContext: ExpressionContext = {
+      $json: processedItems.length > 1 ? processedItems : processedItems[0],
+      $node: nodeContext,
+      $execution: { id: executionId, mode: 'manual' },
+    };
+
+    // Helper function to recursively resolve expressions in nested structures
+    const resolveExpressions = (val: any, itemData: any, ctx: ExpressionContext): any => {
+      if (typeof val === "string" && val.includes("{{")) {
+        return resolveValue(val, itemData, ctx);
+      } else if (Array.isArray(val)) {
+        return val.map(item => resolveExpressions(item, itemData, ctx));
+      } else if (val && typeof val === "object" && val.constructor === Object) {
+        const resolved: Record<string, any> = {};
+        for (const [k, v] of Object.entries(val)) {
+          resolved[k] = resolveExpressions(v, itemData, ctx);
+        }
+        return resolved;
+      }
+      return val;
+    };
+
+    // Helper to unwrap simple {{value}} patterns
+    const unwrapSimpleValue = (value: any): any => {
+      if (
+        typeof value === "string" &&
+        !value.includes("$vars") &&
+        !value.includes("$local")
+      ) {
+        const wrappedMatch = value.match(/^\{\{(.+)\}\}$/);
+        if (wrappedMatch) {
+          const innerContent = wrappedMatch[1].trim();
+          const hasExpressionSyntax =
+            /[+\-*%()[\]<>=!&|]/.test(innerContent) ||
+            innerContent.includes("{{") ||
+            innerContent.includes("json.") ||
+            innerContent.includes("$item") ||
+            innerContent.includes("$node") ||
+            innerContent.includes("$workflow");
+
+          if (!hasExpressionSyntax) {
+            return innerContent;
+          }
+        }
+      }
+      return value;
+    };
+
+    // PRE-RESOLVE ALL PARAMETERS AT ONCE
+    const preResolvedParameters: Record<string, any> = {};
+    const firstItem = processedItems.length > 0 ? processedItems[0] : {};
+    
+    // Debug: Log nodeContext for $node expression resolution
+    if (nodeOutputs && nodeOutputs.size > 0) {
+      logger.info("[SecureExecution] Building $node context for expression resolution", {
+        nodeOutputsSize: nodeOutputs.size,
+        nodeIds: Array.from(nodeOutputs.keys()),
+        nodeContextKeys: Object.keys(nodeContext),
+      });
+    }
+    
+    for (const [paramName, paramValue] of Object.entries(resolvedParameters)) {
+      let value = this.sanitizeValue(paramValue);
+      value = unwrapSimpleValue(value);
+      
+      // Debug: Log expression resolution for values containing $node
+      if (typeof value === "string" && value.includes("$node")) {
+        logger.info("[SecureExecution] Resolving $node expression", {
+          paramName,
+          originalValue: value,
+          nodeContextKeys: Object.keys(nodeContext),
+          hasNodeContext: Object.keys(nodeContext).length > 0,
+        });
+      }
+      
+      // Resolve expressions for first item (default case)
+      preResolvedParameters[paramName] = resolveExpressions(value, firstItem, expressionContext);
+      
+      // Debug: Log resolved value for $node expressions
+      if (typeof value === "string" && value.includes("$node")) {
+        logger.info("[SecureExecution] Resolved $node expression", {
+          paramName,
+          originalValue: value,
+          resolvedValue: preResolvedParameters[paramName],
+          wasResolved: preResolvedParameters[paramName] !== value,
+        });
+      }
+    }
+
     return {
       settings: settings || {}, // Node settings from Settings tab
       getNodeParameter: (parameterName: string, itemIndex?: number) => {
@@ -244,96 +353,19 @@ export class SecureExecutionService {
           throw new Error("Parameter name must be a string");
         }
 
-        let value = resolvedParameters[parameterName];
-        value = this.sanitizeValue(value);
-
-        // Also unwrap simple {{value}} patterns even without variables
-        // This handles cases where variables were already resolved: {{https://...}} -> https://...
-        if (
-          typeof value === "string" &&
-          !value.includes("$vars") &&
-          !value.includes("$local")
-        ) {
-          const wrappedMatch = value.match(/^\{\{(.+)\}\}$/);
-          if (wrappedMatch) {
-            const innerContent = wrappedMatch[1].trim();
-            // Check for nodeDrop expression syntax patterns (but not URL slashes)
-            const hasExpressionSyntax =
-              /[+\-*%()[\]<>=!&|]/.test(innerContent) ||
-              innerContent.includes("{{") ||
-              innerContent.includes("json.") ||
-              innerContent.includes("$item") ||
-              innerContent.includes("$node") ||
-              innerContent.includes("$workflow");
-
-            if (!hasExpressionSyntax) {
-              logger.info("Unwrapping simple wrapped value (non-variable)", {
-                parameterName,
-                before: value,
-                after: innerContent,
-              });
-              value = innerContent;
-            }
-          }
+        // Return pre-resolved parameter value (fast path)
+        const preResolved = preResolvedParameters[parameterName];
+        if (preResolved === undefined) {
+          return undefined;
         }
 
-        // Build expression context with all available data sources
-        const items = normalizeInputItems(inputData.main || []);
-        const processedItems = extractJsonData(items);
-        
-        // Build $node context from nodeOutputs map
-        const nodeContext: Record<string, { json: any }> = {};
-        if (nodeOutputs) {
-          for (const [nId, outputData] of nodeOutputs.entries()) {
-            // Extract the actual data from the output structure
-            let jsonData = outputData;
-            if (outputData?.main && Array.isArray(outputData.main)) {
-              // Standard output format: { main: [{ json: {...} }] }
-              const mainData = outputData.main;
-              if (mainData.length > 0) {
-                jsonData = mainData[0]?.json || mainData[0] || mainData;
-              }
-            }
-            nodeContext[nId] = { json: jsonData };
-          }
-        }
-        
-        const expressionContext: ExpressionContext = {
-          $json: processedItems.length > 1 ? processedItems : processedItems[0],
-          $node: nodeContext,
-          $execution: { id: executionId, mode: 'manual' },
-        };
-
-        // Helper function to recursively resolve expressions in nested structures
-        const resolveExpressions = (val: any, itemData: any, ctx: ExpressionContext): any => {
-          if (typeof val === "string" && val.includes("{{")) {
-            return resolveValue(val, itemData, ctx);
-          } else if (Array.isArray(val)) {
-            return val.map(item => resolveExpressions(item, itemData, ctx));
-          } else if (val && typeof val === "object" && val.constructor === Object) {
-            const resolved: Record<string, any> = {};
-            for (const [k, v] of Object.entries(val)) {
-              resolved[k] = resolveExpressions(v, itemData, ctx);
-            }
-            return resolved;
-          }
-          return val;
-        };
-
-        // Auto-resolve placeholders if value contains {{...}} patterns (recursively)
-        // This now runs AFTER variable resolution and includes $node context
-        if (processedItems.length > 0) {
-          // Use specified itemIndex or default to first item (0)
-          const targetIndex = itemIndex ?? 0;
-          const itemToUse = processedItems[targetIndex];
-
-          if (itemToUse) {
-            return resolveExpressions(value, itemToUse, expressionContext);
-          }
+        // If itemIndex is specified and different from 0, re-resolve for that specific item
+        if (itemIndex !== undefined && itemIndex !== 0 && processedItems.length > itemIndex) {
+          const originalValue = unwrapSimpleValue(this.sanitizeValue(resolvedParameters[parameterName]));
+          return resolveExpressions(originalValue, processedItems[itemIndex], expressionContext);
         }
 
-        // Even without input items, try to resolve $node expressions
-        return resolveExpressions(value, {}, expressionContext);
+        return preResolved;
       },
 
       getCredentials: async (type: string) => {

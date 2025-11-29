@@ -69,14 +69,31 @@ export function resolveValue(value: string | any, item: any, context?: Expressio
       const nodeId = nodeRefMatch[1];
       const fieldPath = nodeRefMatch[2];
       
+      // Debug logging for $node resolution
+      console.log(`[resolveValue] $node expression found:`, {
+        nodeId,
+        fieldPath,
+        hasContext: !!context,
+        hasNodeContext: !!context?.$node,
+        availableNodeIds: context?.$node ? Object.keys(context.$node) : [],
+        nodeIdExists: !!(context?.$node && context.$node[nodeId]),
+      });
+      
       if (context?.$node && context.$node[nodeId]) {
         const nodeData = context.$node[nodeId].json;
+        console.log(`[resolveValue] Found node data for ${nodeId}:`, {
+          nodeDataType: typeof nodeData,
+          nodeDataKeys: nodeData && typeof nodeData === 'object' ? Object.keys(nodeData) : [],
+          fieldPath,
+        });
         if (fieldPath) {
           const result = resolvePath(nodeData, fieldPath);
+          console.log(`[resolveValue] Resolved field path '${fieldPath}':`, { result });
           return result !== undefined ? (typeof result === 'object' ? JSON.stringify(result) : String(result)) : match;
         }
         return typeof nodeData === 'object' ? JSON.stringify(nodeData) : String(nodeData);
       }
+      console.log(`[resolveValue] Node ${nodeId} NOT found in context, returning original match`);
       return match;
     }
     
