@@ -16,6 +16,7 @@ export interface FlowExecutionContext {
   triggerData?: any;
   executionOptions: FlowExecutionOptions;
   nodeStates: Map<string, NodeExecutionState>;
+  nodeOutputs: Map<string, any>; // Map of nodeId -> output data for $node expressions
   executionPath: string[];
   startTime: number;
   cancelled: boolean;
@@ -347,6 +348,7 @@ export class FlowExecutionEngine extends EventEmitter {
         ...options,
       },
       nodeStates: new Map(),
+      nodeOutputs: new Map(), // Initialize node outputs map for $node expressions
       executionPath: [],
       startTime: Date.now(),
       cancelled: false,
@@ -634,6 +636,11 @@ export class FlowExecutionEngine extends EventEmitter {
         executedNodes.push(nodeId);
         context.executionPath.push(nodeId);
 
+        // Store node output for $node expression resolution in downstream nodes
+        if (result.data) {
+          context.nodeOutputs.set(nodeId, result.data);
+        }
+
         nodeState.status = result.status;
         nodeState.endTime = Date.now();
         nodeState.duration =
@@ -853,7 +860,8 @@ export class FlowExecutionEngine extends EventEmitter {
         context.userId, // Pass the userId from context
         undefined, // options
         context.workflowId, // Pass workflowId for variable resolution
-        undefined // settings - not stored on node object currently
+        undefined, // settings - not stored on node object currently
+        context.nodeOutputs // Pass node outputs for $node expression resolution
       );
 
       if (!nodeResult.success) {

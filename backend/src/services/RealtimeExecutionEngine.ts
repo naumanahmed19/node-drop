@@ -494,7 +494,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 context.userId,
                 { timeout: 30000, nodeId }, // Pass nodeId for logging
                 context.workflowId,
-                node.settings // Pass node settings (includes continueOnFail)
+                node.settings, // Pass node settings (includes continueOnFail)
+                context.nodeOutputs // Pass node outputs for $node expression resolution
             );
 
             const duration = Date.now() - startTime;
@@ -741,7 +742,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
                     context.userId,
                     { timeout: 30000, nodeId }, // Pass nodeId for state management
                     context.workflowId,
-                    node.settings
+                    node.settings,
+                    context.nodeOutputs // Pass node outputs for $node expression resolution
                 );
 
                 const duration = Date.now() - startTime;

@@ -6,29 +6,42 @@
  */
 
 /**
- * Resolves placeholder expressions in a value string using data from an item or input array.
+ * Context object for expression resolution containing all available data sources
+ */
+export interface ExpressionContext {
+  $json?: any;           // Immediate input data
+  $node?: Record<string, { json: any }>; // Node outputs by ID: $node["nodeId"].json
+  $vars?: Record<string, string>;        // Variables
+  $workflow?: { id: string; name: string; active: boolean };
+  $execution?: { id: string; mode: string };
+}
+
+/**
+ * Resolves placeholder expressions in a value string using data from an item or context.
  *
- * Supports template syntax like {{json.fieldName}} or {{json.nested.path}}
- * and will replace them with actual values from the item data.
- * 
- * Also supports array-based input access for multiple inputs: {{json[0].fieldName}}
+ * Supports multiple expression formats:
+ * - {{$json.fieldName}} or {{json.fieldName}} - Access immediate input data
+ * - {{$json[0].fieldName}} - Array-based access for multiple inputs
+ * - {{$node["nodeId"].json.fieldName}} - Access specific node's output by ID (stable, doesn't break on rename)
+ * - {{$vars.variableName}} - Access workflow variables
+ * - {{$workflow.name}} - Access workflow metadata
  *
- * @param value - The value string that may contain placeholders like {{json.fieldName}}
- * @param item - The data item to extract values from (can be a single item or array of items for multiple inputs)
+ * @param value - The value string that may contain placeholders
+ * @param item - The data item (for backward compatibility) or ExpressionContext
+ * @param context - Optional full expression context with $node, $vars, etc.
  * @returns The resolved value with placeholders replaced by actual data
  *
  * @example
- * const item = { name: "John", address: { city: "NYC" } };
- * resolveValue("Hello {{json.name}}", item); // Returns: "Hello John"
- * resolveValue("City: {{json.address.city}}", item); // Returns: "City: NYC"
+ * // Simple field access
+ * resolveValue("Hello {{$json.name}}", { name: "John" }); // "Hello John"
  * 
- * // Multiple inputs (item is an array)
- * const items = [{ name: "John" }, { name: "Jane" }];
- * resolveValue("{{json[0].name}} and {{json[1].name}}", items); // Returns: "John and Jane"
+ * // Node reference (stable - uses node ID)
+ * resolveValue("{{$node[\"abc123\"].json.title}}", null, { $node: { "abc123": { json: { title: "Test" } } } });
  * 
- * resolveValue("Static text", item); // Returns: "Static text"
+ * // Multiple inputs
+ * resolveValue("{{$json[0].name}}", [{ name: "John" }, { name: "Jane" }]); // "John"
  */
-export function resolveValue(value: string | any, item: any): any {
+export function resolveValue(value: string | any, item: any, context?: ExpressionContext): any {
   // If value is not a string, return as-is
   if (typeof value !== "string") {
     return value;
@@ -46,56 +59,102 @@ export function resolveValue(value: string | any, item: any): any {
     decodedValue = value;
   }
 
-  // Replace placeholders like {{json.fieldName}} or {{json[0].fieldName}}
+  // Replace placeholders like {{$json.fieldName}}, {{$node["id"].json.field}}, etc.
   return decodedValue.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
-    // Check if this is array-based access: json[0].field
-    const arrayAccessMatch = path.match(/^json\[(\d+)\]\.(.+)$/);
+    const trimmedPath = path.trim();
     
+    // Handle $node["nodeId"].json.field format (stable node reference by ID)
+    const nodeRefMatch = trimmedPath.match(/^\$node\["([^"]+)"\]\.json(?:\.(.+))?$/);
+    if (nodeRefMatch) {
+      const nodeId = nodeRefMatch[1];
+      const fieldPath = nodeRefMatch[2];
+      
+      if (context?.$node && context.$node[nodeId]) {
+        const nodeData = context.$node[nodeId].json;
+        if (fieldPath) {
+          const result = resolvePath(nodeData, fieldPath);
+          return result !== undefined ? (typeof result === 'object' ? JSON.stringify(result) : String(result)) : match;
+        }
+        return typeof nodeData === 'object' ? JSON.stringify(nodeData) : String(nodeData);
+      }
+      return match;
+    }
+    
+    // Handle $vars.variableName format
+    const varsMatch = trimmedPath.match(/^\$vars\.(.+)$/);
+    if (varsMatch) {
+      const varName = varsMatch[1];
+      if (context?.$vars && varName in context.$vars) {
+        return context.$vars[varName];
+      }
+      return match;
+    }
+    
+    // Handle $workflow.field format
+    const workflowMatch = trimmedPath.match(/^\$workflow\.(.+)$/);
+    if (workflowMatch) {
+      const field = workflowMatch[1];
+      if (context?.$workflow && field in context.$workflow) {
+        return String((context.$workflow as any)[field]);
+      }
+      return match;
+    }
+    
+    // Handle $execution.field format
+    const executionMatch = trimmedPath.match(/^\$execution\.(.+)$/);
+    if (executionMatch) {
+      const field = executionMatch[1];
+      if (context?.$execution && field in context.$execution) {
+        return String((context.$execution as any)[field]);
+      }
+      return match;
+    }
+    
+    // Handle $json[0].field or json[0].field (array-based access)
+    const arrayAccessMatch = trimmedPath.match(/^\$?json\[(\d+)\](?:\.(.+))?$/);
     if (arrayAccessMatch) {
-      // Array-based access for multiple inputs
       const inputIndex = parseInt(arrayAccessMatch[1], 10);
       const fieldPath = arrayAccessMatch[2];
       
-      // If item is an array (multiple inputs), access the specific input
-      if (Array.isArray(item)) {
-        if (inputIndex >= item.length) {
-          // Input index out of bounds
+      // Use context.$json if available, otherwise fall back to item
+      const dataSource = context?.$json ?? item;
+      
+      if (Array.isArray(dataSource)) {
+        if (inputIndex >= dataSource.length) {
           return match;
         }
         
-        const targetItem = item[inputIndex];
-        const result = resolvePath(targetItem, fieldPath);
-        return result !== undefined ? String(result) : match;
-      } else {
-        // Item is not an array, can't use array access
-        return match;
+        const targetItem = dataSource[inputIndex];
+        if (fieldPath) {
+          const result = resolvePath(targetItem, fieldPath);
+          return result !== undefined ? (typeof result === 'object' ? JSON.stringify(result) : String(result)) : match;
+        }
+        return typeof targetItem === 'object' ? JSON.stringify(targetItem) : String(targetItem);
       }
+      return match;
     }
     
-    // Standard object-based access: json.field
-    const parts = path.split(".");
-    let result = item;
-
-    // Skip 'json' prefix if it exists, since we're already working with the json data
-    let startIndex = 0;
-    if (parts[0] === "json") {
-      startIndex = 1;
+    // Handle $json.field or json.field (standard object access)
+    let normalizedPath = trimmedPath;
+    if (normalizedPath.startsWith('$json.')) {
+      normalizedPath = normalizedPath.substring(6); // Remove '$json.'
+    } else if (normalizedPath.startsWith('json.')) {
+      normalizedPath = normalizedPath.substring(5); // Remove 'json.'
+    } else if (normalizedPath === '$json' || normalizedPath === 'json') {
+      // Return the entire json object
+      const dataSource = context?.$json ?? item;
+      return typeof dataSource === 'object' ? JSON.stringify(dataSource) : String(dataSource);
     }
-
-    // Navigate through the nested path
-    for (let i = startIndex; i < parts.length; i++) {
-      const part = parts[i];
-
-      if (result && typeof result === "object" && part in result) {
-        result = result[part];
-      } else {
-        // Path not found, return the original placeholder
-        return match;
-      }
+    
+    // Use context.$json if available, otherwise fall back to item
+    const dataSource = context?.$json ?? item;
+    const result = resolvePath(dataSource, normalizedPath);
+    
+    if (result !== undefined) {
+      return typeof result === 'object' ? JSON.stringify(result) : String(result);
     }
-
-    // Convert the result to string if it exists, otherwise return the original placeholder
-    return result !== undefined ? String(result) : match;
+    
+    return match;
   });
 }
 

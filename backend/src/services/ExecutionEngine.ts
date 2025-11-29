@@ -479,7 +479,9 @@ export class ExecutionEngine extends EventEmitter {
         executionId,
         context.userId, // userId
         { ...executionOptions, nodeId }, // options with nodeId for state management
-        context.workflowId // workflowId
+        context.workflowId, // workflowId
+        undefined, // settings
+        context.nodeOutputs // Pass node outputs for $node expression resolution
       );
 
       if (!result.success) {

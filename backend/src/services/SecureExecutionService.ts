@@ -10,6 +10,7 @@ import {
 } from "../types/node.types";
 import { logger } from "../utils/logger";
 import {
+  ExpressionContext,
   extractJsonData,
   normalizeInputItems,
   resolvePath,
@@ -165,7 +166,8 @@ export class SecureExecutionService {
     options: SecureExecutionOptions = {},
     workflowId?: string,
     settings?: Record<string, any>,
-    nodeId?: string
+    nodeId?: string,
+    nodeOutputs?: Map<string, any> // Map of nodeId -> output data for $node expressions
   ): Promise<NodeExecutionContext> {
     const limits = this.mergeLimits(options);
     
@@ -275,16 +277,43 @@ export class SecureExecutionService {
           }
         }
 
+        // Build expression context with all available data sources
+        const items = normalizeInputItems(inputData.main || []);
+        const processedItems = extractJsonData(items);
+        
+        // Build $node context from nodeOutputs map
+        const nodeContext: Record<string, { json: any }> = {};
+        if (nodeOutputs) {
+          for (const [nId, outputData] of nodeOutputs.entries()) {
+            // Extract the actual data from the output structure
+            let jsonData = outputData;
+            if (outputData?.main && Array.isArray(outputData.main)) {
+              // Standard output format: { main: [{ json: {...} }] }
+              const mainData = outputData.main;
+              if (mainData.length > 0) {
+                jsonData = mainData[0]?.json || mainData[0] || mainData;
+              }
+            }
+            nodeContext[nId] = { json: jsonData };
+          }
+        }
+        
+        const expressionContext: ExpressionContext = {
+          $json: processedItems.length > 1 ? processedItems : processedItems[0],
+          $node: nodeContext,
+          $execution: { id: executionId, mode: 'manual' },
+        };
+
         // Helper function to recursively resolve expressions in nested structures
-        const resolveExpressions = (val: any, itemData: any): any => {
+        const resolveExpressions = (val: any, itemData: any, ctx: ExpressionContext): any => {
           if (typeof val === "string" && val.includes("{{")) {
-            return resolveValue(val, itemData);
+            return resolveValue(val, itemData, ctx);
           } else if (Array.isArray(val)) {
-            return val.map(item => resolveExpressions(item, itemData));
+            return val.map(item => resolveExpressions(item, itemData, ctx));
           } else if (val && typeof val === "object" && val.constructor === Object) {
             const resolved: Record<string, any> = {};
             for (const [k, v] of Object.entries(val)) {
-              resolved[k] = resolveExpressions(v, itemData);
+              resolved[k] = resolveExpressions(v, itemData, ctx);
             }
             return resolved;
           }
@@ -292,21 +321,19 @@ export class SecureExecutionService {
         };
 
         // Auto-resolve placeholders if value contains {{...}} patterns (recursively)
-        // This now runs AFTER variable resolution
-        const items = normalizeInputItems(inputData.main || []);
-        const processedItems = extractJsonData(items);
-
+        // This now runs AFTER variable resolution and includes $node context
         if (processedItems.length > 0) {
           // Use specified itemIndex or default to first item (0)
           const targetIndex = itemIndex ?? 0;
           const itemToUse = processedItems[targetIndex];
 
           if (itemToUse) {
-            return resolveExpressions(value, itemToUse);
+            return resolveExpressions(value, itemToUse, expressionContext);
           }
         }
 
-        return value;
+        // Even without input items, try to resolve $node expressions
+        return resolveExpressions(value, {}, expressionContext);
       },
 
       getCredentials: async (type: string) => {

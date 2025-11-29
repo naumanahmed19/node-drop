@@ -495,7 +495,8 @@ export class NodeService {
     userId?: string,
     options?: SecureExecutionOptions,
     workflowId?: string,
-    settings?: NodeSettingsConfig
+    settings?: NodeSettingsConfig,
+    nodeOutputs?: Map<string, any> // Map of nodeId -> output data for $node expressions
   ): Promise<NodeExecutionResult> {
     const execId =
       executionId ||
@@ -533,7 +534,8 @@ export class NodeService {
         options,
         workflowId,
         settings,
-        options?.nodeId // Pass nodeId for state management
+        options?.nodeId, // Pass nodeId for state management
+        nodeOutputs // Pass node outputs for $node expression resolution
       );
 
       // Merge context with node definition methods (for nodes with private methods)

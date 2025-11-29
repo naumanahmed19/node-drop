@@ -1459,6 +1459,8 @@ export class ExecutionService {
 
 
           // Execute the actual node (credentials mapping already built earlier)
+          // Note: For single node execution, we don't have nodeOutputs from previous nodes
+          // The user should use the InputsColumn to see available data from connected nodes
           nodeResult = await this.nodeService.executeNode(
             node.type,
             nodeParameters,
@@ -1468,7 +1470,8 @@ export class ExecutionService {
             userId, // Pass the actual userId so credentials can be looked up
             undefined, // options
             workflowId, // Pass workflowId for variable resolution
-            (node as any).settings || {} // Pass node settings
+            (node as any).settings || {}, // Pass node settings
+            undefined // nodeOutputs - not available for single node execution
           );
 
           const endTime = Date.now();
