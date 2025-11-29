@@ -145,6 +145,95 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
 
       if (inputConnections.length === 0) return expression
 
+      // Check if expression is just "json" (base reference to all input data)
+      if (expression === 'json') {
+        // Get data from the first connected node
+        const connection = inputConnections[0]
+        const sourceNodeId = connection.sourceNodeId
+        const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
+        
+        if (!sourceNodeResult?.data) {
+          return '[No data from input]'
+        }
+
+        // Extract data structure
+        let sourceData: any[] = []
+        if (sourceNodeResult.data.main && Array.isArray(sourceNodeResult.data.main)) {
+          sourceData = sourceNodeResult.data.main
+        } else if (sourceNodeResult.status === 'skipped') {
+          sourceData = [{ json: sourceNodeResult.data }]
+        }
+
+        if (sourceData.length === 0) {
+          return '[No data from input]'
+        }
+
+        // Get the first item's data
+        const firstItem = sourceData[0]
+        let itemData: any = null
+        
+        if (firstItem && firstItem.json) {
+          itemData = firstItem.json
+        } else if (firstItem) {
+          itemData = firstItem
+        }
+
+        if (!itemData) {
+          return '[No data from input]'
+        }
+
+        // Return the full json data
+        return formatValue(itemData)
+      }
+
+      // Check if expression is just json[0] (base reference to specific input)
+      const baseArrayAccessMatch = expression.match(/^json\[(\d+)\]$/)
+      if (baseArrayAccessMatch) {
+        const inputIndex = parseInt(baseArrayAccessMatch[1], 10)
+        
+        // Get the specific input connection by index
+        if (inputIndex >= inputConnections.length) {
+          return `[Input ${inputIndex} not found - only ${inputConnections.length} input(s) available]`
+        }
+        
+        const connection = inputConnections[inputIndex]
+        const sourceNodeId = connection.sourceNodeId
+        const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
+        
+        if (!sourceNodeResult?.data) {
+          return `[No data from input ${inputIndex}]`
+        }
+
+        // Extract data structure
+        let sourceData: any[] = []
+        if (sourceNodeResult.data.main && Array.isArray(sourceNodeResult.data.main)) {
+          sourceData = sourceNodeResult.data.main
+        } else if (sourceNodeResult.status === 'skipped') {
+          sourceData = [{ json: sourceNodeResult.data }]
+        }
+
+        if (sourceData.length === 0) {
+          return `[No data from input ${inputIndex}]`
+        }
+
+        // Get the first item's data
+        const firstItem = sourceData[0]
+        let itemData: any = null
+        
+        if (firstItem && firstItem.json) {
+          itemData = firstItem.json
+        } else if (firstItem) {
+          itemData = firstItem
+        }
+
+        if (!itemData) {
+          return `[No data from input ${inputIndex}]`
+        }
+
+        // Return the full json data
+        return formatValue(itemData)
+      }
+
       // Check if expression is array-based (json[0].field) or object-based (json.field)
       const arrayAccessMatch = expression.match(/^json\[(\d+)\]\.(.+)$/)
       const objectAccessMatch = expression.match(/^json\.(.+)$/)
@@ -276,8 +365,50 @@ export function ExpressionPreview({ value, nodeId }: ExpressionPreviewProps) {
     if (value === undefined) return 'undefined'
     if (typeof value === 'string') return value
     if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    if (Array.isArray(value)) return `[Array: ${value.length} items]`
-    if (typeof value === 'object') return '[Object]'
+    if (Array.isArray(value)) {
+      // For empty arrays
+      if (value.length === 0) return '[]'
+      
+      // For small arrays with primitives, show the actual content
+      if (value.length <= 3 && value.every(item => typeof item !== 'object' || item === null)) {
+        return JSON.stringify(value)
+      }
+      
+      // For larger arrays, show a preview of first few items
+      try {
+        const preview = value.slice(0, 3)
+        const previewStr = JSON.stringify(preview, null, 2)
+        
+        // If preview is short enough, show it with count
+        if (previewStr.length <= 200) {
+          return `[Array: ${value.length} items]\n${previewStr}${value.length > 3 ? '\n... and ' + (value.length - 3) + ' more' : ''}`
+        }
+        
+        // Otherwise just show count and type info
+        const firstItemType = typeof value[0]
+        if (firstItemType === 'object' && value[0] !== null) {
+          const keys = Object.keys(value[0]).slice(0, 3).join(', ')
+          return `[Array: ${value.length} items]\nFirst item keys: ${keys}${Object.keys(value[0]).length > 3 ? '...' : ''}`
+        }
+        
+        return `[Array: ${value.length} items of type ${firstItemType}]`
+      } catch {
+        return `[Array: ${value.length} items]`
+      }
+    }
+    if (typeof value === 'object') {
+      // For objects, show a JSON preview (truncated if too long)
+      try {
+        const jsonStr = JSON.stringify(value, null, 2)
+        if (jsonStr.length <= 200) {
+          return jsonStr
+        }
+        // Show first 200 chars with ellipsis
+        return jsonStr.substring(0, 200) + '...'
+      } catch {
+        return '[Object]'
+      }
+    }
     return String(value)
   }
 

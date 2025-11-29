@@ -251,18 +251,28 @@ function UnifiedTreeNode({
           {nodeData ? (
             <div className="bg-muted/20">
               {Array.isArray(nodeData) ? (
-                // For arrays, show items directly
-                nodeData.map((item, index) => (
-                  <SchemaViewer
-                    key={index}
-                    data={item}
-                    level={level + 1}
-                    keyName={`[${index}]`}
-                    parentPath="json"
-                    expandedState={expandedState}
-                    onExpandedChange={onExpandedChange}
-                  />
-                ))
+                // For arrays, show only first item as schema representation
+                <>
+                  {nodeData.length > 0 && (
+                    <SchemaViewer
+                      key={0}
+                      data={nodeData[0]}
+                      level={level + 1}
+                      keyName={`[0]`}
+                      parentPath="json"
+                      expandedState={expandedState}
+                      onExpandedChange={onExpandedChange}
+                    />
+                  )}
+                  {nodeData.length > 1 && (
+                    <div 
+                      className="text-xs text-muted-foreground italic p-2 bg-muted/30"
+                      style={{ paddingLeft: `${(level + 1) * 12}px` }}
+                    >
+                      ... and {nodeData.length - 1} more item{nodeData.length - 1 !== 1 ? 's' : ''} with same structure
+                    </div>
+                  )}
+                </>
               ) : (
                 // For objects, show properties directly
                 Object.entries(nodeData).map(([key, value]) => (
@@ -473,18 +483,28 @@ function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState
         <CollapsibleContent>
           <div className="border-l border-border/20 ml-2">
             {Array.isArray(data) ? (
-              // Array handling
-              data.map((item, index) => (
-                <SchemaViewer
-                  key={index}
-                  data={item}
-                  level={level + 1}
-                  keyName={`[${index}]`}
-                  parentPath={currentPath}
-                  expandedState={expandedState}
-                  onExpandedChange={onExpandedChange}
-                />
-              ))
+              // Array handling - show only first item as schema representation
+              <>
+                {data.length > 0 && (
+                  <SchemaViewer
+                    key={0}
+                    data={data[0]}
+                    level={level + 1}
+                    keyName={`[0]`}
+                    parentPath={currentPath}
+                    expandedState={expandedState}
+                    onExpandedChange={onExpandedChange}
+                  />
+                )}
+                {data.length > 1 && (
+                  <div 
+                    className="text-xs text-muted-foreground italic p-2 bg-muted/30"
+                    style={{ paddingLeft: `${(level + 1) * 12}px` }}
+                  >
+                    ... and {data.length - 1} more item{data.length - 1 !== 1 ? 's' : ''} with same structure
+                  </div>
+                )}
+              </>
             ) : (
               // Object handling
               Object.entries(data).map(([key, value]) => (

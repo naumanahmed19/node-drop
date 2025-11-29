@@ -238,7 +238,7 @@ export const OutputToolbarButton = memo(function OutputToolbarButton({
                             </Badge>
                           </div>
                           <div className="p-2">
-                            <pre className="text-xs bg-muted p-2 rounded-md overflow-auto max-h-[150px] font-mono">
+                            <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto overflow-y-auto max-h-[150px] max-w-full font-mono whitespace-pre break-words">
                               {JSON.stringify(branchData, null, 2)}
                             </pre>
                           </div>
@@ -276,7 +276,7 @@ export const OutputToolbarButton = memo(function OutputToolbarButton({
                         </Button>
                       </div>
                     )}
-                    <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-[400px] font-mono">
+                    <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto overflow-y-auto max-h-[400px] max-w-full font-mono whitespace-pre break-words">
                       {JSON.stringify(displayData, null, 2)}
                     </pre>
                   </div>
