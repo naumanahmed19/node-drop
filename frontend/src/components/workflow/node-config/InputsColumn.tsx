@@ -142,7 +142,7 @@ function UnifiedTreeNode({
       <Collapsible open={isNodeExpanded} onOpenChange={(open) => onExpandedChange(inputNode.id, open)}>
         {/* Node Header */}
         <CollapsibleTrigger asChild>
-          <div className="flex items-center justify-between w-full p-3 bg-sidebar-accent/30 hover:bg-sidebar-accent/50 transition-colors text-left group cursor-pointer">
+          <div className="flex items-center justify-between w-full p-3 bg-muted/30 hover:bg-muted/50 border-b border-border/50 transition-colors text-left group cursor-pointer">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {isNodeExpanded ? (
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -198,7 +198,7 @@ function UnifiedTreeNode({
                 </TooltipProvider>
               )}
               <span
-                className={`w-2 h-2 rounded-full ${inputNode.disabled ? 'bg-muted-foreground' : 'bg-green-500'
+                className={`w-2 h-2 rounded-full ${inputNode.disabled ? 'bg-muted-foreground/50' : 'bg-emerald-500'
                   }`}
                 title={inputNode.disabled ? "Disabled" : "Enabled"}
               />
@@ -249,48 +249,56 @@ function UnifiedTreeNode({
         {/* Node Data as part of the tree */}
         <CollapsibleContent className="space-y-0">
           {nodeData ? (
-            <div className="bg-muted/20">
-              {Array.isArray(nodeData) ? (
-                // For arrays, show only first item as schema representation
-                <>
-                  {nodeData.length > 0 && (
+            <div className="bg-background/50 py-1">
+              {/* Use $node["nodeId"].json format for stable reference (ID doesn't change when node is renamed) */}
+              {(() => {
+                const basePath = `$node["${inputNode.id}"].json`
+                
+                if (Array.isArray(nodeData)) {
+                  // For arrays, show first item
+                  return (
+                    <>
+                      {nodeData.length > 0 && (
+                        <SchemaViewer
+                          key={0}
+                          data={nodeData[0]}
+                          level={level + 1}
+                          keyName={`[0]`}
+                          parentPath={basePath}
+                          expandedState={expandedState}
+                          onExpandedChange={onExpandedChange}
+                        />
+                      )}
+                      {nodeData.length > 1 && (
+                        <div 
+                          className="text-[10px] text-muted-foreground/50 italic py-1 px-2"
+                          style={{ paddingLeft: `${(level + 1) * 16}px` }}
+                        >
+                          +{nodeData.length - 1} more item{nodeData.length - 1 !== 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </>
+                  )
+                } else {
+                  // For objects, show properties directly
+                  return Object.entries(nodeData).map(([key, value]) => (
                     <SchemaViewer
-                      key={0}
-                      data={nodeData[0]}
+                      key={key}
+                      data={value}
                       level={level + 1}
-                      keyName={`[0]`}
-                      parentPath="json"
+                      keyName={key}
+                      parentPath={basePath}
                       expandedState={expandedState}
                       onExpandedChange={onExpandedChange}
                     />
-                  )}
-                  {nodeData.length > 1 && (
-                    <div 
-                      className="text-xs text-muted-foreground italic p-2 bg-muted/30"
-                      style={{ paddingLeft: `${(level + 1) * 12}px` }}
-                    >
-                      ... and {nodeData.length - 1} more item{nodeData.length - 1 !== 1 ? 's' : ''} with same structure
-                    </div>
-                  )}
-                </>
-              ) : (
-                // For objects, show properties directly
-                Object.entries(nodeData).map(([key, value]) => (
-                  <SchemaViewer
-                    key={key}
-                    data={value}
-                    level={level + 1}
-                    keyName={key}
-                    parentPath="json"
-                    expandedState={expandedState}
-                    onExpandedChange={onExpandedChange}
-                  />
-                ))
-              )}
+                  ))
+                }
+              })()}
             </div>
           ) : (
-            <div className="p-4 bg-muted/30 text-xs text-muted-foreground italic">
-              No execution data available. Run the workflow to see data.
+            <div className="py-3 px-4 text-xs text-muted-foreground/70 italic flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30"></div>
+              No data yet. Run the workflow to see results.
             </div>
           )}
         </CollapsibleContent>
@@ -318,7 +326,8 @@ function UnifiedTreeNode({
  * - Maintains level counter for proper indentation
  * - Uses unique keys for independent expand/collapse state
  */
-function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState, onExpandedChange }: SchemaViewerProps & {
+function SchemaViewer({ data, level, keyName, parentPath = '$json', expandedState, onExpandedChange }: SchemaViewerProps & {
+  // parentPath format: "$node["NodeName"].json" or "$json" for immediate input
   expandedState?: Record<string, boolean>
   onExpandedChange?: (key: string, expanded: boolean) => void
 }) {
@@ -335,16 +344,16 @@ function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState
   // Helper functions for data type analysis and display
   const getValueType = (value: any): string => {
     if (value === null) return 'null'
-    if (Array.isArray(value)) return `array[${value.length}]`
+    if (Array.isArray(value)) return 'array'
     return typeof value
   }
 
   const getValuePreview = (value: any): string => {
     if (value === null || value === undefined) return 'null'
-    if (typeof value === 'string') return `"${value.length > 20 ? value.slice(0, 20) + '...' : value}"`
+    if (typeof value === 'string') return value.length > 25 ? `"${value.slice(0, 25)}..."` : `"${value}"`
     if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    if (Array.isArray(value)) return `[${value.length} items]`
-    if (typeof value === 'object') return `{${Object.keys(value).length} keys}`
+    if (Array.isArray(value)) return `[${value.length}]`
+    if (typeof value === 'object') return `{${Object.keys(value).length}}`
     return String(value)
   }
 
@@ -352,112 +361,83 @@ function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState
     return value !== null && (typeof value === 'object' || Array.isArray(value))
   }
 
-  const indentStyle = { paddingLeft: `${level * 12}px` }
-  const bgColor = level % 2 === 0 ? 'bg-transparent' : 'bg-muted/10'
-
   if (!isComplexType(data)) {
-    // Simple value - just display inline
+    // Simple value - both key and value are draggable with expression path
     return (
-      <div style={indentStyle} className={`flex items-center gap-2 py-1 px-2 ${bgColor} border-l-2 border-transparent hover:border-primary/30 hover:bg-accent/50 transition-colors relative`}>
-        <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
+      <div className="flex items-center gap-2 py-1 px-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors group">
         {keyName && (
-          <>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span 
-                    className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/plain', currentPath)
-                      e.dataTransfer.effectAllowed = 'copy'
-                    }}
-                  >
-                    {keyName}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs font-mono">{currentPath}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <span className="text-muted-foreground">:</span>
-          </>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span 
+                  className="font-mono text-xs text-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50 cursor-grab active:cursor-grabbing select-none hover:bg-muted/80 hover:border-border transition-colors"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                    e.dataTransfer.effectAllowed = 'copy'
+                  }}
+                >
+                  {keyName}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <span 
-                className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                className="text-xs text-muted-foreground truncate max-w-[180px] cursor-grab active:cursor-grabbing select-none hover:text-foreground transition-colors"
                 draggable
                 onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
+                  // Copy actual value, not expression
+                  const valueStr = typeof data === 'string' ? data : JSON.stringify(data)
+                  e.dataTransfer.setData('text/plain', valueStr)
                   e.dataTransfer.effectAllowed = 'copy'
                 }}
               >
                 {getValuePreview(data)}
               </span>
             </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
+            <TooltipContent side="top">
+              <p className="text-xs">Drag to copy value</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <span className="text-xs text-muted-foreground italic">
-          ({getValueType(data)})
+        <span className="text-[10px] text-muted-foreground/50 ml-auto">
+          {getValueType(data)}
         </span>
       </div>
     )
   }
 
   // Complex object or array
+  const isArray = Array.isArray(data)
+  const itemCount = isArray ? data.length : Object.keys(data).length
+
   return (
-    <div style={indentStyle} className="relative">
-      <div className="absolute left-0 top-0 bottom-0 w-px bg-border/30" style={{ left: `${level * 12 - 1}px` }}></div>
-      <Collapsible
-        open={isExpanded}
-        onOpenChange={(open) => onExpandedChange?.(itemKey, open)}
-      >
-        <CollapsibleTrigger asChild>
-          <div className={`flex items-center gap-2 py-1 px-2 ${bgColor} hover:bg-accent/50 border-l-2 border-transparent hover:border-primary/30 transition-colors cursor-pointer group`}>
-            <div className="flex items-center justify-center w-4 h-4 rounded-sm hover:bg-accent transition-colors">
-              {isExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              )}
-            </div>
-            {keyName && (
-              <>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span 
-                        className="font-mono text-blue-600 text-xs font-medium bg-white px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', currentPath)
-                          e.dataTransfer.effectAllowed = 'copy'
-                          e.stopPropagation()
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {keyName}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs font-mono">{currentPath}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <span className="text-muted-foreground">:</span>
-              </>
+    <Collapsible
+      open={isExpanded}
+      onOpenChange={(open) => onExpandedChange?.(itemKey, open)}
+    >
+      <CollapsibleTrigger asChild>
+        <div className="flex items-center gap-2 py-1 px-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors cursor-pointer group">
+          <div className="flex items-center justify-center w-4 h-4">
+            {isExpanded ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
             )}
+          </div>
+          {keyName && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span 
-                    className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded-sm border border-border cursor-grab active:cursor-grabbing select-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                    className="font-mono text-xs text-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50 cursor-grab active:cursor-grabbing select-none hover:bg-muted/80 hover:border-border transition-colors"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/plain', `{{${currentPath}}}`)
@@ -466,63 +446,83 @@ function SchemaViewer({ data, level, keyName, parentPath = 'json', expandedState
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {Array.isArray(data) ? `[${data.length}]` : `{${Object.keys(data).length}}`}
+                    {keyName}
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>
+                <TooltipContent side="top">
                   <p className="text-xs font-mono">{`{{${currentPath}}}`}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <span className="text-xs text-muted-foreground italic">
-              ({getValueType(data)})
-            </span>
-          </div>
-        </CollapsibleTrigger>
+          )}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span 
+                  className="text-xs text-muted-foreground cursor-grab active:cursor-grabbing select-none hover:text-foreground transition-colors"
+                  draggable
+                  onDragStart={(e) => {
+                    // Copy actual value (JSON stringified for objects/arrays)
+                    e.dataTransfer.setData('text/plain', JSON.stringify(data))
+                    e.dataTransfer.effectAllowed = 'copy'
+                    e.stopPropagation()
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {isArray ? `[${itemCount}]` : `{${itemCount}}`}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">Drag to copy value</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <span className="text-[10px] text-muted-foreground/50 ml-auto">
+            {isArray ? 'array' : 'object'}
+          </span>
+        </div>
+      </CollapsibleTrigger>
 
-        <CollapsibleContent>
-          <div className="border-l border-border/20 ml-2">
-            {Array.isArray(data) ? (
-              // Array handling - show only first item as schema representation
-              <>
-                {data.length > 0 && (
-                  <SchemaViewer
-                    key={0}
-                    data={data[0]}
-                    level={level + 1}
-                    keyName={`[0]`}
-                    parentPath={currentPath}
-                    expandedState={expandedState}
-                    onExpandedChange={onExpandedChange}
-                  />
-                )}
-                {data.length > 1 && (
-                  <div 
-                    className="text-xs text-muted-foreground italic p-2 bg-muted/30"
-                    style={{ paddingLeft: `${(level + 1) * 12}px` }}
-                  >
-                    ... and {data.length - 1} more item{data.length - 1 !== 1 ? 's' : ''} with same structure
-                  </div>
-                )}
-              </>
-            ) : (
-              // Object handling
-              Object.entries(data).map(([key, value]) => (
+      <CollapsibleContent>
+        {/* Sidebar menu sub style - border-l for guide line */}
+        <div className="ml-3.5 border-l border-sidebar-border pl-2.5 py-0.5 flex flex-col gap-0.5">
+          {isArray ? (
+            // Array handling - show only first item as schema representation
+            <>
+              {data.length > 0 && (
                 <SchemaViewer
-                  key={key}
-                  data={value}
+                  key={0}
+                  data={data[0]}
                   level={level + 1}
-                  keyName={key}
+                  keyName={`[0]`}
                   parentPath={currentPath}
                   expandedState={expandedState}
                   onExpandedChange={onExpandedChange}
                 />
-              ))
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
+              )}
+              {data.length > 1 && (
+                <div className="text-[10px] text-muted-foreground/50 italic py-1 px-2">
+                  +{data.length - 1} more item{data.length - 1 !== 1 ? 's' : ''}
+                </div>
+              )}
+            </>
+          ) : (
+            // Object handling
+            Object.entries(data).map(([key, value]) => (
+              <SchemaViewer
+                key={key}
+                data={value}
+                level={level + 1}
+                keyName={key}
+                parentPath={currentPath}
+                expandedState={expandedState}
+                onExpandedChange={onExpandedChange}
+              />
+            ))
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -713,15 +713,15 @@ export function InputsColumn({ node }: InputsColumnProps) {
   const getNodeStatusBadge = (status?: string) => {
     switch (status) {
       case 'success':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Success</Badge>
+        return <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200/50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50">Success</Badge>
       case 'error':
-        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Error</Badge>
+        return <Badge className="bg-red-50 text-red-700 border border-red-200/50 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800/50">Error</Badge>
       case 'running':
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Running</Badge>
+        return <Badge className="bg-blue-50 text-blue-700 border border-blue-200/50 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800/50">Running</Badge>
       case 'skipped':
-        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Skipped</Badge>
+        return <Badge className="bg-muted text-muted-foreground border border-border/50 hover:bg-muted/80">Skipped</Badge>
       default:
-        return <Badge variant="outline">Idle</Badge>
+        return <Badge variant="outline" className="text-muted-foreground">Idle</Badge>
     }
   }
 
@@ -737,10 +737,10 @@ export function InputsColumn({ node }: InputsColumnProps) {
           ) : (
             <div className="flex flex-col items-center justify-center text-center space-y-4">
               <div>
-                <Zap className="w-8 h-8 text-yellow-400 mb-2 mx-auto" />
-                <p className="text-sm font-medium text-gray-700">Trigger Node</p>
-                <p className="text-xs text-gray-500 mt-1">Triggers don't accept inputs</p>
-                <p className="text-xs text-gray-400 mt-2">They are the starting point of your workflow</p>
+                <Zap className="w-8 h-8 text-amber-400 mb-2 mx-auto" />
+                <p className="text-sm font-medium text-foreground">Trigger Node</p>
+                <p className="text-xs text-muted-foreground mt-1">Triggers don't accept inputs</p>
+                <p className="text-xs text-muted-foreground/70 mt-2">They are the starting point of your workflow</p>
               </div>
             </div>
           )}
@@ -767,11 +767,11 @@ export function InputsColumn({ node }: InputsColumnProps) {
               </HoverCardTrigger>
               <HoverCardContent className="w-80" side="bottom" align="end">
                 <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">Input Connections</h4>
-                  <p className="text-sm text-gray-600">
+                  <h4 className="text-sm font-semibold text-foreground">Input Connections</h4>
+                  <p className="text-sm text-muted-foreground">
                     This panel shows categorized input connections to this node, organized by node types.
                   </p>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground/80">
                     • Nodes grouped by category (Triggers, Actions, etc.)<br />
                     • Click categories to expand/collapse<br />
                     • Execute workflow to view live data<br />
@@ -785,9 +785,9 @@ export function InputsColumn({ node }: InputsColumnProps) {
 
         <div className="h-[calc(100dvh-222px)] overflow-y-auto p-4">
           <div className="flex flex-col items-center justify-center h-32 text-center">
-            <ArrowLeft className="w-8 h-8 text-gray-300 mb-2" />
-            <p className="text-sm text-gray-500">No input connections</p>
-            <p className="text-xs text-gray-400">Connect nodes to see categorized input data</p>
+            <ArrowLeft className="w-8 h-8 text-muted-foreground/30 mb-2" />
+            <p className="text-sm text-muted-foreground">No input connections</p>
+            <p className="text-xs text-muted-foreground/70">Connect nodes to see categorized input data</p>
           </div>
         </div>
       </div>
@@ -799,9 +799,9 @@ export function InputsColumn({ node }: InputsColumnProps) {
       <div className="border-b">
         <div className="p-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <ArrowLeft className="w-4 h-4 text-gray-500" />
-            <h3 className="font-medium">Inputs</h3>
-            <Badge variant="outline">{inputNodes.length}</Badge>
+            <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-medium text-foreground">Inputs</h3>
+            <Badge variant="outline" className="text-muted-foreground">{inputNodes.length}</Badge>
           </div>
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
             <TabsList>
@@ -880,11 +880,11 @@ export function InputsColumn({ node }: InputsColumnProps) {
                     </div>
 
                     {nodeExecutionResult?.data ? (
-                      <pre className="text-xs bg-muted p-3 rounded border overflow-auto max-h-64 whitespace-pre-wrap">
+                      <pre className="text-xs bg-muted/50 p-3 rounded-lg border border-border/50 overflow-auto max-h-64 whitespace-pre-wrap font-mono text-foreground">
                         {JSON.stringify(nodeExecutionResult.data, null, 2)}
                       </pre>
                     ) : (
-                      <div className="text-xs text-muted-foreground italic p-3 bg-muted rounded border">
+                      <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-lg border border-border/30">
                         No execution data available
                       </div>
                     )}
@@ -898,13 +898,13 @@ export function InputsColumn({ node }: InputsColumnProps) {
           <TabsContent value="table" className="m-0 p-0">
             <div className="p-4">
               <div className="text-xs">
-                <table className="w-full border-collapse border border-gray-300">
+                <table className="w-full border-collapse border border-border rounded-lg overflow-hidden">
                   <thead>
-                    <tr className="bg-muted">
-                      <th className="border border-gray-300 p-2 text-left">Node</th>
-                      <th className="border border-gray-300 p-2 text-left">Type</th>
-                      <th className="border border-gray-300 p-2 text-left">Status</th>
-                      <th className="border border-gray-300 p-2 text-left">Data Available</th>
+                    <tr className="bg-muted/50">
+                      <th className="border border-border/50 p-2.5 text-left font-medium text-foreground">Node</th>
+                      <th className="border border-border/50 p-2.5 text-left font-medium text-foreground">Type</th>
+                      <th className="border border-border/50 p-2.5 text-left font-medium text-foreground">Status</th>
+                      <th className="border border-border/50 p-2.5 text-left font-medium text-foreground">Data Available</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -915,8 +915,8 @@ export function InputsColumn({ node }: InputsColumnProps) {
                       const isTrigger = getNodeExecutionCapability(inputNode.type) === 'trigger'
 
                       return (
-                        <tr key={inputNode.id} className="hover:bg-muted/50">
-                          <td className="border border-gray-300 p-2">
+                        <tr key={inputNode.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="border border-border/50 p-2.5">
                             <div className="flex items-center gap-2">
                               <NodeIconRenderer
                                 icon={inputNode.icon || nodeTypeDefinition?.icon}
@@ -927,25 +927,25 @@ export function InputsColumn({ node }: InputsColumnProps) {
                                 isTrigger={isTrigger}
                                 size="sm"
                               />
-                              <span className="font-medium">{inputNode.name}</span>
+                              <span className="font-medium text-foreground">{inputNode.name}</span>
                             </div>
                           </td>
-                          <td className="border border-gray-300 p-2">
-                            <Badge variant="outline" className="text-xs">
+                          <td className="border border-border/50 p-2.5">
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
                               {inputNode.type}
                             </Badge>
                           </td>
-                          <td className="border border-gray-300 p-2">
+                          <td className="border border-border/50 p-2.5">
                             {nodeExecutionResult ?
                               getNodeStatusBadge(nodeExecutionResult.status) :
-                              <Badge variant="outline">Not Run</Badge>
+                              <Badge variant="outline" className="text-muted-foreground">Not Run</Badge>
                             }
                           </td>
-                          <td className="border border-gray-300 p-2">
+                          <td className="border border-border/50 p-2.5">
                             {nodeExecutionResult?.data ? (
-                              <Badge className="bg-green-100 text-green-800">Yes</Badge>
+                              <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200/50 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50">Yes</Badge>
                             ) : (
-                              <Badge variant="outline">No</Badge>
+                              <Badge variant="outline" className="text-muted-foreground">No</Badge>
                             )}
                           </td>
                         </tr>

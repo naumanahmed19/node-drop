@@ -83,7 +83,7 @@ export function WorkflowExpressionField({
     }))
   }, [variables])
 
-  // Memoize connected node categories
+  // Memoize connected node categories - using $node["nodeId"].json format (stable, doesn't break on rename)
   const connectedNodeCategories = useMemo(() => {
     const categories: VariableCategory[] = []
     
@@ -94,16 +94,15 @@ export function WorkflowExpressionField({
         (conn) => conn.targetNodeId === nodeId
       )
 
-      inputConnections.forEach((connection, connectionIndex) => {
+      inputConnections.forEach((connection) => {
         const sourceNodeId = connection.sourceNodeId
         const sourceNode = workflow.nodes.find(n => n.id === sourceNodeId)
         if (!sourceNode) return
 
         const nodeName = sourceNode.name
-        const categoryName =
-          inputConnections.length > 1
-            ? `${nodeName} (input ${connectionIndex})`
-            : `${nodeName} (input)`
+        const categoryName = `${nodeName}` // Display name for UI
+        // Use node ID for stable reference (doesn't break when node is renamed)
+        const nodeBasePath = `$node["${sourceNodeId}"].json`
 
         const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
 
@@ -113,10 +112,10 @@ export function WorkflowExpressionField({
             icon: 'input',
             items: [
               {
-                label: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                label: nodeBasePath,
                 type: 'variable' as const,
                 description: 'Node not executed yet - run the workflow to see available fields',
-                insertText: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                insertText: nodeBasePath,
               },
             ],
           })
@@ -134,10 +133,10 @@ export function WorkflowExpressionField({
             icon: 'input',
             items: [
               {
-                label: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                label: nodeBasePath,
                 type: 'variable' as const,
                 description: 'No data available - check node execution',
-                insertText: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                insertText: nodeBasePath,
               },
             ],
           })
@@ -151,16 +150,17 @@ export function WorkflowExpressionField({
             icon: 'input',
             items: [
               {
-                label: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                label: nodeBasePath,
                 type: 'variable' as const,
                 description: 'Data structure not available',
-                insertText: `$json${inputConnections.length > 1 ? `[${connectionIndex}]` : ''}`,
+                insertText: nodeBasePath,
               },
             ],
           })
           return
         }
 
+        // Handle array data - use [0] to access first item
         let isArrayData = false
         if (Array.isArray(firstItem) && firstItem.length > 0) {
           isArrayData = true
@@ -171,10 +171,10 @@ export function WorkflowExpressionField({
               icon: 'input',
               items: [
                 {
-                  label: `$json${inputConnections.length > 1 ? `[${connectionIndex}][0]` : '[0]'}`,
+                  label: `${nodeBasePath}[0]`,
                   type: 'variable' as const,
                   description: 'Array data available',
-                  insertText: `$json${inputConnections.length > 1 ? `[${connectionIndex}][0]` : '[0]'}`,
+                  insertText: `${nodeBasePath}[0]`,
                 },
               ],
             })
@@ -182,49 +182,33 @@ export function WorkflowExpressionField({
           }
         }
 
-        const hasMultipleInputs = inputConnections.length > 1
-        let basePath = '$json'
-        if (hasMultipleInputs) {
-          basePath = isArrayData ? `$json[${connectionIndex}][0]` : `$json[${connectionIndex}]`
-        } else if (isArrayData) {
-          basePath = '$json[0]'
-        }
+        // Build the base path for properties
+        const basePath = isArrayData ? `${nodeBasePath}[0]` : nodeBasePath
 
         const items = Object.entries(firstItem).map(([key, val]) => {
-          let typeInfo = ''
           let valuePreview = ''
 
           if (val === null) {
-            typeInfo = 'null'
             valuePreview = 'null'
           } else if (Array.isArray(val)) {
-            typeInfo = `array[${val.length}]`
             valuePreview = `array[${val.length}]`
           } else if (typeof val === 'object') {
             const objKeys = Object.keys(val).slice(0, 3).join(', ')
-            typeInfo = `object { ${objKeys}${Object.keys(val).length > 3 ? ', ...' : ''} }`
-            valuePreview = typeInfo
+            valuePreview = `{ ${objKeys}${Object.keys(val).length > 3 ? ', ...' : ''} }`
           } else if (typeof val === 'string') {
-            typeInfo = `string (${val.length} chars)`
-            valuePreview = `"${val.substring(0, 50)}${val.length > 50 ? '...' : ''}"`
-          } else if (typeof val === 'number') {
-            typeInfo = 'number'
-            valuePreview = String(val)
-          } else if (typeof val === 'boolean') {
-            typeInfo = 'boolean'
+            valuePreview = `"${val.substring(0, 40)}${val.length > 40 ? '...' : ''}"`
+          } else if (typeof val === 'number' || typeof val === 'boolean') {
             valuePreview = String(val)
           } else {
-            typeInfo = typeof val
-            valuePreview = String(val).substring(0, 50)
+            valuePreview = String(val).substring(0, 40)
           }
 
           const fullPath = `${basePath}.${key}`
 
           return {
-            label: fullPath,
+            label: key,
             type: 'property' as const,
             description: valuePreview,
-            example: typeInfo,
             insertText: fullPath,
           }
         })

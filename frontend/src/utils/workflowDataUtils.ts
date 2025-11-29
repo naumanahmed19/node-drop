@@ -4,6 +4,10 @@ import type { Workflow, NodeExecutionResult } from '@/types'
  * Build mock data from connected workflow nodes for expression evaluation
  * Extracts execution results from nodes connected to the current node
  * Also includes workflow, execution context, and variables information
+ * 
+ * Supports two expression formats:
+ * - $json: Direct access to immediate input data
+ * - $node["NodeName"].json: Access to specific node's output by name
  */
 export async function buildMockDataFromWorkflow(
   nodeId: string | undefined,
@@ -14,6 +18,7 @@ export async function buildMockDataFromWorkflow(
 ): Promise<Record<string, unknown>> {
   const mockData: Record<string, unknown> = {
     $json: {},
+    $node: {}, // Node-specific data accessed via $node["NodeName"].json
     $workflow: {
       id: 'workflow-id',
       name: 'Workflow Name',
@@ -45,7 +50,7 @@ export async function buildMockDataFromWorkflow(
 
     if (inputConnections.length === 0) return mockData
 
-    // If multiple inputs, create an array structure
+    // If multiple inputs, create an array structure for $json
     if (inputConnections.length > 1) {
       mockData.$json = []
     }
@@ -73,6 +78,13 @@ export async function buildMockDataFromWorkflow(
         let itemData = sourceData[0]?.json || sourceData[0]
         if (!itemData) return
 
+        // Add to $node["nodeId"] for stable node reference (doesn't break on rename)
+        // This allows expressions like $node["abc123"].json.title
+        (mockData.$node as Record<string, unknown>)[sourceNodeId] = {
+          json: itemData,
+        }
+
+        // Also populate $json for backward compatibility
         if (inputConnections.length > 1) {
           // For multiple inputs, preserve the full structure (array or object)
           (mockData.$json as any[])[connectionIndex] = itemData
