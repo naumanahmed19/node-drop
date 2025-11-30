@@ -156,7 +156,7 @@ export const WorkflowCanvasContextMenu = memo(function WorkflowCanvasContextMenu
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        {children}
+        <div className="h-full">{children}</div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         {/* File Operations */}

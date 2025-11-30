@@ -408,7 +408,7 @@ export function AutoComplete<T = any>({
                           )}
                         />
                         {renderOption ? (
-                          renderOption(option)
+                          <>{renderOption(option)}</>
                         ) : (
                           <div className="flex items-start gap-2 flex-1 min-w-0">
                             {icon && <span className="mt-0.5 flex-shrink-0">{icon}</span>}
@@ -416,7 +416,7 @@ export function AutoComplete<T = any>({
                               <p className="text-sm truncate">{option.label}</p>
                               {option.metadata?.subtitle && (
                                 <p className="text-xs text-muted-foreground truncate">
-                                  {option.metadata.subtitle}
+                                  {String(option.metadata.subtitle)}
                                 </p>
                               )}
                             </div>

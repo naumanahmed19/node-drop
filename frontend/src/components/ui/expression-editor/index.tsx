@@ -85,11 +85,11 @@ export function ExpressionEditor({
   variableCategories = defaultVariableCategories,
   onChange,
   onResultChange,
-  title = "Edit Expression",
+  title: _title = "Edit Expression",
   showVariableSelector = true,
   showResultPreview = true,
   className = "",
-  nodeId,
+  nodeId: _nodeId,
 }: ExpressionEditorProps = {}) {
   const [expression, setExpression] = useState(initialValue)
   const [cursorPosition, setCursorPosition] = useState(0)

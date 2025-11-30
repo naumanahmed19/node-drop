@@ -62,7 +62,7 @@ export const ExpressionInput = forwardRef<HTMLTextAreaElement, ExpressionInputPr
     const highlightRef = useRef<HTMLDivElement>(null)
     const mirrorRef = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
-    const [isFocused, setIsFocused] = useState(false)
+    const [_isFocused, setIsFocused] = useState(false)
 
     const styles = sizeStyles[size]
 

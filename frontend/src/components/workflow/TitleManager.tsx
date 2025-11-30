@@ -31,7 +31,7 @@ export function TitleManager({
   const [editValue, setEditValue] = useState(title)
   const [showTooltip, setShowTooltip] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>()
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Use external editing state if provided, otherwise use internal state
   const isEditing = externalIsEditing || internalIsEditing

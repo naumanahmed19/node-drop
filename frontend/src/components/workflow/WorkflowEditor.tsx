@@ -83,22 +83,22 @@ export function WorkflowEditor({
 
     // Create dynamic nodeTypes object that includes both built-in and uploaded nodes
     const nodeTypes = useMemo(() => {
-        const baseNodeTypes = {
-            custom: CustomNode,
-            chat: ChatInterfaceNode,
-            'image-preview': ImagePreviewNode,
-            'data-preview': DataPreviewNode,
-            'forms': FormGeneratorNode,
-            group: GroupNode,
-            annotation: AnnotationNode,
+        const baseNodeTypes: NodeTypes = {
+            custom: CustomNode as any,
+            chat: ChatInterfaceNode as any,
+            'image-preview': ImagePreviewNode as any,
+            'data-preview': DataPreviewNode as any,
+            'forms': FormGeneratorNode as any,
+            group: GroupNode as any,
+            annotation: AnnotationNode as any,
           //  'ai-agent': AIAgentNode,
-        } as NodeTypes
+        }
 
         // For dynamically uploaded nodes, they all use the CustomNode component
         // The CustomNode component handles different node types based on the data.nodeType
         storeNodeTypes.forEach(nodeType => {
             if (!baseNodeTypes[nodeType.identifier]) {
-                baseNodeTypes[nodeType.identifier] = CustomNode
+                baseNodeTypes[nodeType.identifier] = CustomNode as any
             }
         })
 
@@ -314,7 +314,7 @@ export function WorkflowEditor({
     // Sync Zustand workflow â†’ React Flow
     // Only sync when workflow ID changes (new workflow loaded) OR when blockSync is false
     const workflowId = workflow?.id;
-    const prevWorkflowIdRef = useRef<string | undefined>();
+    const prevWorkflowIdRef = useRef<string | undefined>(undefined);
     const prevReactFlowNodesRef = useRef<any[]>([]);
     
     // Initialize socket listeners for real-time updates

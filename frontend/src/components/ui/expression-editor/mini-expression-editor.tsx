@@ -205,7 +205,7 @@ export function MiniExpressionEditor({
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 })
   const [showSelectDropdown, setShowSelectDropdown] = useState(false)
   const [pendingCursorPosition, setPendingCursorPosition] = useState<number | null>(null)
-  const [isTextareaFocused, setIsTextareaFocused] = useState(false)
+  const [_isTextareaFocused, setIsTextareaFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightInputRef = useRef<HTMLDivElement>(null)
