@@ -16,6 +16,36 @@ export const defaultVariableCategories: VariableCategory[] = [
     ],
   },
   {
+    name: "Node Helpers",
+    icon: "check-circle",
+    items: [
+      {
+        label: "isExecuted()",
+        type: "method",
+        description: "Check if node has executed",
+        insertText: 'isExecuted("")',
+      },
+      {
+        label: "hasData()",
+        type: "method",
+        description: "Check if node has non-empty data",
+        insertText: 'hasData("")',
+      },
+      {
+        label: "getNodeData()",
+        type: "method",
+        description: "Get node data with fallback",
+        insertText: 'getNodeData("", null)',
+      },
+      {
+        label: "firstExecuted()",
+        type: "method",
+        description: "Get first executed node from list",
+        insertText: 'firstExecuted(["", ""])',
+      },
+    ],
+  },
+  {
     name: "Date & Time",
     icon: "calendar",
     items: [

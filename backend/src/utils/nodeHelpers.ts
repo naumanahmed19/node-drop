@@ -18,6 +18,56 @@ export interface ExpressionContext {
 }
 
 /**
+ * Create helper functions for expression evaluation
+ * Usage: isExecuted("Node Name"), hasData("Node Name"), etc.
+ */
+export function createNodeHelperFunctions(nodeData: Record<string, any>) {
+  return {
+    /**
+     * Check if a node has executed (has data)
+     * Usage: isExecuted("HTTP Request")
+     */
+    isExecuted: (nodeName: string): boolean => {
+      return nodeData[nodeName] !== undefined && nodeData[nodeName] !== null;
+    },
+
+    /**
+     * Check if a node has non-empty data
+     * Usage: hasData("HTTP Request")
+     */
+    hasData: (nodeName: string): boolean => {
+      const data = nodeData[nodeName];
+      if (data === undefined || data === null) return false;
+      if (Array.isArray(data)) return data.length > 0;
+      if (typeof data === "object") return Object.keys(data).length > 0;
+      return true;
+    },
+
+    /**
+     * Get node data or return default value
+     * Usage: getNodeData("HTTP Request", { fallback: true })
+     */
+    getNodeData: (nodeName: string, defaultValue: any = null): any => {
+      const data = nodeData[nodeName];
+      return data !== undefined && data !== null ? data : defaultValue;
+    },
+
+    /**
+     * Get the first executed node's data from a list
+     * Usage: firstExecuted(["Path A", "Path B", "Path C"])
+     */
+    firstExecuted: (nodeNames: string[]): any => {
+      for (const name of nodeNames) {
+        if (nodeData[name] !== undefined && nodeData[name] !== null) {
+          return nodeData[name];
+        }
+      }
+      return null;
+    },
+  };
+}
+
+/**
  * Simple DateTime helper (compatible with Luxon-like API)
  * Provides basic date/time functionality for expressions
  */
@@ -79,15 +129,20 @@ const DateTime = {
  */
 function safeEvaluateExpression(expression: string, context: ExpressionContext, item: any): any {
   try {
+    const nodeData = context.$node || {};
+    const helperFunctions = createNodeHelperFunctions(nodeData);
+
     // Build the evaluation context with all available data
     const evalContext: Record<string, any> = {
       // Data sources
       $json: context.$json ?? item,
-      $node: context.$node || {},
+      $node: nodeData,
       $vars: context.$vars || {},
       $workflow: context.$workflow || {},
       $execution: context.$execution || {},
       $itemIndex: context.$itemIndex ?? 0, // Current item index (0-based)
+      // Helper functions (direct access like $isExecuted("Node"))
+      ...helperFunctions,
       // Built-in variables
       $now: new Date().toISOString(),
       $today: new Date().toISOString().split('T')[0],

@@ -16,6 +16,34 @@ export function evaluateExpression(
   }
 
   try {
+    const nodeData = (context.$node as Record<string, unknown>) || {}
+
+    // Create helper functions for node checks
+    const helperFunctions = {
+      isExecuted: (nodeName: string): boolean => {
+        return nodeData[nodeName] !== undefined && nodeData[nodeName] !== null
+      },
+      hasData: (nodeName: string): boolean => {
+        const data = nodeData[nodeName]
+        if (data === undefined || data === null) return false
+        if (Array.isArray(data)) return data.length > 0
+        if (typeof data === "object") return Object.keys(data).length > 0
+        return true
+      },
+      getNodeData: (nodeName: string, defaultValue: unknown = null): unknown => {
+        const data = nodeData[nodeName]
+        return data !== undefined && data !== null ? data : defaultValue
+      },
+      firstExecuted: (nodeNames: string[]): unknown => {
+        for (const name of nodeNames) {
+          if (nodeData[name] !== undefined && nodeData[name] !== null) {
+            return nodeData[name]
+          }
+        }
+        return null
+      },
+    }
+
     // Create safe evaluation context
     // $node data is stored directly (not wrapped in .json) for cleaner expressions
     const safeContext: Record<string, unknown> = {
@@ -26,8 +54,10 @@ export function evaluateExpression(
       $workflow: context.$workflow,
       $execution: context.$execution,
       $vars: context.$vars,
-      $node: context.$node,
+      $node: nodeData,
       $itemIndex: context.$itemIndex ?? 0, // Current item index (0-based)
+      // Helper functions (direct access like $isExecuted("Node"))
+      ...helperFunctions,
     }
 
     const evaluate = createSafeEvaluator(safeContext)
