@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import { Workflow } from "../types/database";
 import { NodeInputData, StandardizedNodeOutput } from "../types/node.types";
+import { buildCredentialsMapping, extractCredentialProperties } from "../utils/credentialHelpers";
 import { logger } from "../utils/logger";
 import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { DependencyResolver } from "./DependencyResolver";
@@ -811,54 +812,18 @@ export class FlowExecutionEngine extends EventEmitter {
       );
       nodeState.inputData = inputData;
 
-      // Build credentials mapping: need to map credential types to IDs
-      // For custom nodes, credentials are stored in parameters with credential type fields
-      let credentialsMapping: Record<string, string> | undefined;
-
-      // Get all node types and find the one we need
+      // Build credentials mapping using shared utility
       const allNodeTypes = await this.nodeService.getNodeTypes();
       const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
+      const nodeTypeProperties = extractCredentialProperties(nodeTypeInfo);
 
-      if (nodeTypeInfo && nodeTypeInfo.properties) {
-        credentialsMapping = {};
-
-        const properties = Array.isArray(nodeTypeInfo.properties)
-          ? nodeTypeInfo.properties
-          : [];
-
-        // Find credential-type properties and extract their values from node parameters
-        for (const property of properties) {
-          if (
-            property.type === "credential" &&
-            property.allowedTypes &&
-            property.allowedTypes.length > 0
-          ) {
-            // Get the credential ID from parameters using the field name
-            const credentialId = node.parameters?.[property.name];
-
-            if (credentialId && typeof credentialId === "string") {
-              // Verify credential exists and get its actual type
-              const cred = await this.prisma.credential.findUnique({
-                where: { id: credentialId },
-                select: { type: true, userId: true }
-              });
-
-              if (cred) {
-                if (cred.userId !== context.userId) {
-                  logger.warn(`Credential ${credentialId} does not belong to user ${context.userId}`);
-                  continue;
-                }
-                // Map the actual credential type from the database to the credential ID
-                // This ensures the node can request credentials by their actual type
-                credentialsMapping[cred.type] = credentialId;
-                logger.info(`[FlowExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
-              } else {
-                logger.warn(`[FlowExecution] Credential ${credentialId} not found in database`);
-              }
-            }
-          }
-        }
-      }
+      const { mapping: credentialsMapping } = await buildCredentialsMapping({
+        nodeParameters: node.parameters || {},
+        nodeTypeProperties,
+        userId: context.userId,
+        prisma: this.prisma,
+        logPrefix: "[FlowExecution]",
+      });
 
       const nodeResult = await this.nodeService.executeNode(
         node.type,
