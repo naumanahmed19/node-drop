@@ -132,8 +132,9 @@ export const MergeNode: NodeDefinition = {
         // main[1] = items from second connection, etc.
         const allInputs = inputData.main || [];
 
-        // If waitForAll is true and we don't have all inputs yet, wait
-        // (This would be handled by the workflow engine in a real implementation)
+        // NOTE: The "waitForAll" behavior is handled by the execution engine (RealtimeExecutionEngine)
+        // The engine ensures all upstream nodes complete before calling this execute() function
+        // This check is just a safety fallback in case the node is called directly
         if (waitForAll && allInputs.length === 0) {
             return [{ main: [] }];
         }

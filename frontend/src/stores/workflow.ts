@@ -3466,7 +3466,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       // Helper function to gather input data from connected nodes
       gatherInputDataFromConnectedNodes: (nodeId: string) => {
         const { workflow } = get();
-        if (!workflow) return { main: [[]] };
+        if (!workflow) return { main: [[]], nodeOutputs: {} };
 
         // Find all connections where this node is the target
         const inputConnections = workflow.connections.filter(
@@ -3474,23 +3474,27 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         );
 
         if (inputConnections.length === 0) {
-          return { main: [[]] };
+          return { main: [[]], nodeOutputs: {} };
         }
 
         const inputData: any = { main: [] };
+        // Also collect nodeOutputs for $node expression resolution
+        const nodeOutputs: Record<string, any> = {};
 
         for (const connection of inputConnections) {
           const sourceNodeId = connection.sourceNodeId;
+          const sourceNode = workflow.nodes.find((n) => n.id === sourceNodeId);
           const sourceNodeResult = get().getNodeExecutionResult(sourceNodeId);
 
-          if (
-            sourceNodeResult &&
+          // Check if we have execution results or pinned mock data
+          const hasExecutionData = sourceNodeResult &&
             sourceNodeResult.data &&
             (sourceNodeResult.status === "success" ||
-              sourceNodeResult.status === "skipped")
-          ) {
+              sourceNodeResult.status === "skipped");
+
+          if (hasExecutionData && sourceNodeResult) {
             let sourceData;
-            if (sourceNodeResult.data.main) {
+            if (sourceNodeResult.data?.main) {
               sourceData = sourceNodeResult.data.main;
             } else if (
               Array.isArray(sourceNodeResult.data) &&
@@ -3498,11 +3502,29 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               sourceNodeResult.data[0].main
             ) {
               sourceData = sourceNodeResult.data[0].main;
-            } else if (sourceNodeResult.status === "skipped") {
+            } else if (sourceNodeResult.status === "skipped" && sourceNodeResult.data) {
               sourceData = [{ json: sourceNodeResult.data }];
             }
 
-            if (Array.isArray(sourceData) && sourceData.length > 0) {
+            // Store node output for $node expression resolution
+            // Extract the actual data from the source node result
+            if (sourceData && Array.isArray(sourceData) && sourceData.length > 0) {
+              // Extract json data from items
+              const extractedData = sourceData.map((item: any) => {
+                if (item && item.json !== undefined) {
+                  return item.json;
+                }
+                return item;
+              });
+              // Store by node ID
+              nodeOutputs[sourceNodeId] = extractedData.length === 1 ? extractedData[0] : extractedData;
+              // Also store by node name for $node["Name"] syntax
+              if (sourceNode?.name) {
+                nodeOutputs[sourceNode.name] = nodeOutputs[sourceNodeId];
+              }
+            }
+            // Also add to inputData.main for the node's input
+            if (sourceData && Array.isArray(sourceData) && sourceData.length > 0) {
               for (const item of sourceData) {
                 if (item && item.json !== undefined) {
                   if (Array.isArray(item.json)) {
@@ -3523,12 +3545,30 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 }
               }
             }
+          } else if (sourceNode?.mockData) {
+            // Fallback: use unpinned mock data if no execution results
+            // This allows expressions to be resolved even if upstream nodes haven't been executed
+            nodeOutputs[sourceNodeId] = sourceNode.mockData;
+            if (sourceNode.name) {
+              nodeOutputs[sourceNode.name] = sourceNode.mockData;
+            }
+            // Also add mock data to inputData.main
+            if (Array.isArray(sourceNode.mockData)) {
+              for (const item of sourceNode.mockData) {
+                inputData.main.push({ json: item });
+              }
+            } else {
+              inputData.main.push({ json: sourceNode.mockData });
+            }
           }
         }
 
         if (inputData.main.length === 0) {
           inputData.main.push([]);
         }
+
+        // Include nodeOutputs in the return value
+        inputData.nodeOutputs = nodeOutputs;
 
         return inputData;
       },

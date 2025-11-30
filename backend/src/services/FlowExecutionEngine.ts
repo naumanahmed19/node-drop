@@ -928,8 +928,16 @@ export class FlowExecutionEngine extends EventEmitter {
 
     // If we have workflow context and multiple incoming connections, use branch-aware checking
     if (workflow && incomingConnections.length > 1) {
+      // ⚠️ CRITICAL FIX: For nodes with multiple inputs, we must wait for ALL upstream nodes
+      // to complete before executing. This prevents race conditions where expressions like
+      // {{ $node["A"].value }} and {{ $node["B"].value }} would fail because only A completed.
+      //
+      // Previous logic allowed execution if "at least one dependency completed with data",
+      // which caused the race condition in your workflow where Posts node executed when
+      // JSON node completed but Indexs node hadn't completed yet.
+      
+      let allUpstreamNodesCompleted = true;
       let hasAtLeastOneCompletedWithData = false;
-      let allRelevantDependenciesCompleted = true;
 
       for (const depNodeId of nodeState.dependencies) {
         const depState = context.nodeStates.get(depNodeId);
@@ -940,7 +948,7 @@ export class FlowExecutionEngine extends EventEmitter {
             dependencyNodeId: depNodeId,
             executionId: context.executionId,
           });
-          allRelevantDependenciesCompleted = false;
+          allUpstreamNodesCompleted = false;
           continue;
         }
 
@@ -983,20 +991,26 @@ export class FlowExecutionEngine extends EventEmitter {
           }
         } else if (depState.status !== FlowNodeStatus.SKIPPED) {
           // If dependency is not completed and not skipped, we need to wait
-          allRelevantDependenciesCompleted = false;
+          allUpstreamNodesCompleted = false;
+          
+          logger.debug("Waiting for upstream dependency to complete", {
+            nodeId,
+            dependencyNodeId: depNodeId,
+            dependencyStatus: depState.status,
+            executionId: context.executionId,
+          });
         }
       }
 
-      // For multi-branch scenarios, we're satisfied if:
-      // 1. At least one dependency completed with data, OR
-      // 2. All dependencies have completed/skipped (even if no data)
-      const satisfied = hasAtLeastOneCompletedWithData || 
-        (allRelevantDependenciesCompleted && nodeState.dependencies.length > 0);
+      // NEW LOGIC: We're satisfied ONLY if ALL upstream nodes have completed (or skipped)
+      // This ensures expressions referencing multiple nodes work correctly
+      const satisfied = allUpstreamNodesCompleted && nodeState.dependencies.length > 0;
 
-      logger.debug("Multi-branch dependency check", {
+      logger.debug("Multi-input dependency check", {
         nodeId,
+        totalDependencies: nodeState.dependencies.length,
+        allUpstreamNodesCompleted,
         hasAtLeastOneCompletedWithData,
-        allRelevantDependenciesCompleted,
         satisfied,
         executionId: context.executionId,
       });

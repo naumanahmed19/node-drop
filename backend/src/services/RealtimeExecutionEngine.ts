@@ -459,6 +459,42 @@ export class RealtimeExecutionEngine extends EventEmitter {
             return;
         }
 
+        // ⚠️ CRITICAL FIX: Wait for ALL upstream nodes to complete before executing
+        // This prevents race conditions where a node executes before all its inputs are ready
+        // Example: If a node uses {{ $node["A"].value }} and {{ $node["B"].value }},
+        // we must wait for BOTH A and B to complete, not just one of them
+        const incomingConnections = context.connections.filter(
+            (conn) => conn.targetNodeId === nodeId
+        );
+        
+        if (incomingConnections.length > 0) {
+            const upstreamNodeIds = [...new Set(incomingConnections.map(conn => conn.sourceNodeId))];
+            const missingUpstreamNodes = upstreamNodeIds.filter(
+                upstreamId => !context.nodeOutputs.has(upstreamId)
+            );
+            
+            if (missingUpstreamNodes.length > 0) {
+                logger.info(`[RealtimeExecution] Node ${nodeId} waiting for upstream nodes to complete`, {
+                    nodeId,
+                    nodeName: node.name,
+                    totalUpstream: upstreamNodeIds.length,
+                    missingUpstream: missingUpstreamNodes.length,
+                    missingNodeIds: missingUpstreamNodes,
+                    completedNodeIds: upstreamNodeIds.filter(id => context.nodeOutputs.has(id)),
+                });
+                
+                // Don't execute yet - upstream nodes will trigger this node when they complete
+                return;
+            }
+            
+            logger.info(`[RealtimeExecution] All upstream nodes completed for ${nodeId}`, {
+                nodeId,
+                nodeName: node.name,
+                upstreamCount: upstreamNodeIds.length,
+                upstreamNodeIds,
+            });
+        }
+
         context.currentNodeId = nodeId;
 
         logger.info(`[RealtimeExecution] Executing node ${nodeId} (${node.name})`);
