@@ -244,7 +244,8 @@ export class SecureExecutionService {
     
     // Build $node context from nodeOutputs map (once)
     // Supports both $node["nodeId"] and $node["Node Name"] syntax
-    const nodeContext: Record<string, { json: any }> = {};
+    // Data is stored directly (not wrapped in .json) for cleaner expressions like $node["Name"].field
+    const nodeContext: Record<string, any> = {};
     if (nodeOutputs) {
       for (const [nId, outputData] of nodeOutputs.entries()) {
         let jsonData = outputData;
@@ -254,14 +255,14 @@ export class SecureExecutionService {
             jsonData = mainData[0]?.json || mainData[0] || mainData;
           }
         }
-        // Add by node ID (stable reference)
-        nodeContext[nId] = { json: jsonData };
-        
+        // Add by node ID (stable reference) - store data directly
+        nodeContext[nId] = jsonData;
+
         // Also add by node name if available (user-friendly reference)
         if (nodeIdToName) {
           const nodeName = nodeIdToName.get(nId);
           if (nodeName && nodeName !== nId) {
-            nodeContext[nodeName] = { json: jsonData };
+            nodeContext[nodeName] = jsonData;
           }
         }
       }

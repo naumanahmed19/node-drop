@@ -249,7 +249,7 @@ function UnifiedTreeNode({
         {/* Node Data as part of the tree */}
         <CollapsibleContent className="space-y-0">
           {nodeData ? (
-            <div className="bg-background/50 py-1">
+            <div className="bg-background/50 py-3 px-8">
               {/* Use $node["Node Name"].field format (clean, without .json) */}
               {(() => {
                 const basePath = `$node["${inputNode.name}"]`
@@ -881,7 +881,7 @@ export function InputsColumn({ node }: InputsColumnProps) {
 
                     {nodeExecutionResult?.data ? (
                       <pre className="text-xs bg-muted/50 p-3 rounded-lg border border-border/50 overflow-auto max-h-64 whitespace-pre-wrap font-mono text-foreground">
-                        {JSON.stringify(nodeExecutionResult.data, null, 2)}
+                        {JSON.stringify(getRelevantData(nodeExecutionResult.data), null, 2)}
                       </pre>
                     ) : (
                       <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-lg border border-border/30">

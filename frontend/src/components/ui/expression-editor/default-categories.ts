@@ -3,6 +3,19 @@ import type { VariableCategory } from "./types"
 // Default variable categories used by both full and mini expression editors
 export const defaultVariableCategories: VariableCategory[] = [
   {
+    name: "Item & Loop",
+    icon: "repeat",
+    items: [
+      { label: "$itemIndex", type: "variable", description: "Current item index (0-based)", insertText: "$itemIndex" },
+      {
+        label: "$itemIndex + 1",
+        type: "variable",
+        description: "Current item number (1-based)",
+        insertText: "$itemIndex + 1",
+      },
+    ],
+  },
+  {
     name: "Date & Time",
     icon: "calendar",
     items: [

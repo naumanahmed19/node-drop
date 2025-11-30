@@ -20,7 +20,7 @@ export async function buildMockDataFromWorkflow(
 ): Promise<Record<string, unknown>> {
   const mockData: Record<string, unknown> = {
     $json: {},
-    $node: {}, // Node-specific data accessed via $node["NodeName"].json
+    $node: {}, // Node-specific data accessed via $node["NodeName"].field (data stored directly)
     $workflow: {
       id: 'workflow-id',
       name: 'Workflow Name',
@@ -31,6 +31,7 @@ export async function buildMockDataFromWorkflow(
       mode: 'manual',
     },
     $vars: variables || {},
+    $itemIndex: 0, // Current item index (0-based) - updated during batch processing
   }
 
   if (!nodeId || !workflow) return mockData
@@ -81,16 +82,13 @@ export async function buildMockDataFromWorkflow(
         if (!itemData) return
 
         // Add to $node by both ID and name for flexible reference
-        // $node["nodeId"].json - stable reference (doesn't break on rename)
-        // $node["Node Name"].json - user-friendly reference
-        (mockData.$node as Record<string, unknown>)[sourceNodeId] = {
-          json: itemData,
-        }
+        // Data is stored directly (not wrapped in .json) for cleaner expressions
+        // $node["nodeId"].field - stable reference (doesn't break on rename)
+        // $node["Node Name"].field - user-friendly reference
+        ;(mockData.$node as Record<string, unknown>)[sourceNodeId] = itemData
         // Also add by node name for user-friendly access
         if (sourceNode.name && sourceNode.name !== sourceNodeId) {
-          (mockData.$node as Record<string, unknown>)[sourceNode.name] = {
-            json: itemData,
-          }
+          ;(mockData.$node as Record<string, unknown>)[sourceNode.name] = itemData
         }
 
         // Also populate $json for backward compatibility

@@ -9,7 +9,7 @@ export function inferTypeFromPath(
   data: Record<string, unknown>
 ): "string" | "array" | "number" | "object" | "any" {
   try {
-    // Handle $node["NodeName"] format
+    // Handle $node["NodeName"] format - data is stored directly (not wrapped in .json)
     const nodeMatch = path.match(/^\$node\["([^"]+)"\](?:\.(.*))?$/)
     if (nodeMatch) {
       const nodeName = nodeMatch[1]
@@ -20,7 +20,8 @@ export function inferTypeFromPath(
         return "any"
       }
 
-      let current: unknown = (nodeData[nodeName] as Record<string, unknown>)?.json
+      // Data is stored directly in $node[name], not wrapped in .json
+      let current: unknown = nodeData[nodeName]
       if (!current) {
         return "any"
       }
@@ -79,7 +80,7 @@ export function getPropertiesFromPath(
   data: Record<string, unknown>
 ): AutocompleteItem[] {
   try {
-    // Handle $node["NodeName"] format
+    // Handle $node["NodeName"] format - data is stored directly (not wrapped in .json)
     const nodeMatch = path.match(/^\$node\["([^"]+)"\](?:\.(.*))?$/)
     if (nodeMatch) {
       const nodeName = nodeMatch[1]
@@ -90,7 +91,8 @@ export function getPropertiesFromPath(
         return []
       }
 
-      let current: unknown = (nodeData[nodeName] as Record<string, unknown>)?.json
+      // Data is stored directly in $node[name], not wrapped in .json
+      let current: unknown = nodeData[nodeName]
       if (!current) {
         return []
       }

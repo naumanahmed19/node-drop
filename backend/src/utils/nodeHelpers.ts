@@ -9,11 +9,12 @@
  * Context object for expression resolution containing all available data sources
  */
 export interface ExpressionContext {
-  $json?: any;           // Immediate input data
-  $node?: Record<string, { json: any }>; // Node outputs by ID: $node["nodeId"].json
-  $vars?: Record<string, string>;        // Variables
+  $json?: any; // Immediate input data
+  $node?: Record<string, any>; // Node outputs by ID/name: $node["nodeId"].field or $node["Name"].field
+  $vars?: Record<string, string>; // Variables
   $workflow?: { id: string; name: string; active: boolean };
   $execution?: { id: string; mode: string };
+  $itemIndex?: number; // Current item index when processing multiple items (0-based)
 }
 
 /**
@@ -86,6 +87,7 @@ function safeEvaluateExpression(expression: string, context: ExpressionContext, 
       $vars: context.$vars || {},
       $workflow: context.$workflow || {},
       $execution: context.$execution || {},
+      $itemIndex: context.$itemIndex ?? 0, // Current item index (0-based)
       // Built-in variables
       $now: new Date().toISOString(),
       $today: new Date().toISOString().split('T')[0],
@@ -214,13 +216,15 @@ export function resolveValue(value: string | any, item: any, context?: Expressio
     // Handle $node["Node Name"].field or $node["Node Name"].json.field format
     // Supports both with and without .json, and both node ID (stable) and node name (user-friendly)
     // Examples: $node["HTTP Request"].posts, $node["HTTP Request"].json.posts
+    // Note: $node data is stored directly (not wrapped in .json), so .json is just ignored for compatibility
     const nodeRefMatch = trimmedPath.match(/^\$node\["([^"]+)"\](?:\.json)?(?:\.(.+))?$/);
     if (nodeRefMatch) {
       const nodeIdOrName = nodeRefMatch[1];
       const fieldPath = nodeRefMatch[2];
 
       if (context?.$node && context.$node[nodeIdOrName]) {
-        const nodeData = context.$node[nodeIdOrName].json;
+        // Data is stored directly in $node[name], not wrapped in .json
+        const nodeData = context.$node[nodeIdOrName];
         if (fieldPath) {
           const result = resolvePath(nodeData, fieldPath);
           return result !== undefined
