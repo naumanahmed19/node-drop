@@ -21,6 +21,7 @@ import {
 } from "../types/execution.types";
 import { NodeInputData, NodeOutputData } from "../types/node.types";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { NodeService } from "./NodeService";
 
 export class ExecutionEngine extends EventEmitter {
@@ -110,15 +111,10 @@ export class ExecutionEngine extends EventEmitter {
       });
 
       // Build nodeId -> nodeName mapping for $node["Name"] expression support
-      const nodeIdToName = new Map<string, string>();
       const workflowNodes = Array.isArray(workflow.nodes)
         ? workflow.nodes
         : JSON.parse(workflow.nodes as string);
-      for (const node of workflowNodes) {
-        if (node.id && node.name) {
-          nodeIdToName.set(node.id, node.name);
-        }
-      }
+      const nodeIdToName = buildNodeIdToNameMap(workflowNodes);
 
       // Create execution context
       const context: ExecutionContext = {

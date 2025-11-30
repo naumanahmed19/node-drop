@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Workflow } from "../types/database";
 import { NodeInputData, StandardizedNodeOutput } from "../types/node.types";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { DependencyResolver } from "./DependencyResolver";
 import ExecutionHistoryService from "./ExecutionHistoryService";
 import { NodeService } from "./NodeService";
@@ -405,10 +406,9 @@ export class FlowExecutionEngine extends EventEmitter {
     startNodeId: string
   ): Promise<void> {
     // Build nodeId -> nodeName mapping for $node["Name"] expression support
-    for (const node of workflow.nodes) {
-      if (node.id && node.name) {
-        context.nodeIdToName.set(node.id, node.name);
-      }
+    const nodeIdToName = buildNodeIdToNameMap(workflow.nodes);
+    for (const [id, name] of nodeIdToName) {
+      context.nodeIdToName.set(id, name);
     }
     
     // Validate workflow structure before execution with enhanced safety checks

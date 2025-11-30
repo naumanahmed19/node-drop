@@ -10,6 +10,7 @@ import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import { ExecutionStatus, NodeExecutionStatus } from "../types/database";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { NodeService } from "./NodeService";
 
 interface WorkflowNode {
@@ -225,12 +226,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
         const saveToDatabase = options?.saveToDatabase !== false; // Default to true
         
         // Build nodeId -> nodeName mapping for $node["Name"] expression support
-        const nodeIdToName = new Map<string, string>();
-        for (const node of nodes) {
-            if (node.id && node.name) {
-                nodeIdToName.set(node.id, node.name);
-            }
-        }
+        const nodeIdToName = buildNodeIdToNameMap(nodes);
         
         const context: ExecutionContext = {
             executionId,

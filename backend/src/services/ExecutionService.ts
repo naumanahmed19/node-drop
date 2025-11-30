@@ -15,6 +15,7 @@ import {
   QueueConfig,
 } from "../types/execution.types";
 import { logger } from "../utils/logger";
+import { buildExpressionContext } from "../utils/nodeHelpers";
 import { ExecutionEngine } from "./ExecutionEngine";
 import ExecutionHistoryService from "./ExecutionHistoryService";
 import {
@@ -1457,75 +1458,12 @@ export class ExecutionService {
           // For single node execution, always execute the actual node (skip mock data)
           // Mock data should only be used in test scenarios, not for real single node execution
 
-          // Build nodeIdToName map for $node["Name"] expression support
-          const nodeIdToName = new Map<string, string>();
-          for (const wfNode of workflowNodes) {
-            if (wfNode.name) {
-              nodeIdToName.set(wfNode.id, wfNode.name);
-            }
-          }
-
-          // Build nodeOutputs map from connected nodes for expression resolution
-          // This allows expressions like $node["JSON"].posts to work in single node execution
-          const nodeOutputs = new Map<string, any>();
-          
-          // First, check if frontend sent nodeOutputs directly (preferred method)
-          if (nodeInputData?.nodeOutputs && typeof nodeInputData.nodeOutputs === 'object') {
-            for (const [key, value] of Object.entries(nodeInputData.nodeOutputs)) {
-              nodeOutputs.set(key, value);
-            }
-            logger.info('Using nodeOutputs from frontend', {
-              nodeId,
-              nodeOutputsKeys: Object.keys(nodeInputData.nodeOutputs),
-            });
-          }
-          
-          // Fallback: try to build nodeOutputs from connections and input data
-          if (nodeOutputs.size === 0 && workflowData?.connections && nodeInputData?.main) {
-            // Find all connections where this node is the target
-            const inputConnections = workflowData.connections.filter(
-              (conn: any) => conn.targetNodeId === nodeId
-            );
-            
-            // For each connected source node, try to find its data in inputData
-            // The inputData.main array contains data from all connected nodes
-            for (const conn of inputConnections) {
-              const sourceNodeId = conn.sourceNodeId;
-              const sourceNode = workflowNodes.find((n: any) => n.id === sourceNodeId);
-              
-              if (sourceNode) {
-                // Check if source node has mockData that was used
-                if (sourceNode.mockData && sourceNode.mockDataPinned) {
-                  // Use pinned mock data
-                  nodeOutputs.set(sourceNodeId, sourceNode.mockData);
-                  // Also add by name
-                  if (sourceNode.name) {
-                    nodeOutputs.set(sourceNode.name, sourceNode.mockData);
-                  }
-                } else if (nodeInputData.main && nodeInputData.main.length > 0) {
-                  // Use the input data - for single connection, all data comes from that node
-                  // For multiple connections, we need to figure out which data belongs to which node
-                  // For now, if there's only one connection, assign all data to that node
-                  if (inputConnections.length === 1) {
-                    // Extract data from the input format
-                    const extractedData = nodeInputData.main.map((item: any) => {
-                      if (item && item.json !== undefined) {
-                        return item.json;
-                      }
-                      return item;
-                    });
-                    // Store as array if multiple items, or single item if just one
-                    const data = extractedData.length === 1 ? extractedData[0] : extractedData;
-                    nodeOutputs.set(sourceNodeId, data);
-                    // Also add by name
-                    if (sourceNode.name) {
-                      nodeOutputs.set(sourceNode.name, data);
-                    }
-                  }
-                }
-              }
-            }
-          }
+          // Build expression context (nodeIdToName and nodeOutputs) using shared utility
+          const { nodeIdToName, nodeOutputs } = buildExpressionContext(workflowNodes, {
+            targetNodeId: nodeId,
+            connections: workflowData?.connections,
+            inputData: nodeInputData,
+          });
 
           // Log nodeOutputs for debugging
           if (nodeOutputs.size > 0) {
