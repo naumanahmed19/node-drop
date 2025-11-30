@@ -135,8 +135,9 @@ function safeEvaluateExpression(expression: string, context: ExpressionContext, 
  * Supports multiple expression formats:
  * - {{$json.fieldName}} or {{json.fieldName}} - Access immediate input data
  * - {{$json[0].fieldName}} - Array-based access for multiple inputs
- * - {{$node["nodeId"].json.fieldName}} - Access specific node's output by ID (stable, doesn't break on rename)
- * - {{$node["Node Name"].json.fieldName}} - Access specific node's output by name (user-friendly)
+ * - {{$node["Node Name"].fieldName}} - Access specific node's output by name (recommended, user-friendly)
+ * - {{$node["nodeId"].fieldName}} - Access specific node's output by ID (stable, doesn't break on rename)
+ * - {{$node["..."].json.fieldName}} - Also supported for backward compatibility (.json is optional)
  * - {{$vars.variableName}} - Access workflow variables
  * - {{$workflow.name}} - Access workflow metadata
  *
@@ -148,13 +149,13 @@ function safeEvaluateExpression(expression: string, context: ExpressionContext, 
  * @example
  * // Simple field access
  * resolveValue("Hello {{$json.name}}", { name: "John" }); // "Hello John"
- * 
+ *
+ * // Node reference by name (recommended)
+ * resolveValue("{{$node[\"HTTP Request\"].posts}}", null, { $node: { "HTTP Request": { json: { posts: [...] } } } });
+ *
  * // Node reference by ID (stable - doesn't break on rename)
- * resolveValue("{{$node[\"abc123\"].json.title}}", null, { $node: { "abc123": { json: { title: "Test" } } } });
- * 
- * // Node reference by name (user-friendly)
- * resolveValue("{{$node[\"HTTP Request\"].json.posts}}", null, { $node: { "HTTP Request": { json: { posts: [...] } } } });
- * 
+ * resolveValue("{{$node[\"abc123\"].title}}", null, { $node: { "abc123": { json: { title: "Test" } } } });
+ *
  * // Multiple inputs
  * resolveValue("{{$json[0].name}}", [{ name: "John" }, { name: "Jane" }]); // "John"
  */
@@ -210,18 +211,23 @@ export function resolveValue(value: string | any, item: any, context?: Expressio
       // If evaluation returned the original expression, fall through to simple resolution
     }
     
-    // Handle $node["nodeId"].json.field or $node["Node Name"].json.field format
-    // Supports both node ID (stable) and node name (user-friendly)
-    const nodeRefMatch = trimmedPath.match(/^\$node\["([^"]+)"\]\.json(?:\.(.+))?$/);
+    // Handle $node["Node Name"].field or $node["Node Name"].json.field format
+    // Supports both with and without .json, and both node ID (stable) and node name (user-friendly)
+    // Examples: $node["HTTP Request"].posts, $node["HTTP Request"].json.posts
+    const nodeRefMatch = trimmedPath.match(/^\$node\["([^"]+)"\](?:\.json)?(?:\.(.+))?$/);
     if (nodeRefMatch) {
       const nodeIdOrName = nodeRefMatch[1];
       const fieldPath = nodeRefMatch[2];
-      
+
       if (context?.$node && context.$node[nodeIdOrName]) {
         const nodeData = context.$node[nodeIdOrName].json;
         if (fieldPath) {
           const result = resolvePath(nodeData, fieldPath);
-          return result !== undefined ? (typeof result === 'object' ? JSON.stringify(result) : String(result)) : match;
+          return result !== undefined
+            ? typeof result === 'object'
+              ? JSON.stringify(result)
+              : String(result)
+            : match;
         }
         return typeof nodeData === 'object' ? JSON.stringify(nodeData) : String(nodeData);
       }

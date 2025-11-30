@@ -4,11 +4,12 @@ import type { Workflow, NodeExecutionResult } from '@/types'
  * Build mock data from connected workflow nodes for expression evaluation
  * Extracts execution results from nodes connected to the current node
  * Also includes workflow, execution context, and variables information
- * 
+ *
  * Supports multiple expression formats:
  * - $json: Direct access to immediate input data
- * - $node["Node Name"].json: Access to specific node's output by name (user-friendly)
- * - $node["nodeId"].json: Access to specific node's output by ID (stable, doesn't break on rename)
+ * - $node["Node Name"].field: Access to specific node's output by name (user-friendly, recommended)
+ * - $node["nodeId"].field: Access to specific node's output by ID (stable, doesn't break on rename)
+ * - .json is optional: $node["Node Name"].json.field also works for backward compatibility
  */
 export async function buildMockDataFromWorkflow(
   nodeId: string | undefined,

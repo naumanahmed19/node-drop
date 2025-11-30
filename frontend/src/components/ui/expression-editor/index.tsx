@@ -10,6 +10,7 @@ import { VariableSelector } from "./variable-selector"
 import { evaluateExpression } from "./expression-evaluator"
 import type { AutocompleteItem, VariableCategory, ExpressionEditorProps } from "./types"
 import { defaultVariableCategories } from "./default-categories"
+import { inferTypeFromPath, getPropertiesFromPath } from "./expression-utils"
 
 
 // Default mock data - will be overridden by actual workflow data when nodeId is provided
@@ -75,97 +76,7 @@ const getMethodsForType = (
   }
 }
 
-const getPropertiesFromPath = (path: string, data: Record<string, unknown>): AutocompleteItem[] => {
-  try {
-    const parts = path
-      .replace(/\[["']?/g, ".")
-      .replace(/["']?\]/g, "")
-      .split(".")
-      .filter(Boolean)
-
-    let current: unknown = data
-
-    if (parts[0] === "$json") {
-      current = data.$json
-      parts.shift()
-    } else if (parts[0] === "$input") {
-      current = data.$input
-      parts.shift()
-    } else {
-      return []
-    }
-
-    for (const part of parts) {
-      if (current && typeof current === "object" && part in (current as Record<string, unknown>)) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return []
-      }
-    }
-
-    if (current && typeof current === "object" && !Array.isArray(current)) {
-      return Object.entries(current as Record<string, unknown>).map(([key, value]) => {
-        let type: "property" | "variable" = "property"
-        let description = ""
-
-        if (typeof value === "string") {
-          description = `String: "${value.length > 20 ? value.slice(0, 20) + "..." : value}"`
-        } else if (typeof value === "number") {
-          description = `Number: ${value}`
-        } else if (typeof value === "boolean") {
-          description = `Boolean: ${value}`
-        } else if (Array.isArray(value)) {
-          description = `Array[${value.length}]`
-          type = "variable"
-        } else if (typeof value === "object" && value !== null) {
-          description = `Object {${Object.keys(value).length} keys}`
-          type = "variable"
-        }
-
-        return {
-          label: key,
-          type,
-          description,
-          insertText: key,
-        }
-      })
-    }
-
-    return []
-  } catch {
-    return []
-  }
-}
-
-const inferTypeFromPath = (
-  path: string,
-  data: Record<string, unknown>,
-): "string" | "array" | "number" | "object" | "any" => {
-  try {
-    const parts = path
-      .replace(/\[["']?/g, ".")
-      .replace(/["']?\]/g, "")
-      .split(".")
-    let current: unknown = data
-
-    for (const part of parts) {
-      if (!part) continue
-      if (current && typeof current === "object" && part in (current as Record<string, unknown>)) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return "any"
-      }
-    }
-
-    if (typeof current === "string") return "string"
-    if (Array.isArray(current)) return "array"
-    if (typeof current === "number") return "number"
-    if (typeof current === "object" && current !== null) return "object"
-    return "any"
-  } catch {
-    return "any"
-  }
-}
+// getPropertiesFromPath and inferTypeFromPath are imported from expression-utils.ts
 
 export function ExpressionEditor({
   initialValue = "{{ $json.name.toUpperCase() }}",
@@ -317,9 +228,12 @@ export function ExpressionEditor({
         return allAutocompleteItems
           .filter(
             (item) =>
-              item.label.startsWith("$json") || item.label.startsWith("$input") || item.label.startsWith("$now"),
+              item.label.startsWith("$json") ||
+              item.label.startsWith("$input") ||
+              item.label.startsWith("$now") ||
+              item.label.startsWith("$node"),
           )
-          .slice(0, 8)
+          .slice(0, 12)
       }
 
       const term = searchTerm.toLowerCase()
@@ -530,4 +444,5 @@ export function ExpressionEditor({
 }
 
 export { MiniExpressionEditor } from "./mini-expression-editor"
+export { inferTypeFromPath, getPropertiesFromPath } from "./expression-utils"
 export type { ExpressionEditorProps, AutocompleteItem, VariableCategory } from "./types"

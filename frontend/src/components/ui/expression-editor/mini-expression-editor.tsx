@@ -12,6 +12,7 @@ import { ResultPreview } from "./result-preview"
 import { AutocompleteDropdown } from "./autocomplete-dropdown"
 import { renderHighlightedText } from "./utils"
 import type { VariableCategory, AutocompleteItem } from "./types"
+import { inferTypeFromPath, getPropertiesFromPath } from "./expression-utils"
 
 interface SelectOption {
   label: string
@@ -65,6 +66,7 @@ const defaultMockData = {
   ],
   $now: new Date().toISOString(),
   $today: new Date().toISOString().split("T")[0],
+  $node: {} as Record<string, unknown>, // Node outputs for $node["NodeName"].field expressions
 }
 
 const stringMethods: AutocompleteItem[] = [
@@ -251,67 +253,15 @@ export function MiniExpressionEditor({
     },
   ]
 
-  const inferTypeFromPath = useCallback(
-    (path: string): string => {
-      const parts = path.split(".")
-      let current: unknown = mockData || defaultMockData
-
-      for (const part of parts) {
-        if (current && typeof current === "object" && part in (current as Record<string, unknown>)) {
-          current = (current as Record<string, unknown>)[part]
-        } else {
-          return "unknown"
-        }
-      }
-
-      if (Array.isArray(current)) return "array"
-      if (typeof current === "string") return "string"
-      if (typeof current === "number") return "number"
-      if (typeof current === "object" && current !== null) return "object"
-      return "unknown"
-    },
-    [mockData],
+  // Use shared utility functions with current mockData
+  const inferType = useCallback(
+    (path: string): string => inferTypeFromPath(path, mockData || defaultMockData),
+    [mockData]
   )
 
-  const getPropertiesFromPath = useCallback(
-    (path: string): AutocompleteItem[] => {
-      const parts = path.split(".")
-      let current: unknown = mockData || defaultMockData
-
-      for (const part of parts) {
-        if (current && typeof current === "object" && part in (current as Record<string, unknown>)) {
-          current = (current as Record<string, unknown>)[part]
-        } else {
-          return []
-        }
-      }
-
-      if (current && typeof current === "object" && !Array.isArray(current)) {
-        return Object.entries(current as Record<string, unknown>).map(([key, val]) => {
-          let type: AutocompleteItem["type"] = "property"
-          let description = String(val)
-
-          if (Array.isArray(val)) {
-            type = "array"
-            description = `Array[${val.length}]`
-          } else if (typeof val === "object" && val !== null) {
-            type = "object"
-            description = "Object"
-          } else if (typeof val === "string") {
-            description = `"${val.length > 20 ? val.slice(0, 20) + "..." : val}"`
-          }
-
-          return {
-            label: key,
-            type,
-            description,
-            insertText: key,
-          }
-        })
-      }
-      return []
-    },
-    [mockData],
+  const getProperties = useCallback(
+    (path: string): AutocompleteItem[] => getPropertiesFromPath(path, mockData || defaultMockData),
+    [mockData]
   )
 
   const updateAutocomplete = useCallback(
@@ -342,10 +292,10 @@ export function MiniExpressionEditor({
 
       if (endsWithDot) {
         const context = expressionContent.slice(0, -1)
-        const type = inferTypeFromPath(context)
+        const type = inferType(context)
 
         if (type === "object") {
-          items = getPropertiesFromPath(context)
+          items = getProperties(context)
         } else if (type === "string") {
           items = stringMethods
         } else if (type === "array") {
@@ -354,11 +304,11 @@ export function MiniExpressionEditor({
       } else if (lastDotIndex > -1) {
         const context = expressionContent.slice(0, lastDotIndex)
         const partial = expressionContent.slice(lastDotIndex + 1).toLowerCase()
-        const type = inferTypeFromPath(context)
+        const type = inferType(context)
 
         let methodsOrProps: AutocompleteItem[] = []
         if (type === "object") {
-          methodsOrProps = getPropertiesFromPath(context)
+          methodsOrProps = getProperties(context)
         } else if (type === "string") {
           methodsOrProps = stringMethods
         } else if (type === "array") {
@@ -383,7 +333,7 @@ export function MiniExpressionEditor({
         setShowAutocomplete(false)
       }
     },
-    [inferTypeFromPath, getPropertiesFromPath, defaultCategories, inputMode],
+    [inferType, getProperties, defaultCategories, inputMode],
   )
 
   useEffect(() => {

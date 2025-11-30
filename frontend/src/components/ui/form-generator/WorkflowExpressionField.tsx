@@ -83,11 +83,11 @@ export function WorkflowExpressionField({
     }))
   }, [variables])
 
-  // Memoize connected node categories - using $node["Node Name"].json format (user-friendly)
-  // Note: Backend supports both node ID and node name, but names are more readable
+  // Memoize connected node categories - using $node["Node Name"].field format (clean, user-friendly)
+  // Backend supports both with and without .json, so we use the cleaner format
   const connectedNodeCategories = useMemo(() => {
     const categories: VariableCategory[] = []
-    
+
     if (!nodeId || !workflow) return categories
 
     try {
@@ -97,13 +97,13 @@ export function WorkflowExpressionField({
 
       inputConnections.forEach((connection) => {
         const sourceNodeId = connection.sourceNodeId
-        const sourceNode = workflow.nodes.find(n => n.id === sourceNodeId)
+        const sourceNode = workflow.nodes.find((n) => n.id === sourceNodeId)
         if (!sourceNode) return
 
         const nodeName = sourceNode.name
         const categoryName = `${nodeName}` // Display name for UI
-        // Use node name for user-friendly reference (backend supports both ID and name)
-        const nodeBasePath = `$node["${nodeName}"].json`
+        // Use clean format without .json (backend supports both)
+        const nodeBasePath = `$node["${nodeName}"]`
 
         const sourceNodeResult = workflowStore.getNodeExecutionResult(sourceNodeId)
 

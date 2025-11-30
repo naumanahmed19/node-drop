@@ -16,6 +16,11 @@ export function evaluateExpression(
   }
 
   try {
+    // Transform $node to support both $node["Name"].field and $node["Name"].json.field
+    // The mock data stores node outputs as $node["Name"] = { json: {...} }
+    // We create a proxy that allows direct property access without .json
+    const nodeProxy = createNodeProxy(context.$node as Record<string, unknown>)
+
     // Create safe evaluation context
     const safeContext: Record<string, unknown> = {
       $json: context.$json,
@@ -25,7 +30,7 @@ export function evaluateExpression(
       $workflow: context.$workflow,
       $execution: context.$execution,
       $vars: context.$vars,
-      $node: context.$node,
+      $node: nodeProxy,
     }
 
     const evaluate = createSafeEvaluator(safeContext)
@@ -133,4 +138,67 @@ function createSafeEvaluator(context: SafeContext) {
       throw error
     }
   }
+}
+
+
+/**
+ * Creates a proxy for $node that allows both:
+ * - $node["Name"].json.field (original format)
+ * - $node["Name"].field (cleaner format, auto-resolves through .json)
+ */
+function createNodeProxy(nodeData: Record<string, unknown>): Record<string, unknown> {
+  if (!nodeData || typeof nodeData !== "object") {
+    return {}
+  }
+
+  const proxy: Record<string, unknown> = {}
+
+  for (const [nodeName, nodeValue] of Object.entries(nodeData)) {
+    if (nodeValue && typeof nodeValue === "object" && "json" in nodeValue) {
+      const nodeObj = nodeValue as { json: unknown }
+      // Create a proxy object that:
+      // 1. Has a .json property for backward compatibility
+      // 2. Spreads the json properties directly for cleaner access
+      proxy[nodeName] = new Proxy(
+        {},
+        {
+          get(_target, prop: string) {
+            // If accessing .json, return the json object
+            if (prop === "json") {
+              return nodeObj.json
+            }
+            // Otherwise, try to access the property from json directly
+            if (nodeObj.json && typeof nodeObj.json === "object") {
+              return (nodeObj.json as Record<string, unknown>)[prop]
+            }
+            return undefined
+          },
+          has(_target, prop: string) {
+            if (prop === "json") return true
+            if (nodeObj.json && typeof nodeObj.json === "object") {
+              return prop in (nodeObj.json as Record<string, unknown>)
+            }
+            return false
+          },
+          ownKeys() {
+            const keys = ["json"]
+            if (nodeObj.json && typeof nodeObj.json === "object") {
+              keys.push(...Object.keys(nodeObj.json as Record<string, unknown>))
+            }
+            return keys
+          },
+          getOwnPropertyDescriptor(_target, prop: string) {
+            if (prop === "json" || (nodeObj.json && typeof nodeObj.json === "object" && prop in (nodeObj.json as Record<string, unknown>))) {
+              return { enumerable: true, configurable: true }
+            }
+            return undefined
+          },
+        }
+      )
+    } else {
+      proxy[nodeName] = nodeValue
+    }
+  }
+
+  return proxy
 }

@@ -250,9 +250,9 @@ function UnifiedTreeNode({
         <CollapsibleContent className="space-y-0">
           {nodeData ? (
             <div className="bg-background/50 py-1">
-              {/* Use $node["Node Name"].json format for user-friendly reference (backend supports both ID and name) */}
+              {/* Use $node["Node Name"].field format (clean, without .json) */}
               {(() => {
-                const basePath = `$node["${inputNode.name}"].json`
+                const basePath = `$node["${inputNode.name}"]`
                 
                 if (Array.isArray(nodeData)) {
                   // For arrays, show first item
@@ -327,7 +327,7 @@ function UnifiedTreeNode({
  * - Uses unique keys for independent expand/collapse state
  */
 function SchemaViewer({ data, level, keyName, parentPath = '$json', expandedState, onExpandedChange }: SchemaViewerProps & {
-  // parentPath format: "$node["NodeName"].json" or "$json" for immediate input
+  // parentPath format: "$node["NodeName"]" or "$json" for immediate input
   expandedState?: Record<string, boolean>
   onExpandedChange?: (key: string, expanded: boolean) => void
 }) {
