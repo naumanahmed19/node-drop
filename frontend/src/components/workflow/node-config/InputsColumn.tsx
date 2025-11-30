@@ -250,9 +250,9 @@ function UnifiedTreeNode({
         <CollapsibleContent className="space-y-0">
           {nodeData ? (
             <div className="bg-background/50 py-1">
-              {/* Use $node["nodeId"].json format for stable reference (ID doesn't change when node is renamed) */}
+              {/* Use $node["Node Name"].json format for user-friendly reference (backend supports both ID and name) */}
               {(() => {
-                const basePath = `$node["${inputNode.id}"].json`
+                const basePath = `$node["${inputNode.name}"].json`
                 
                 if (Array.isArray(nodeData)) {
                   // For arrays, show first item

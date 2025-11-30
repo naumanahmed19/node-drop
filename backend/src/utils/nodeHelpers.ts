@@ -17,12 +17,126 @@ export interface ExpressionContext {
 }
 
 /**
+ * Simple DateTime helper (compatible with Luxon-like API)
+ * Provides basic date/time functionality for expressions
+ */
+const DateTime = {
+  now: () => ({
+    toISO: () => new Date().toISOString(),
+    toISODate: () => new Date().toISOString().split('T')[0],
+    toFormat: (format: string) => {
+      const d = new Date();
+      // Basic format support
+      return format
+        .replace('yyyy', d.getFullYear().toString())
+        .replace('MM', (d.getMonth() + 1).toString().padStart(2, '0'))
+        .replace('dd', d.getDate().toString().padStart(2, '0'))
+        .replace('HH', d.getHours().toString().padStart(2, '0'))
+        .replace('mm', d.getMinutes().toString().padStart(2, '0'))
+        .replace('ss', d.getSeconds().toString().padStart(2, '0'));
+    },
+    plus: (duration: { days?: number; hours?: number; minutes?: number }) => {
+      const d = new Date();
+      if (duration.days) d.setDate(d.getDate() + duration.days);
+      if (duration.hours) d.setHours(d.getHours() + duration.hours);
+      if (duration.minutes) d.setMinutes(d.getMinutes() + duration.minutes);
+      return {
+        toISO: () => d.toISOString(),
+        toISODate: () => d.toISOString().split('T')[0],
+      };
+    },
+    minus: (duration: { days?: number; hours?: number; minutes?: number }) => {
+      const d = new Date();
+      if (duration.days) d.setDate(d.getDate() - duration.days);
+      if (duration.hours) d.setHours(d.getHours() - duration.hours);
+      if (duration.minutes) d.setMinutes(d.getMinutes() - duration.minutes);
+      return {
+        toISO: () => d.toISOString(),
+        toISODate: () => d.toISOString().split('T')[0],
+      };
+    },
+  }),
+  fromISO: (isoString: string) => ({
+    toISO: () => new Date(isoString).toISOString(),
+    toISODate: () => new Date(isoString).toISOString().split('T')[0],
+    toFormat: (format: string) => {
+      const d = new Date(isoString);
+      return format
+        .replace('yyyy', d.getFullYear().toString())
+        .replace('MM', (d.getMonth() + 1).toString().padStart(2, '0'))
+        .replace('dd', d.getDate().toString().padStart(2, '0'))
+        .replace('HH', d.getHours().toString().padStart(2, '0'))
+        .replace('mm', d.getMinutes().toString().padStart(2, '0'))
+        .replace('ss', d.getSeconds().toString().padStart(2, '0'));
+    },
+  }),
+};
+
+/**
+ * Safely evaluate a JavaScript expression with provided context
+ * Supports: String/Array/Object methods, Math, JSON, DateTime
+ */
+function safeEvaluateExpression(expression: string, context: ExpressionContext, item: any): any {
+  try {
+    // Build the evaluation context with all available data
+    const evalContext: Record<string, any> = {
+      // Data sources
+      $json: context.$json ?? item,
+      $node: context.$node || {},
+      $vars: context.$vars || {},
+      $workflow: context.$workflow || {},
+      $execution: context.$execution || {},
+      // Built-in variables
+      $now: new Date().toISOString(),
+      $today: new Date().toISOString().split('T')[0],
+      // Safe globals
+      Math,
+      JSON,
+      Object,
+      Array,
+      String,
+      Number,
+      Boolean,
+      Date,
+      DateTime, // Our DateTime helper
+      parseInt,
+      parseFloat,
+      isNaN,
+      isFinite,
+      encodeURIComponent,
+      decodeURIComponent,
+      encodeURI,
+      decodeURI,
+    };
+
+    // Create a function that evaluates the expression with the context
+    // We use Function constructor instead of eval for slightly better isolation
+    const contextKeys = Object.keys(evalContext);
+    const contextValues = Object.values(evalContext);
+    
+    // Wrap expression to return its value
+    const wrappedExpression = `"use strict"; return (${expression});`;
+    
+    // Create and execute the function
+    const evaluator = new Function(...contextKeys, wrappedExpression);
+    const result = evaluator(...contextValues);
+    
+    return result;
+  } catch (error) {
+    // If evaluation fails, return the original expression wrapped
+    console.warn(`[safeEvaluateExpression] Failed to evaluate: ${expression}`, error);
+    return `{{${expression}}}`;
+  }
+}
+
+/**
  * Resolves placeholder expressions in a value string using data from an item or context.
  *
  * Supports multiple expression formats:
  * - {{$json.fieldName}} or {{json.fieldName}} - Access immediate input data
  * - {{$json[0].fieldName}} - Array-based access for multiple inputs
  * - {{$node["nodeId"].json.fieldName}} - Access specific node's output by ID (stable, doesn't break on rename)
+ * - {{$node["Node Name"].json.fieldName}} - Access specific node's output by name (user-friendly)
  * - {{$vars.variableName}} - Access workflow variables
  * - {{$workflow.name}} - Access workflow metadata
  *
@@ -35,8 +149,11 @@ export interface ExpressionContext {
  * // Simple field access
  * resolveValue("Hello {{$json.name}}", { name: "John" }); // "Hello John"
  * 
- * // Node reference (stable - uses node ID)
+ * // Node reference by ID (stable - doesn't break on rename)
  * resolveValue("{{$node[\"abc123\"].json.title}}", null, { $node: { "abc123": { json: { title: "Test" } } } });
+ * 
+ * // Node reference by name (user-friendly)
+ * resolveValue("{{$node[\"HTTP Request\"].json.posts}}", null, { $node: { "HTTP Request": { json: { posts: [...] } } } });
  * 
  * // Multiple inputs
  * resolveValue("{{$json[0].name}}", [{ name: "John" }, { name: "Jane" }]); // "John"
@@ -60,40 +177,54 @@ export function resolveValue(value: string | any, item: any, context?: Expressio
   }
 
   // Replace placeholders like {{$json.fieldName}}, {{$node["id"].json.field}}, etc.
-  return decodedValue.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
+  // Improved regex that handles:
+  // - Nested braces: {{ { key: "value" } }}
+  // - Object literals: {{ $json.obj || {} }}
+  // - Ternary with braces: {{ $json.x ? {a:1} : {b:2} }}
+  // Uses a balanced brace matching approach
+  return decodedValue.replace(/\{\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}\}/g, (match, path) => {
     const trimmedPath = path.trim();
     
-    // Handle $node["nodeId"].json.field format (stable node reference by ID)
+    // Check if this is a complex expression (contains method calls, operators, etc.)
+    const isComplexExpression = 
+      trimmedPath.includes('(') ||  // Method calls
+      trimmedPath.includes('+') ||  // Arithmetic
+      trimmedPath.includes('-') ||
+      trimmedPath.includes('*') ||
+      trimmedPath.includes('/') ||
+      trimmedPath.includes('?') ||  // Ternary
+      trimmedPath.includes('Math.') ||
+      trimmedPath.includes('JSON.') ||
+      trimmedPath.includes('Object.') ||
+      trimmedPath.includes('Array.') ||
+      trimmedPath.includes('DateTime.') ||
+      trimmedPath === '$now' ||
+      trimmedPath === '$today';
+    
+    // For complex expressions, use the safe evaluator
+    if (isComplexExpression) {
+      const result = safeEvaluateExpression(trimmedPath, context || {}, item);
+      if (result !== undefined && result !== null && !String(result).startsWith('{{')) {
+        return typeof result === 'object' ? JSON.stringify(result) : String(result);
+      }
+      // If evaluation returned the original expression, fall through to simple resolution
+    }
+    
+    // Handle $node["nodeId"].json.field or $node["Node Name"].json.field format
+    // Supports both node ID (stable) and node name (user-friendly)
     const nodeRefMatch = trimmedPath.match(/^\$node\["([^"]+)"\]\.json(?:\.(.+))?$/);
     if (nodeRefMatch) {
-      const nodeId = nodeRefMatch[1];
+      const nodeIdOrName = nodeRefMatch[1];
       const fieldPath = nodeRefMatch[2];
       
-      // Debug logging for $node resolution
-      console.log(`[resolveValue] $node expression found:`, {
-        nodeId,
-        fieldPath,
-        hasContext: !!context,
-        hasNodeContext: !!context?.$node,
-        availableNodeIds: context?.$node ? Object.keys(context.$node) : [],
-        nodeIdExists: !!(context?.$node && context.$node[nodeId]),
-      });
-      
-      if (context?.$node && context.$node[nodeId]) {
-        const nodeData = context.$node[nodeId].json;
-        console.log(`[resolveValue] Found node data for ${nodeId}:`, {
-          nodeDataType: typeof nodeData,
-          nodeDataKeys: nodeData && typeof nodeData === 'object' ? Object.keys(nodeData) : [],
-          fieldPath,
-        });
+      if (context?.$node && context.$node[nodeIdOrName]) {
+        const nodeData = context.$node[nodeIdOrName].json;
         if (fieldPath) {
           const result = resolvePath(nodeData, fieldPath);
-          console.log(`[resolveValue] Resolved field path '${fieldPath}':`, { result });
           return result !== undefined ? (typeof result === 'object' ? JSON.stringify(result) : String(result)) : match;
         }
         return typeof nodeData === 'object' ? JSON.stringify(nodeData) : String(nodeData);
       }
-      console.log(`[resolveValue] Node ${nodeId} NOT found in context, returning original match`);
       return match;
     }
     

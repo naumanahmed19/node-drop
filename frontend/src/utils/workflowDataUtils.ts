@@ -5,9 +5,10 @@ import type { Workflow, NodeExecutionResult } from '@/types'
  * Extracts execution results from nodes connected to the current node
  * Also includes workflow, execution context, and variables information
  * 
- * Supports two expression formats:
+ * Supports multiple expression formats:
  * - $json: Direct access to immediate input data
- * - $node["NodeName"].json: Access to specific node's output by name
+ * - $node["Node Name"].json: Access to specific node's output by name (user-friendly)
+ * - $node["nodeId"].json: Access to specific node's output by ID (stable, doesn't break on rename)
  */
 export async function buildMockDataFromWorkflow(
   nodeId: string | undefined,
@@ -78,10 +79,17 @@ export async function buildMockDataFromWorkflow(
         let itemData = sourceData[0]?.json || sourceData[0]
         if (!itemData) return
 
-        // Add to $node["nodeId"] for stable node reference (doesn't break on rename)
-        // This allows expressions like $node["abc123"].json.title
+        // Add to $node by both ID and name for flexible reference
+        // $node["nodeId"].json - stable reference (doesn't break on rename)
+        // $node["Node Name"].json - user-friendly reference
         (mockData.$node as Record<string, unknown>)[sourceNodeId] = {
           json: itemData,
+        }
+        // Also add by node name for user-friendly access
+        if (sourceNode.name && sourceNode.name !== sourceNodeId) {
+          (mockData.$node as Record<string, unknown>)[sourceNode.name] = {
+            json: itemData,
+          }
         }
 
         // Also populate $json for backward compatibility

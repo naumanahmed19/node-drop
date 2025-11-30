@@ -17,6 +17,7 @@ export interface FlowExecutionContext {
   executionOptions: FlowExecutionOptions;
   nodeStates: Map<string, NodeExecutionState>;
   nodeOutputs: Map<string, any>; // Map of nodeId -> output data for $node expressions
+  nodeIdToName: Map<string, string>; // Map nodeId -> nodeName for $node["Name"] support
   executionPath: string[];
   startTime: number;
   cancelled: boolean;
@@ -349,6 +350,7 @@ export class FlowExecutionEngine extends EventEmitter {
       },
       nodeStates: new Map(),
       nodeOutputs: new Map(), // Initialize node outputs map for $node expressions
+      nodeIdToName: new Map(), // Initialize nodeId -> nodeName map for $node["Name"] support
       executionPath: [],
       startTime: Date.now(),
       cancelled: false,
@@ -402,6 +404,13 @@ export class FlowExecutionEngine extends EventEmitter {
     workflow: Workflow,
     startNodeId: string
   ): Promise<void> {
+    // Build nodeId -> nodeName mapping for $node["Name"] expression support
+    for (const node of workflow.nodes) {
+      if (node.id && node.name) {
+        context.nodeIdToName.set(node.id, node.name);
+      }
+    }
+    
     // Validate workflow structure before execution with enhanced safety checks
     const nodeIds = workflow.nodes.map((node) => node.id);
 
@@ -861,7 +870,8 @@ export class FlowExecutionEngine extends EventEmitter {
         undefined, // options
         context.workflowId, // Pass workflowId for variable resolution
         undefined, // settings - not stored on node object currently
-        context.nodeOutputs // Pass node outputs for $node expression resolution
+        context.nodeOutputs, // Pass node outputs for $node expression resolution
+        context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
       );
 
       if (!nodeResult.success) {

@@ -37,6 +37,7 @@ interface ExecutionContext {
     userId: string;
     triggerData: any;
     nodeOutputs: Map<string, any>;
+    nodeIdToName: Map<string, string>; // Map nodeId -> nodeName for $node["Name"] support
     connections: WorkflowConnection[]; // Store connections for branch checking
     nodes: any[]; // Store nodes for service input resolution
     status: "running" | "completed" | "failed" | "cancelled";
@@ -223,12 +224,21 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // Create execution context
         const saveToDatabase = options?.saveToDatabase !== false; // Default to true
         
+        // Build nodeId -> nodeName mapping for $node["Name"] expression support
+        const nodeIdToName = new Map<string, string>();
+        for (const node of nodes) {
+            if (node.id && node.name) {
+                nodeIdToName.set(node.id, node.name);
+            }
+        }
+        
         const context: ExecutionContext = {
             executionId,
             workflowId,
             userId,
             triggerData,
             nodeOutputs: new Map(),
+            nodeIdToName, // Map nodeId -> nodeName for $node["Name"] support
             connections, // Store connections for branch checking
             nodes, // Store nodes for service input resolution
             status: "running",
@@ -495,7 +505,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 { timeout: 30000, nodeId }, // Pass nodeId for logging
                 context.workflowId,
                 node.settings, // Pass node settings (includes continueOnFail)
-                context.nodeOutputs // Pass node outputs for $node expression resolution
+                context.nodeOutputs, // Pass node outputs for $node expression resolution
+                context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
             );
 
             const duration = Date.now() - startTime;

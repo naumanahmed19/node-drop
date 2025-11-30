@@ -109,6 +109,17 @@ export class ExecutionEngine extends EventEmitter {
         },
       });
 
+      // Build nodeId -> nodeName mapping for $node["Name"] expression support
+      const nodeIdToName = new Map<string, string>();
+      const workflowNodes = Array.isArray(workflow.nodes)
+        ? workflow.nodes
+        : JSON.parse(workflow.nodes as string);
+      for (const node of workflowNodes) {
+        if (node.id && node.name) {
+          nodeIdToName.set(node.id, node.name);
+        }
+      }
+
       // Create execution context
       const context: ExecutionContext = {
         executionId: execution.id,
@@ -118,6 +129,7 @@ export class ExecutionEngine extends EventEmitter {
         startedAt: execution.startedAt,
         nodeExecutions: new Map(),
         nodeOutputs: new Map(),
+        nodeIdToName, // Map nodeId -> nodeName for $node["Name"] support
         cancelled: false,
       };
 
@@ -481,7 +493,8 @@ export class ExecutionEngine extends EventEmitter {
         { ...executionOptions, nodeId }, // options with nodeId for state management
         context.workflowId, // workflowId
         undefined, // settings
-        context.nodeOutputs // Pass node outputs for $node expression resolution
+        context.nodeOutputs, // Pass node outputs for $node expression resolution
+        context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
       );
 
       if (!result.success) {

@@ -167,7 +167,8 @@ export class SecureExecutionService {
     workflowId?: string,
     settings?: Record<string, any>,
     nodeId?: string,
-    nodeOutputs?: Map<string, any> // Map of nodeId -> output data for $node expressions
+    nodeOutputs?: Map<string, any>, // Map of nodeId -> output data for $node expressions
+    nodeIdToName?: Map<string, string> // Map of nodeId -> nodeName for $node["Name"] support
   ): Promise<NodeExecutionContext> {
     const limits = this.mergeLimits(options);
     
@@ -242,6 +243,7 @@ export class SecureExecutionService {
     const processedItems = extractJsonData(items);
     
     // Build $node context from nodeOutputs map (once)
+    // Supports both $node["nodeId"] and $node["Node Name"] syntax
     const nodeContext: Record<string, { json: any }> = {};
     if (nodeOutputs) {
       for (const [nId, outputData] of nodeOutputs.entries()) {
@@ -252,7 +254,16 @@ export class SecureExecutionService {
             jsonData = mainData[0]?.json || mainData[0] || mainData;
           }
         }
+        // Add by node ID (stable reference)
         nodeContext[nId] = { json: jsonData };
+        
+        // Also add by node name if available (user-friendly reference)
+        if (nodeIdToName) {
+          const nodeName = nodeIdToName.get(nId);
+          if (nodeName && nodeName !== nId) {
+            nodeContext[nodeName] = { json: jsonData };
+          }
+        }
       }
     }
     

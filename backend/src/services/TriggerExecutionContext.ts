@@ -66,6 +66,8 @@ export class TriggerExecutionContextFactory {
       triggerData,
       executionOptions: baseOptions,
       nodeStates: new Map<string, NodeExecutionState>(),
+      nodeOutputs: new Map<string, any>(), // Initialize node outputs map for $node expressions
+      nodeIdToName: new Map<string, string>(), // Initialize nodeId -> nodeName map for $node["Name"] support
       executionPath: [],
       startTime: Date.now(),
       cancelled: false,
