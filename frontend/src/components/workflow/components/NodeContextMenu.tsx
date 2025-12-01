@@ -203,7 +203,7 @@ export function NodeContextMenu({
       {onCopy && (
         <ContextMenuItem
           onClick={onCopy}
-          disabled={!canCopy || readOnly}
+          disabled={readOnly}
           className="cursor-pointer"
         >
           <Copy className="mr-2 h-4 w-4" />
@@ -214,7 +214,7 @@ export function NodeContextMenu({
       {onCut && (
         <ContextMenuItem
           onClick={onCut}
-          disabled={!canCopy || readOnly}
+          disabled={readOnly}
           className="cursor-pointer"
         >
           <Scissors className="mr-2 h-4 w-4" />

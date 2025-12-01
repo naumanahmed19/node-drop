@@ -1,8 +1,10 @@
 import { useDetachNodes, useDeleteNodes } from "@/hooks/workflow";
 import { useAddNodeDialogStore } from "@/stores/addNodeDialog";
+import { useCopyPasteStore } from "@/stores/copyPaste";
 import { useWorkflowStore } from "@/stores/workflow";
 import { WorkflowNode } from "@/types";
 import { useReactFlow } from "@xyflow/react";
+import { useCallback } from "react";
 
 export function useNodeActions(nodeId: string) {
   const executeNode = useWorkflowStore((state) => state.executeNode);
@@ -18,9 +20,36 @@ export function useNodeActions(nodeId: string) {
   const setDirty = useWorkflowStore((state) => state.setDirty);
 
   const { openDialog } = useAddNodeDialogStore();
+  const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore();
   const detachNodes = useDetachNodes();
   const deleteNodes = useDeleteNodes();
   const { getNodes, setNodes, getNodesBounds } = useReactFlow();
+
+  // Wrapper to select this node before copying (for context menu)
+  const handleCopyFromContext = useCallback(() => {
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        selected: node.id === nodeId,
+      }))
+    );
+    setTimeout(() => {
+      copy?.();
+    }, 50);
+  }, [nodeId, setNodes, copy]);
+
+  // Wrapper to select this node before cutting (for context menu)
+  const handleCutFromContext = useCallback(() => {
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        selected: node.id === nodeId,
+      }))
+    );
+    setTimeout(() => {
+      cut?.();
+    }, 50);
+  }, [nodeId, setNodes, cut]);
 
   const handleToggleDisabled = (nodeId: string, disabled: boolean) => {
     updateNode(nodeId, { disabled });
@@ -254,5 +283,10 @@ export function useNodeActions(nodeId: string) {
     handleGroup,
     handleOutputClick,
     handleServiceInputClick,
+    handleCopyFromContext,
+    handleCutFromContext,
+    paste,
+    canCopy,
+    canPaste,
   };
 }

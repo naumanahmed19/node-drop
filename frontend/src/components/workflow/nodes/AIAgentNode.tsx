@@ -9,7 +9,6 @@ import { useNodeExecution } from '../hooks/useNodeExecution'
 import { getNodeStatusClasses } from '../utils/nodeStyleUtils'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { NodeContextMenu } from '../components/NodeContextMenu'
-import { useCopyPasteStore } from '@/stores'
 import { Bot } from 'lucide-react'
 
 /**
@@ -36,10 +35,13 @@ export const AIAgentNode = memo(function AIAgentNode({
     handleUngroup,
     handleGroup,
     handleOutputClick,
-    handleToggleDisabled
+    handleToggleDisabled,
+    handleCopyFromContext,
+    handleCutFromContext,
+    paste,
+    canCopy,
+    canPaste,
   } = useNodeActions(id)
-
-  const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
   
   const nodeData = data as any
   const { nodeExecutionState, nodeVisualState } = useNodeExecution(id, nodeData.nodeType)
@@ -146,8 +148,8 @@ export const AIAgentNode = memo(function AIAgentNode({
         onToggleDisabled={() => handleToggleDisabled(id, !nodeData.disabled)}
         onUngroup={handleUngroup}
         onGroup={handleGroup}
-        onCopy={copy || undefined}
-        onCut={cut || undefined}
+        onCopy={handleCopyFromContext}
+        onCut={handleCutFromContext}
         onPaste={paste || undefined}
         canCopy={canCopy}
         canPaste={canPaste}

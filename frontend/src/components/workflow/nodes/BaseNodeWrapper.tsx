@@ -1,6 +1,6 @@
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
+import { useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
 import { NodeExecutionStatus } from '@/types/execution'
 import { useReactFlow } from '@xyflow/react'
 import { LucideIcon } from 'lucide-react'
@@ -212,11 +212,13 @@ export function BaseNodeWrapper({
     handleOutputClick,
     handleServiceInputClick,
     handleToggleDisabled,
-    handleToggleDisabledFromContext
+    handleToggleDisabledFromContext,
+    handleCopyFromContext,
+    handleCutFromContext,
+    paste,
+    canCopy,
+    canPaste,
   } = useNodeActions(id)
-
-  // Get copy/paste functions from store
-  const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
 
   // Get node type definition for context menu
   const { nodeTypes } = useNodeTypes()
@@ -393,8 +395,8 @@ export function BaseNodeWrapper({
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
         onToggleDisabled={handleToggleDisabledFromContext}
-        onCopy={copy || undefined}
-        onCut={cut || undefined}
+        onCopy={handleCopyFromContext}
+        onCut={handleCutFromContext}
         onPaste={paste || undefined}
         onUngroup={isInGroup ? handleUngroup : undefined}
         onGroup={canGroup ? handleGroup : undefined}
@@ -529,8 +531,8 @@ export function BaseNodeWrapper({
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
         onToggleDisabled={handleToggleDisabledFromContext}
-        onCopy={copy || undefined}
-        onCut={cut || undefined}
+        onCopy={handleCopyFromContext}
+        onCut={handleCutFromContext}
         onPaste={paste || undefined}
         onUngroup={isInGroup ? handleUngroup : undefined}
         onGroup={canGroup ? handleGroup : undefined}
