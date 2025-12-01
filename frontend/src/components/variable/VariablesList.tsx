@@ -236,7 +236,7 @@ export function VariablesList({ currentWorkflowId }: VariablesListProps) {
     return () => {
       setHeaderSlot(null)
     }
-  }, [setHeaderSlot, filteredVariables.length, localSearchTerm, scopeFilter, setScopeFilter, handleCreateVariable, isRefreshing])
+  }, [filteredVariables.length, localSearchTerm, scopeFilter, isRefreshing])
 
   const handleVariableAction = (action: string, variableId: string, event: React.MouseEvent) => {
     event.stopPropagation()

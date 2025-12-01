@@ -127,6 +127,10 @@ export function SidebarContextProvider({ children }: SidebarProviderProps) {
     setHeaderSlotState(slot)
   }, [])
 
+  const setDetailSidebar = useCallback((sidebar: { isOpen: boolean; title: string; content: ReactNode } | null) => {
+    setDetailSidebarState(sidebar)
+  }, [])
+
   return (
     <SidebarContext.Provider
       value={{
@@ -157,7 +161,7 @@ export function SidebarContextProvider({ children }: SidebarProviderProps) {
         headerSlot,
         setHeaderSlot,
         detailSidebar,
-        setDetailSidebar: setDetailSidebarState,
+        setDetailSidebar,
       }}
     >
       {children}
