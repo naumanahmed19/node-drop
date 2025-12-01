@@ -63,7 +63,7 @@ export { useNodeConnection } from "./useNodeConnection";
 export { useNodeFiltering } from "./useNodeFiltering";
 export { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
 export { useNodePositioning } from "./useNodePositioning";
-export { useNodeValidation } from "./useNodeValidation";
+export { useNodeValidation, invalidateValidationCache } from "./useNodeValidation";
 export { useReactFlowInteractions } from "./useReactFlowInteractions";
 export { useTemplateExpansion } from "./useTemplateExpansion";
 export { useWorkflowEditorUI } from "./useWorkflowEditorUI";
