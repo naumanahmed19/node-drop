@@ -40,6 +40,30 @@ function validateNodeWithType(
 }
 
 /**
+ * Validate required inputs are connected
+ * Checks inputsConfig for required: true and verifies connection exists
+ */
+function validateRequiredInputs(
+  nodeType: NodeType | undefined,
+  incomingConnections: { targetInput: string }[]
+): string[] {
+  if (!nodeType?.inputsConfig) return []
+
+  const errors: string[] = []
+  const connectedInputs = new Set(incomingConnections.map(c => c.targetInput))
+
+  // Check each input defined in inputsConfig
+  for (const [inputName, config] of Object.entries(nodeType.inputsConfig)) {
+    if (config.required && !connectedInputs.has(inputName)) {
+      const displayName = config.displayName || inputName
+      errors.push(`"${displayName}" input is required`)
+    }
+  }
+
+  return errors
+}
+
+/**
  * Validates a workflow and returns detailed error information
  * 
  * OPTIMIZATION: 
@@ -132,20 +156,29 @@ export function validateWorkflowDetailed(
       errors.push('Missing node type')
     }
 
+    // Get incoming connections for this node (used for multiple validations)
+    const incoming = incomingConnectionsMap.get(node.id) || []
+
     // Validate using NodeValidator (same as ConfigTab - includes name check)
     if (nodeTypeMap && node.type) {
       const nodeType = nodeTypeMap.get(node.type)
       if (nodeType) {
+        // Validate node properties
         const nodeValidationErrors = validateNodeWithType(node, nodeType)
         if (nodeValidationErrors.length > 0) {
           errors = errors.concat(nodeValidationErrors)
+        }
+
+        // Validate required inputs are connected
+        const inputErrors = validateRequiredInputs(nodeType, incoming)
+        if (inputErrors.length > 0) {
+          errors = errors.concat(inputErrors)
         }
       }
     }
 
     // Add connection errors using pre-built maps (O(1) lookup)
-    const incoming = incomingConnectionsMap.get(node.id)
-    if (incoming) {
+    if (incoming.length > 0) {
       for (let j = 0; j < incoming.length; j++) {
         const connErrors = connectionErrors.get(incoming[j].id)
         if (connErrors) {
