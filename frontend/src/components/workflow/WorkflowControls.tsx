@@ -1,4 +1,5 @@
 import { NodeIconRenderer } from '@/components/common/NodeIconRenderer'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useAddNodeDialogStore, useNodeTypes, usePinnedNodesStore, useWorkflowStore } from '@/stores'
@@ -6,7 +7,7 @@ import { NodeType, WorkflowNode } from '@/types'
 import { createWorkflowNode } from '@/utils/nodeCreation'
 import { canExecuteWorkflow } from '@/utils/workflowExecutionGuards'
 import { useReactFlow, useStore } from '@xyflow/react'
-import { Box, Maximize2, MessageSquare, Plus, Redo, Undo, ZoomIn, ZoomOut } from 'lucide-react'
+import { Box, Maximize2, MessageSquare, PinOff, Plus, Redo, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { ReactNode, useCallback, useMemo, useState } from 'react'
 import { WorkflowExecuteButton } from './WorkflowExecuteButton'
 
@@ -22,7 +23,7 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
   const { openDialog } = useAddNodeDialogStore()
   const { workflow, undo, redo, canUndo, canRedo, updateWorkflow, saveToHistory, setDirty, addNode } = useWorkflowStore()
   const [isSaving] = useState(false)
-  const { pinnedNodeIds } = usePinnedNodesStore()
+  const { pinnedNodeIds, unpinNode } = usePinnedNodesStore()
   const { getNodeTypeById } = useNodeTypes()
 
   // Get pinned node types
@@ -323,27 +324,39 @@ export function WorkflowControls({ className, showAddNode = true, showExecute = 
       {pinnedNodeTypes.length > 0 && (
         <>
           {pinnedNodeTypes.map((nodeType) => (
-            <Tooltip key={nodeType.identifier}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => handleAddPinnedNode(nodeType)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-                  aria-label={`Add ${nodeType.displayName}`}
-                >
-                  <NodeIconRenderer
-                    icon={nodeType.icon}
-                    nodeType={nodeType.identifier}
-                    nodeGroup={nodeType.group}
-                    displayName={nodeType.displayName}
-                    backgroundColor={nodeType.color}
-                    size="sm"
-                  />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p>Add {nodeType.displayName}</p>
-              </TooltipContent>
-            </Tooltip>
+            <ContextMenu key={nodeType.identifier}>
+              <ContextMenuTrigger asChild>
+                <div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleAddPinnedNode(nodeType)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                        aria-label={`Add ${nodeType.displayName}`}
+                      >
+                        <NodeIconRenderer
+                          icon={nodeType.icon}
+                          nodeType={nodeType.identifier}
+                          nodeGroup={nodeType.group}
+                          displayName={nodeType.displayName}
+                          backgroundColor={nodeType.color}
+                          size="sm"
+                        />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Add {nodeType.displayName}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-24">
+                <ContextMenuItem onClick={() => unpinNode(nodeType.identifier)}>
+                  <PinOff className="h-4 w-4 mr-2" />
+                  Unpin 
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
           <div className="mx-1 h-6 w-px bg-border" />
         </>
