@@ -1,17 +1,22 @@
 import { useMemo } from "react";
+import { useWorkflowStore } from "@/stores";
 
 interface UseExecutionPanelDataParams {
   executionId?: string;
-  getFlowStatus: (executionId: string) => any;
 }
 
 export function useExecutionPanelData({
   executionId,
-  getFlowStatus,
 }: UseExecutionPanelDataParams) {
+  // Subscribe directly to flowExecutionState to get updates when it changes
+  const activeExecutions = useWorkflowStore(
+    (state) => state.flowExecutionState.activeExecutions
+  );
+  
   const flowExecutionStatus = useMemo(() => {
-    return executionId ? getFlowStatus(executionId) : null;
-  }, [executionId, getFlowStatus]);
+    if (!executionId) return null;
+    return activeExecutions.get(executionId) || null;
+  }, [executionId, activeExecutions]);
 
   return {
     flowExecutionStatus,

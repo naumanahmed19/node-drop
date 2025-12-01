@@ -148,7 +148,6 @@ export function WorkflowEditor({
         realTimeResults,
         executionLogs,
         getNodeResult,
-        getFlowStatus,
         clearLogs,
     } = useExecutionControls()
 
@@ -178,7 +177,6 @@ export function WorkflowEditor({
     // Execution panel data
     const { flowExecutionStatus } = useExecutionPanelData({
         executionId: executionState.executionId,
-        getFlowStatus,
     })
 
     // Sync ReactFlow instance to store (hook gets it automatically via useReactFlow)

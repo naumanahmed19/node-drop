@@ -2305,7 +2305,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const updatedResult: NodeExecutionResult = {
           nodeId,
           nodeName: result.nodeName || existingResult?.nodeName || "Unknown",
-          status: result.status || existingResult?.status || "skipped", // Use "skipped" instead of "error" as default
+          status: result.status || existingResult?.status || "skipped",
           startTime:
             result.startTime || existingResult?.startTime || Date.now(),
           endTime: result.endTime || existingResult?.endTime || Date.now(),
@@ -2595,8 +2595,16 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               
               get().progressTracker.setCurrentExecution(data.executionId);
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.RUNNING, {
-                startTime: Date.now(),
+                startTime: timestamp, // Use backend timestamp for consistency with endTime
                 progress: 0,
+              });
+              
+              // Also update realTimeResults with startTime
+              get().updateNodeExecutionResult(data.nodeId, {
+                nodeId: data.nodeId,
+                nodeName,
+                startTime: timestamp,
+                status: "success", // Will be updated on completion
               });
               
               console.log('✅ [Frontend] Updated node state to RUNNING for:', data.nodeId);
@@ -2828,6 +2836,9 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 // Create new Sets to ensure React detects the change
                 flowStatus.activeEdges = new Set(activeEdges);
                 flowStatus.completedEdges = new Set(completedEdges);
+                
+                // Update overallStatus to reflect completion
+                flowStatus.overallStatus = data.error ? "failed" : "completed";
 
                 activeExecutions.set(data.executionId, flowStatus);
                 set({
@@ -2886,6 +2897,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               endTime: Date.now(),
               error: data.error?.message || "Execution failed",
             });
+
+            // Update flowStatus.overallStatus to "failed"
+            if (data.executionId) {
+              const failedFlowStatus = activeExecutions.get(data.executionId);
+              if (failedFlowStatus) {
+                failedFlowStatus.overallStatus = "failed";
+                activeExecutions.set(data.executionId, failedFlowStatus);
+                set({
+                  flowExecutionState: {
+                    ...get().flowExecutionState,
+                    activeExecutions: new Map(activeExecutions),
+                  },
+                });
+              }
+            }
 
             if (data.executionId && get().executionManager) {
               // Mark execution as failed but preserve node states
