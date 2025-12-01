@@ -34,6 +34,10 @@ import {
   updateWorkflowTitle,
   validateMetadata,
 } from "@/utils/workflowMetadata";
+import {
+  ensureUniqueNodeName,
+  updateNodeNameReferences,
+} from "@/utils/nodeReferenceUtils";
 import { devtools } from "zustand/middleware";
 import { createWithEqualityFn } from "zustand/traditional";
 
@@ -430,21 +434,38 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const current = get().workflow;
         if (!current) return;
 
+        // Ensure unique node name
+        const uniqueName = ensureUniqueNodeName(
+          node.name,
+          undefined,
+          undefined,
+          current.nodes
+        );
+        const nodeWithUniqueName = { ...node, name: uniqueName };
+
         const updated = {
           ...current,
-          nodes: [...current.nodes, node],
+          nodes: [...current.nodes, nodeWithUniqueName],
         };
         set({ workflow: updated, isDirty: true });
-        get().saveToHistory(`Add node: ${node.name}`);
+        get().saveToHistory(`Add node: ${uniqueName}`);
       },
 
       addNodes: (nodes) => {
         const current = get().workflow;
         if (!current) return;
 
+        // Ensure unique names for all nodes being added
+        const existingNames = new Set(current.nodes.map((n) => n.name));
+        const nodesWithUniqueNames = nodes.map((node) => {
+          const uniqueName = ensureUniqueNodeName(node.name, existingNames);
+          existingNames.add(uniqueName); // Track for subsequent nodes in batch
+          return { ...node, name: uniqueName };
+        });
+
         const updated = {
           ...current,
-          nodes: [...current.nodes, ...nodes],
+          nodes: [...current.nodes, ...nodesWithUniqueNames],
         };
         set({ workflow: updated, isDirty: true });
         get().saveToHistory(`Add ${nodes.length} nodes`);
@@ -454,11 +475,37 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const current = get().workflow;
         if (!current) return;
 
+        // Check if node name is being changed
+        const existingNode = current.nodes.find((n) => n.id === nodeId);
+        const oldName = existingNode?.name;
+        let newName = updates.name;
+
+        // If name is being changed, ensure it's unique
+        if (newName && oldName !== newName) {
+          newName = ensureUniqueNodeName(
+            newName,
+            undefined,
+            nodeId,
+            current.nodes
+          );
+          updates = { ...updates, name: newName };
+        }
+
+        const isNameChange = oldName && newName && oldName !== newName;
+
+        // First, apply the update to the target node
+        let updatedNodes = current.nodes.map((node) =>
+          node.id === nodeId ? { ...node, ...updates } : node
+        );
+
+        // If name changed, update all $node["OldName"] references in other nodes
+        if (isNameChange && oldName && newName) {
+          updatedNodes = updateNodeNameReferences(updatedNodes, oldName, newName);
+        }
+
         const updated = {
           ...current,
-          nodes: current.nodes.map((node) =>
-            node.id === nodeId ? { ...node, ...updates } : node
-          ),
+          nodes: updatedNodes,
         };
         set({ workflow: updated, isDirty: true });
 

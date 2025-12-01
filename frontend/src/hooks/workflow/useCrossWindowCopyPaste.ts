@@ -1,5 +1,6 @@
 import { useWorkflowStore } from "@/stores";
 import { WorkflowConnection, WorkflowNode } from "@/types/workflow";
+import { ensureUniqueNodeName } from "@/utils/nodeReferenceUtils";
 import { useReactFlow } from "@xyflow/react";
 import { useCallback, useState } from "react";
 
@@ -185,9 +186,16 @@ export function useCrossWindowCopyPaste() {
       // Generate unique timestamp for new IDs
       const now = Date.now();
 
+      // Track existing names to ensure uniqueness for pasted nodes
+      const existingNames = new Set(workflow.nodes.map((n) => n.name));
+
       // Create new nodes with updated IDs and positions
       const newNodes = sharedData.nodes.map((node) => {
         const id = `${node.id}-${now}`;
+
+        // Ensure unique name for pasted node
+        const uniqueName = ensureUniqueNodeName(node.name, existingNames);
+        existingNames.add(uniqueName); // Track for subsequent pasted nodes
 
         // Calculate new position
         let x, y;
@@ -207,6 +215,7 @@ export function useCrossWindowCopyPaste() {
         return {
           ...node,
           id,
+          name: uniqueName,
           position: { x, y },
           parentId: newParentId,
           selected: true,

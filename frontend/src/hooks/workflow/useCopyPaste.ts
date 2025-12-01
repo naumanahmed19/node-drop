@@ -1,4 +1,5 @@
 import { useCopyPasteStore, useWorkflowStore } from "@/stores";
+import { ensureUniqueNodeName } from "@/utils/nodeReferenceUtils";
 import {
   Edge,
   Node,
@@ -290,6 +291,9 @@ export function useCopyPaste() {
 
         // Get all current nodes from React Flow (including the newly pasted ones)
         const allCurrentNodes = getNodes();
+
+        // Track existing names to ensure uniqueness for pasted nodes
+        const existingNames = new Set(workflow.nodes.map((n) => n.name));
         
         // Convert React Flow nodes to workflow nodes
         const workflowNodes = allCurrentNodes.map((node) => {
@@ -301,13 +305,19 @@ export function useCopyPaste() {
             const originalId = node.id.replace(`-${now}`, "");
             const originalNode = workflow.nodes.find((n) => n.id === originalId);
 
+            // Get the original name and ensure it's unique
+            const originalName =
+              (typeof originalNode?.name === "string" ? originalNode.name : "") ||
+              (typeof node.data?.label === "string" ? node.data.label : "") ||
+              node.id;
+            const uniqueName = ensureUniqueNodeName(originalName, existingNames);
+            existingNames.add(uniqueName); // Track for subsequent pasted nodes
+
             // Base workflow node
             const baseNode = {
               id: node.id,
               type: originalNode?.type || node.type || "default",
-              name: (typeof originalNode?.name === 'string' ? originalNode.name : '') || 
-                    (typeof node.data?.label === 'string' ? node.data.label : '') || 
-                    node.id,
+              name: uniqueName,
               position: node.position,
               parameters: originalNode?.parameters || {},
               disabled: originalNode?.disabled || false,

@@ -48,7 +48,7 @@ export function useNodeActions(nodeId: string) {
       const clonedNode = {
         ...nodeToClone,
         id: `node-${Date.now()}`,
-        name: `${nodeToClone.name} (Copy)`,
+        name: nodeToClone.name, // addNode will ensure unique name
         position: {
           x: nodeToClone.position.x + 50,
           y: nodeToClone.position.y + 50,
