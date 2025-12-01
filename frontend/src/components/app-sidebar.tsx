@@ -603,11 +603,13 @@ function CanvasViewSettings() {
     showControls,
     panOnDrag,
     zoomOnScroll,
+    editableConnections,
     toggleMinimap,
     toggleBackground,
     toggleControls,
     togglePanOnDrag,
     toggleZoomOnScroll,
+    toggleEditableConnections,
     changeBackgroundVariant,
   } = useReactFlowUIStore()
 
@@ -632,6 +634,10 @@ function CanvasViewSettings() {
       <div className="flex justify-between items-center">
         <span>Zoom on Scroll</span>
         <Switch checked={zoomOnScroll} onCheckedChange={toggleZoomOnScroll} />
+      </div>
+      <div className="flex justify-between items-center">
+        <span>Editable Connections</span>
+        <Switch checked={editableConnections} onCheckedChange={toggleEditableConnections} />
       </div>
       
       {/* Background Pattern Selector */}

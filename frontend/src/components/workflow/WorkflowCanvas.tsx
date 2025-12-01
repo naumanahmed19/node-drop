@@ -5,13 +5,15 @@ import { Background, BackgroundVariant, Edge, EdgeTypes, MiniMap, Node, NodeType
 import { useMemo, useRef } from 'react'
 import { WorkflowCanvasContextMenu } from './WorkflowCanvasContextMenu'
 import { WorkflowControls } from './WorkflowControls'
-import { WorkflowEdge } from './edges'
+import { EditableEdgeComponent } from './EditableEdge'
+import { ConnectionLine } from './ConnectionLine'
 import './reactflow-theme.css'
 
 // Define edge types once outside component to prevent re-creation
 const edgeTypes: EdgeTypes = {
-    default: WorkflowEdge,
-    smoothstep: WorkflowEdge,
+    default: EditableEdgeComponent,
+    smoothstep: EditableEdgeComponent,
+    'editable-edge': EditableEdgeComponent,
 }
 
 interface WorkflowCanvasProps {
@@ -106,8 +108,12 @@ export function WorkflowCanvas({
     // NOTE: animated property is now set per-edge by useExecutionAwareEdges hook
     // This ensures only edges in the current execution path are animated
     const defaultEdgeOptions = useMemo(() => ({
-        type: 'smoothstep' as const,
+        type: 'editable-edge' as const,
         style: edgeStyle,
+        data: {
+            algorithm: 'Step',
+            points: [],
+        },
     }), [edgeStyle])
 
     // Memoize MiniMap style to prevent object re-creation
@@ -220,6 +226,7 @@ export function WorkflowCanvas({
                     zoomOnScroll={zoomOnScroll}
                     zoomOnDoubleClick={false}
                     connectionLineStyle={connectionLineStyle}
+                    connectionLineComponent={ConnectionLine}
                     // translateExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     // nodeExtent={[[-canvasBoundaryX, -canvasBoundaryY], [canvasBoundaryX, canvasBoundaryY]]}
                     attributionPosition="bottom-left"

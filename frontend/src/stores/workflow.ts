@@ -109,6 +109,7 @@ interface WorkflowStore extends WorkflowEditorState {
 
   addConnection: (connection: WorkflowConnection) => void;
   addConnections: (connections: WorkflowConnection[]) => void;
+  updateConnection: (connectionId: string, updates: Partial<WorkflowConnection>) => void;
   removeConnection: (connectionId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -569,6 +570,34 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         };
         set({ workflow: updated, isDirty: true });
         get().saveToHistory("Remove connection");
+      },
+
+      updateConnection: (connectionId, updates) => {
+        const current = get().workflow;
+        if (!current) return;
+
+        console.log('📝 [WorkflowStore] updateConnection called:', {
+          connectionId,
+          updates,
+          currentConnectionsCount: current.connections.length,
+        });
+
+        const updated = {
+          ...current,
+          connections: current.connections.map((conn) =>
+            conn.id === connectionId ? { ...conn, ...updates } : conn
+          ),
+        };
+        
+        // Verify the update was applied
+        const updatedConn = updated.connections.find(c => c.id === connectionId);
+        console.log('📝 [WorkflowStore] Connection after update:', {
+          connectionId,
+          controlPoints: updatedConn?.controlPoints,
+        });
+        
+        set({ workflow: updated, isDirty: true });
+        // Don't save to history for control point updates to avoid cluttering history
       },
 
       setSelectedNode: (nodeId) => {

@@ -52,6 +52,15 @@ export interface WorkflowConnection {
   sourceOutput: string;
   targetNodeId: string;
   targetInput: string;
+  // Edge algorithm type (Step, Linear, CatmullRom, BezierCatmullRom)
+  algorithm?: string;
+  // Control points for editable edges
+  controlPoints?: Array<{
+    id: string;
+    x: number;
+    y: number;
+    active?: boolean;
+  }>;
 }
 
 export interface WorkflowSettings {

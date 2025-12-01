@@ -1,5 +1,5 @@
 import { userService } from "@/services";
-import { ReactFlowInstance } from "@xyflow/react";
+import { ReactFlowInstance, XYPosition } from "@xyflow/react";
 import { persist } from "zustand/middleware";
 import { shallow } from "zustand/shallow";
 import { createWithEqualityFn } from "zustand/traditional";
@@ -21,6 +21,10 @@ interface ReactFlowUIState {
   reactFlowInstance: ReactFlowInstance | null;
   setReactFlowInstance: (instance: ReactFlowInstance | null) => void;
 
+  // Connection line path for editable edges (free drawing)
+  connectionLinePath: XYPosition[];
+  setConnectionLinePath: (connectionLinePath: XYPosition[]) => void;
+
   // UI visibility settings
   showMinimap: boolean;
   showBackground: boolean;
@@ -31,6 +35,7 @@ interface ReactFlowUIState {
   // Canvas interaction settings
   panOnDrag: boolean;
   zoomOnScroll: boolean;
+  editableConnections: boolean;
 
   // Canvas boundary settings
   canvasBoundaryX: number;
@@ -64,6 +69,7 @@ interface ReactFlowUIState {
   togglePanOnDrag: () => void;
   toggleZoomOnScroll: () => void;
   toggleCompactMode: () => void;
+  toggleEditableConnections: () => void;
   changeBackgroundVariant: (
     variant: "dots" | "lines" | "cross" | "none"
   ) => void;
@@ -77,6 +83,7 @@ interface ReactFlowUIState {
   setCompactMode: (compact: boolean) => void;
   setPanOnDrag: (panOnDrag: boolean) => void;
   setZoomOnScroll: (zoomOnScroll: boolean) => void;
+  setEditableConnections: (enabled: boolean) => void;
   setExecutionPanelSize: (size: number) => void;
 
   // Silent setters (don't trigger savePreferences)
@@ -107,6 +114,7 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       compactMode: false,
       panOnDrag: true,
       zoomOnScroll: true,
+      editableConnections: true,
       canvasBoundaryX: 2000,
       canvasBoundaryY: 500,
       showExecutionPanel: false,
@@ -115,6 +123,9 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       isLoadingPreferences: false,
       isSavingPreferences: false,
       
+      // Connection line path for editable edges
+      connectionLinePath: [],
+      
       // Right sidebar
       showRightSidebar: false,
       rightSidebarTab: 'settings',
@@ -122,6 +133,9 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
 
       // Set ReactFlow instance
       setReactFlowInstance: (instance) => set({ reactFlowInstance: instance }),
+      
+      // Set connection line path
+      setConnectionLinePath: (connectionLinePath) => set({ connectionLinePath }),
 
       // Toggle functions
       toggleMinimap: () => {
@@ -146,6 +160,10 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       },
       toggleCompactMode: () => {
         set((state) => ({ compactMode: !state.compactMode }));
+        get().savePreferences();
+      },
+      toggleEditableConnections: () => {
+        set((state) => ({ editableConnections: !state.editableConnections }));
         get().savePreferences();
       },
 
@@ -221,6 +239,10 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       },
       setZoomOnScroll: (zoomOnScroll) => {
         set({ zoomOnScroll });
+        get().savePreferences();
+      },
+      setEditableConnections: (enabled) => {
+        set({ editableConnections: enabled });
         get().savePreferences();
       },
       setExecutionPanelSize: (size) => set({ executionPanelSize: size }),
@@ -358,6 +380,7 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
         compactMode: state.compactMode,
         panOnDrag: state.panOnDrag,
         zoomOnScroll: state.zoomOnScroll,
+        editableConnections: state.editableConnections,
         canvasBoundaryX: state.canvasBoundaryX,
         canvasBoundaryY: state.canvasBoundaryY,
         executionPanelSize: state.executionPanelSize,

@@ -385,7 +385,31 @@ export function WorkflowEditor({
                 }
             }
 
-            setEdges(reactFlowEdges);
+            // For edges, preserve local control points data to avoid resetting during drag
+            // Only do a full edge reset when workflow changes
+            if (workflowChanged) {
+                setEdges(reactFlowEdges);
+            } else {
+                // Merge edges: keep local edge data (control points) but update structure
+                setEdges((currentEdges) => {
+                    const currentEdgeMap = new Map(currentEdges.map(e => [e.id, e]));
+                    return reactFlowEdges.map(newEdge => {
+                        const currentEdge = currentEdgeMap.get(newEdge.id);
+                        const currentPoints = (currentEdge?.data as any)?.points;
+                        if (currentEdge && Array.isArray(currentPoints) && currentPoints.length > 0) {
+                            // Preserve local control points if they exist
+                            return {
+                                ...newEdge,
+                                data: {
+                                    ...newEdge.data,
+                                    points: currentPoints,
+                                },
+                            };
+                        }
+                        return newEdge;
+                    });
+                });
+            }
             prevWorkflowIdRef.current = workflowId;
         } else {
             console.log('â¸ï¸  Sync blocked - drag in progress');

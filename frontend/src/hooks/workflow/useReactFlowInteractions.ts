@@ -1,4 +1,4 @@
-import { useAddNodeDialogStore, useWorkflowStore } from "@/stores";
+import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore } from "@/stores";
 import { NodeType, WorkflowConnection, WorkflowNode } from "@/types";
 import {
   Connection,
@@ -378,6 +378,10 @@ export function useReactFlowInteractions() {
     }
   }, []);
 
+  // Get connection line path for editable edges (free drawing with spacebar)
+  const connectionLinePath = useReactFlowUIStore((state) => state.connectionLinePath);
+  const setConnectionLinePath = useReactFlowUIStore((state) => state.setConnectionLinePath);
+
   // Handle new connections
   const handleConnect: OnConnect = useCallback(
     (connection) => {
@@ -386,12 +390,21 @@ export function useReactFlowInteractions() {
       // Mark that a connection was successfully made
       connectionMadeRef.current = true;
 
+      // Convert connectionLinePath to control points for editable edge
+      const controlPoints = connectionLinePath.map((point, index) => ({
+        ...point,
+        id: `cp-${index}`,
+        active: true,
+      }));
+
       const newConnection: WorkflowConnection = {
         id: `${connection.source}-${connection.target}-${Date.now()}`,
         sourceNodeId: connection.source,
         sourceOutput: connection.sourceHandle || "main",
         targetNodeId: connection.target,
         targetInput: connection.targetHandle || "main",
+        // Store control points in the connection for persistence
+        controlPoints: controlPoints.length > 0 ? controlPoints : undefined,
       };
 
       addConnection(newConnection);
@@ -402,11 +415,19 @@ export function useReactFlowInteractions() {
         target: connection.target,
         sourceHandle: connection.sourceHandle ?? undefined,
         targetHandle: connection.targetHandle ?? undefined,
+        type: 'editable-edge',
+        data: {
+          algorithm: 'Step',
+          points: controlPoints,
+        },
       };
 
       setEdges((edges) => addEdge(newEdge as Edge, edges));
+      
+      // Clear the connection line path after connection is made
+      setConnectionLinePath([]);
     },
-    [addConnection, setEdges]
+    [addConnection, setEdges, connectionLinePath, setConnectionLinePath]
   );
 
   // Handle drag over for node dropping

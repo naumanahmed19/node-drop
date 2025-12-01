@@ -479,3 +479,54 @@
 .dark .annotation-textarea::placeholder {
   color: #8b6bff;
 }
+
+
+/* ===== Editable Edge Control Points ===== */
+
+/* Control point circles */
+.react-flow__edge circle.nopan.nodrag {
+  cursor: pointer;
+  transition: r 0.15s ease, fill 0.15s ease;
+}
+
+.react-flow__edge circle.nopan.nodrag:hover {
+  r: 6;
+}
+
+.react-flow__edge circle.nopan.nodrag:focus {
+  outline: none;
+}
+
+.react-flow__edge circle.nopan.nodrag:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Active control point */
+.react-flow__edge circle.nopan.nodrag.active {
+  cursor: grab;
+}
+
+.react-flow__edge circle.nopan.nodrag.active:active {
+  cursor: grabbing;
+}
+
+/* Editable edge path styling */
+.react-flow__edge.selected path {
+  stroke-width: 2.5;
+}
+
+/* Connection line animation */
+.react-flow__connection-path.animated {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+
+/* Dark mode editable edge styles */
+.dark .react-flow__edge circle.nopan.nodrag {
+  stroke-opacity: 0.5;
+}
+
+.dark .react-flow__edge circle.nopan.nodrag.active {
+  stroke-opacity: 1;
+}

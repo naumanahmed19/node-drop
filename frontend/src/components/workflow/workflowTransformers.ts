@@ -239,6 +239,19 @@ export function transformWorkflowEdgesToReactFlow(
   connections: WorkflowConnection[],
   executionStateKey?: string
 ) {
+  // Debug: Log connections being transformed
+  const connectionsWithPoints = connections.filter(c => c.controlPoints && c.controlPoints.length > 0);
+  if (connectionsWithPoints.length > 0) {
+    console.log('🔄 [transformEdges] Connections with control points:', {
+      total: connections.length,
+      withControlPoints: connectionsWithPoints.length,
+      details: connectionsWithPoints.map(c => ({
+        id: c.id,
+        pointsCount: c.controlPoints?.length,
+      })),
+    });
+  }
+
   return connections.map((conn) => {
     return {
       id: conn.id,
@@ -246,11 +259,14 @@ export function transformWorkflowEdgesToReactFlow(
       target: conn.targetNodeId,
       sourceHandle: conn.sourceOutput,
       targetHandle: conn.targetInput,
-      type: "smoothstep",
+      type: "editable-edge",
       data: {
         label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
         // Add execution state key to force edge re-render when execution completes
         executionStateKey,
+        // Editable edge configuration - use saved algorithm or default to Step
+        algorithm: conn.algorithm || "Step",
+        points: conn.controlPoints || [],
       },
     };
   });
