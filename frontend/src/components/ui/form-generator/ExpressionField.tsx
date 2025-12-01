@@ -809,8 +809,8 @@ export function ExpressionField({
   return (
     <div className={cn('relative w-full', className)}>
       {/* Mode Toggle */}
-      <div className="flex items-center gap-2 mb-2">
-        <div className="inline-flex items-center rounded-lg bg-muted p-1">
+      <div className="flex items-center gap-1 mb-1.5">
+        <div className="inline-flex items-center rounded-md bg-muted p-0.5">
           <Button
             type="button"
             variant={mode === 'fixed' ? 'secondary' : 'ghost'}
@@ -818,11 +818,11 @@ export function ExpressionField({
             onClick={() => handleModeToggle('fixed')}
             disabled={disabled}
             className={cn(
-              'h-7 px-3 text-xs font-medium transition-all',
+              'h-5 px-1.5 text-[10px] font-medium transition-all',
               mode === 'fixed' && 'bg-background shadow-sm'
             )}
           >
-            <Type className="w-3.5 h-3.5 mr-1.5" />
+            <Type className="w-2.5 h-2.5 mr-0.5" />
             Fixed
           </Button>
           <Button
@@ -832,12 +832,12 @@ export function ExpressionField({
             onClick={() => handleModeToggle('expression')}
             disabled={disabled}
             className={cn(
-              'h-7 px-3 text-xs font-medium transition-all',
+              'h-5 px-1.5 text-[10px] font-medium transition-all',
               mode === 'expression' && 'bg-background shadow-sm'
             )}
           >
-            <Code2 className="w-3.5 h-3.5 mr-1.5" />
-            Expression
+            <Code2 className="w-2.5 h-2.5 mr-0.5" />
+            Expr
           </Button>
         </div>
 
@@ -847,10 +847,10 @@ export function ExpressionField({
             variant="ghost"
             size="sm"
             onClick={() => setShowPreview(!showPreview)}
-            className="h-7 px-2 text-xs"
+            className="h-5 px-1.5 text-[10px]"
           >
-            <Eye className="w-3.5 h-3.5 mr-1" />
-            {showPreview ? 'Hide' : 'Show'} Preview
+            <Eye className="w-2.5 h-2.5 mr-0.5" />
+            {showPreview ? 'Hide' : 'Show'}
           </Button>
         )}
       </div>

@@ -1,77 +1,20 @@
-import { memo, useMemo } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
+import { Copy, Database, Maximize2, MousePointerClick } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { createField, FormGenerator } from '@/components/ui/form-generator'
-import { FormFieldConfig } from '@/components/ui/form-generator/types'
-import { useWorkflowStore, useCredentialStore } from '@/stores'
-import { NodeSetting, NodeType, WorkflowNode } from '@/types'
-import { useState } from 'react'
+import { NodeConfigTab } from '@/components/workflow/shared/NodeConfigTab'
+import { NodeHeader } from '@/components/workflow/shared/NodeHeader'
+import { NodeSettingsForm } from '@/components/workflow/shared/NodeSettingsForm'
+import { useWorkflowStore } from '@/stores'
+import { NodeType, WorkflowNode } from '@/types'
+import { extractNodeOutputData } from '@/utils/nodeOutputUtils'
+import { toast } from 'sonner'
 
 interface QuickSettingsPanelProps {
   node: WorkflowNode | null
   nodeType: NodeType | null
   readOnly?: boolean
-}
-
-// Default settings available for all nodes
-const DEFAULT_SETTINGS: Record<string, NodeSetting> = {
-  continueOnFail: {
-    displayName: 'Continue On Fail',
-    name: 'continueOnFail',
-    type: 'boolean',
-    default: false,
-    description: 'If enabled, the node will continue execution even if an error occurs.',
-  },
-  alwaysOutputData: {
-    displayName: 'Always Output Data',
-    name: 'alwaysOutputData',
-    type: 'boolean',
-    default: false,
-    description: 'If enabled, the node will always output data, including error responses.',
-    displayOptions: {
-      show: {
-        continueOnFail: [true],
-      },
-    },
-  },
-  retryOnFail: {
-    displayName: 'Retry On Fail',
-    name: 'retryOnFail',
-    type: 'boolean',
-    default: false,
-    description: 'If enabled, the node will automatically retry execution if it fails.',
-  },
-  maxRetries: {
-    displayName: 'Max Retries',
-    name: 'maxRetries',
-    type: 'number',
-    default: 3,
-    description: 'Maximum number of retry attempts',
-    displayOptions: {
-      show: {
-        retryOnFail: [true],
-      },
-    },
-  },
-  retryDelay: {
-    displayName: 'Retry Delay (ms)',
-    name: 'retryDelay',
-    type: 'number',
-    default: 1000,
-    description: 'Delay between retry attempts in milliseconds',
-    displayOptions: {
-      show: {
-        retryOnFail: [true],
-      },
-    },
-  },
-  timeout: {
-    displayName: 'Timeout (ms)',
-    name: 'timeout',
-    type: 'number',
-    default: 30000,
-    description: 'Maximum time in milliseconds the node is allowed to run before timing out.',
-  },
 }
 
 export const QuickSettingsPanel = memo(function QuickSettingsPanel({
@@ -80,186 +23,191 @@ export const QuickSettingsPanel = memo(function QuickSettingsPanel({
   readOnly = false,
 }: QuickSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState('config')
-  const { updateNode } = useWorkflowStore()
-  const { credentials } = useCredentialStore()
+  const [isExecuting, setIsExecuting] = useState(false)
+  const { updateNode, getNodeExecutionResult, executeNode, executionState, openNodeProperties } = useWorkflowStore()
+
+  // Get execution result for output tab
+  const executionResult = node ? getNodeExecutionResult(node.id) : null
+
+  // Handle execute node
+  const handleExecuteNode = async () => {
+    if (!node || readOnly || isExecuting || executionState.status === 'running') return
+    setIsExecuting(true)
+    try {
+      await executeNode(node.id, undefined, 'single')
+      setActiveTab('output') // Switch to output tab after execution
+    } catch (error) {
+      console.error('Failed to execute node:', error)
+      toast.error('Failed to execute node')
+    } finally {
+      setIsExecuting(false)
+    }
+  }
 
   const nodeSettings = node?.settings || {}
-  const nodeParameters = node?.parameters || {}
-  const nodeCredentials = node?.credentials || []
-
-  // Get all available settings
-  const allSettings: Record<string, NodeSetting> = useMemo(
-    () => ({
-      ...DEFAULT_SETTINGS,
-      ...(nodeType?.settings || {}),
-    }),
-    [nodeType?.settings]
-  )
-
-  // Convert settings to FormFieldConfig format
-  const settingsFields = useMemo<FormFieldConfig[]>(() => {
-    return Object.entries(allSettings)
-      .filter(([_, setting]) => !setting.hidden)
-      .map(([settingName, setting]) => {
-        let fieldType: FormFieldConfig['type'] = 'string'
-        if (setting.type === 'boolean') fieldType = 'switch'
-        else if (setting.type === 'number') fieldType = 'number'
-        else if (setting.type === 'options') fieldType = 'options'
-        else if (setting.type === 'json') fieldType = 'json'
-
-        return {
-          name: settingName,
-          displayName: setting.displayName,
-          type: fieldType,
-          description: setting.description,
-          default: setting.default,
-          placeholder: setting.placeholder,
-          disabled: setting.disabled,
-          required: false,
-          options: setting.options,
-          displayOptions: setting.displayOptions,
-        } as FormFieldConfig
-      })
-  }, [allSettings])
-
-  // Convert node properties to FormFieldConfig format
-  const configFields = useMemo<FormFieldConfig[]>(() => {
-    return (
-      nodeType?.properties?.map((property) => {
-        return createField({
-          name: property.name,
-          displayName: property.displayName,
-          type: property.type as any,
-          required: property.required,
-          default: property.default,
-          description: property.description,
-          tooltip: property.tooltip,
-          placeholder: property.placeholder,
-          options: property.options,
-          displayOptions: property.displayOptions,
-          typeOptions: property.typeOptions,
-          allowedTypes: property.allowedTypes,
-        })
-      }) || []
-    )
-  }, [nodeType?.properties])
 
   // Handle settings changes
   const handleSettingsChange = (fieldName: string, value: any) => {
     if (readOnly || !node) return
-    const newSettings = { ...nodeSettings, [fieldName]: value }
-    if (fieldName === 'continueOnFail' && value === false) {
-      newSettings.alwaysOutputData = false
-    }
-    updateNode(node.id, { settings: newSettings })
+    updateNode(node.id, { settings: { ...nodeSettings, [fieldName]: value } })
   }
 
-  // Handle config parameter changes
-  const handleConfigChange = (fieldName: string, value: any) => {
+  // Handle config changes from NodeConfigTab
+  const handleNodeUpdate = (updates: { parameters?: Record<string, any>; credentials?: string[] }) => {
     if (readOnly || !node) return
-
-    const field = nodeType?.properties?.find((p) => p.name === fieldName)
-
-    if (field?.type === 'credential') {
-      const newParameters = { ...nodeParameters, [fieldName]: value }
-      const allowedTypes = field.allowedTypes || []
-      let newCredentials = [...nodeCredentials]
-      newCredentials = newCredentials.filter((credId) => {
-        const cred = credentials.find((c) => c.id === credId)
-        return !cred || !allowedTypes.includes(cred.type)
-      })
-      if (value) newCredentials.push(value)
-      updateNode(node.id, { parameters: newParameters, credentials: newCredentials })
-    } else {
-      updateNode(node.id, { parameters: { ...nodeParameters, [fieldName]: value } })
-    }
+    updateNode(node.id, updates)
   }
 
-  // Prepare config values
-  const configValues = useMemo(() => {
-    const values = { ...nodeParameters }
-    configFields
-      .filter((f) => f.type === 'credential')
-      .forEach((f) => {
-        if (nodeParameters[f.name]) {
-          values[f.name] = nodeParameters[f.name]
-        } else {
-          const allowedTypes = f.allowedTypes || []
-          for (const type of allowedTypes) {
-            const credId = nodeCredentials.find((credId) => {
-              const cred = credentials.find((c) => c.id === credId)
-              return cred && cred.type === type
-            })
-            if (credId) {
-              values[f.name] = credId
-              break
-            }
-          }
-        }
-      })
-    return values
-  }, [nodeParameters, nodeCredentials, credentials, configFields])
+  // Handle name change
+  const handleNameChange = (name: string) => {
+    if (readOnly || !node) return
+    updateNode(node.id, { name })
+  }
+
+  // Handle expand to full dialog
+  const handleExpand = () => {
+    if (!node) return
+    openNodeProperties(node.id)
+  }
+
+  // Extract output data from execution result using shared utility
+  const outputData = useMemo(() => {
+    return extractNodeOutputData(executionResult)
+  }, [executionResult])
+
+  const handleCopyOutput = () => {
+    if (outputData) {
+      navigator.clipboard.writeText(JSON.stringify(outputData, null, 2))
+      toast.success('Copied to clipboard')
+    }
+  }
 
   // No node selected state
   if (!node || !nodeType) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-        <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
-        <p className="text-sm text-center">Select a node to view its settings</p>
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-6">
+        <MousePointerClick className="h-10 w-10 mb-3 opacity-40" />
+        <p className="text-sm font-medium">No node selected</p>
+        <p className="text-xs text-center mt-1 opacity-70">Click on a node to configure it</p>
       </div>
     )
   }
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full overflow-hidden">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-b">
-        <TabsList className="h-7 p-0.5">
-          <TabsTrigger value="config" className="text-xs h-6 px-2">
-            Config
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="text-xs h-6 px-2">
-            Settings
-          </TabsTrigger>
-        </TabsList>
-      </div>
+    <div className="flex flex-col h-full overflow-hidden">
+      <NodeHeader
+        nodeType={nodeType}
+        nodeName={node.name || ''}
+        onNameChange={handleNameChange}
+        onExecute={handleExecuteNode}
+        isExecuting={isExecuting}
+        executionDisabled={executionState.status === 'running'}
+        executionStatus={executionResult?.status as 'success' | 'error' | 'running' | 'pending' | 'skipped' | null}
+        readOnly={readOnly}
+        size="sm"
+        actions={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleExpand}
+            title="Open full dialog"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+        <div className="flex-shrink-0 px-3 py-1 border-b">
+          <TabsList className="h-7 p-0.5">
+            <TabsTrigger value="config" className="text-xs h-6 px-2">
+              Config
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="text-xs h-6 px-2">
+              Settings
+            </TabsTrigger>
+            <TabsTrigger value="output" className="text-xs h-6 px-2">
+              Output
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
       <TabsContent value="config" className="flex-1 min-h-0 mt-0 relative">
         <div className="absolute inset-0 overflow-auto p-3">
-          {configFields.length > 0 ? (
-            <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">Configure node parameters</p>
-              <FormGenerator
-                fields={configFields}
-                values={configValues}
-                onChange={handleConfigChange}
-                disabled={readOnly}
-                showRequiredIndicator={true}
-                nodeId={node.id}
-                nodeType={nodeType.identifier}
-              />
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground text-center py-8">
-              No configuration parameters available
-            </p>
-          )}
+          <NodeConfigTab
+            node={node}
+            nodeType={nodeType}
+            onNodeUpdate={handleNodeUpdate}
+            disabled={readOnly}
+          />
         </div>
       </TabsContent>
 
       <TabsContent value="settings" className="flex-1 min-h-0 mt-0 relative">
         <div className="absolute inset-0 overflow-auto p-3">
-          <div className="space-y-4">
-            <p className="text-xs text-muted-foreground">Configure execution settings</p>
-            <FormGenerator
-              fields={settingsFields}
-              values={nodeSettings}
-              onChange={handleSettingsChange}
-              disabled={readOnly}
-              showRequiredIndicator={false}
-            />
-          </div>
+          <NodeSettingsForm
+            nodeType={nodeType}
+            values={nodeSettings}
+            onChange={handleSettingsChange}
+            disabled={readOnly}
+          />
         </div>
       </TabsContent>
-    </Tabs>
+
+      <TabsContent value="output" className="flex-1 min-h-0 mt-0 relative">
+        <div className="absolute inset-0 overflow-auto p-3">
+          {executionResult ? (
+            <div className="space-y-3">
+              {/* Status */}
+              <div className="flex items-center justify-between">
+                <Badge 
+                  variant="outline"
+                  className={
+                    executionResult.status === 'success' ? 'bg-green-50 text-green-700 border-green-200' :
+                    executionResult.status === 'error' ? 'bg-red-50 text-red-700 border-red-200' :
+                    (executionResult.status as string) === 'running' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    ''
+                  }
+                >
+                  {executionResult.status}
+                </Badge>
+                {outputData && (
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyOutput} title="Copy">
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Error */}
+              {executionResult.status === 'error' && executionResult.error && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+                  <div className="font-medium mb-1">Error</div>
+                  <div className="whitespace-pre-wrap break-words">{executionResult.error}</div>
+                </div>
+              )}
+
+              {/* Output Data */}
+              {outputData ? (
+                <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto font-mono whitespace-pre-wrap break-words">
+                  {JSON.stringify(outputData, null, 2)}
+                </pre>
+              ) : (
+                !executionResult.error && (
+                  <p className="text-xs text-muted-foreground text-center py-4">No output data</p>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <Database className="h-8 w-8 mb-2 opacity-50" />
+              <p className="text-xs text-center">No output yet</p>
+              <p className="text-xs text-center opacity-70">Execute the node to see results</p>
+            </div>
+          )}
+        </div>
+      </TabsContent>
+      </Tabs>
+    </div>
   )
 })

@@ -206,6 +206,7 @@ export function MiniExpressionEditor({
   const [showSelectDropdown, setShowSelectDropdown] = useState(false)
   const [pendingCursorPosition, setPendingCursorPosition] = useState<number | null>(null)
   const [_isTextareaFocused, setIsTextareaFocused] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightInputRef = useRef<HTMLDivElement>(null)
@@ -491,10 +492,23 @@ export function MiniExpressionEditor({
   }
 
   return (
-    <div className={cn("w-full space-y-1.5 relative", className)}>
-      {/* Mode Toggle - Absolute positioned above the input */}
-      <div className="absolute right-0 z-20" style={{ marginTop: "-32px" }}>
-        <div className="flex items-center gap-1 bg-muted p-0.5 rounded-md w-fit">
+    <div 
+      className={cn("w-full relative", className)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Invisible hover extension area above the input */}
+      <div className="absolute -top-7 left-0 right-0 h-7" />
+      
+      {/* Mode Toggle - Absolute positioned above the input, only visible on hover */}
+      <div 
+        className={cn(
+          "absolute right-0 z-20 transition-opacity duration-150",
+          isHovered || isExpanded ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        style={{ marginTop: "-28px" }}
+      >
+        <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
           <button
             type="button"
             onClick={() => {
@@ -502,23 +516,23 @@ export function MiniExpressionEditor({
               setIsExpanded(false)
             }}
             className={cn(
-              "h-6 px-2 text-xs font-medium rounded transition-colors",
+              "h-5 px-1.5 text-[10px] font-medium rounded transition-colors flex items-center gap-0.5",
               inputMode === "fixed" ? "bg-background shadow-sm" : "hover:bg-muted-foreground/10"
             )}
           >
-            <Type className="w-3 h-3 inline" />
-           
+            <Type className="w-2.5 h-2.5" />
+            Fixed
           </button>
           <button
             type="button"
             onClick={() => setInputMode("expression")}
             className={cn(
-              "h-6 px-2 text-xs font-medium rounded transition-colors",
+              "h-5 px-1.5 text-[10px] font-medium rounded transition-colors flex items-center gap-0.5",
               inputMode === "expression" ? "bg-background shadow-sm" : "hover:bg-muted-foreground/10"
             )}
           >
-            <Braces className="w-3 h-3 inline" />
-          
+            <Braces className="w-2.5 h-2.5" />
+            Expr
           </button>
         </div>
       </div>
