@@ -14,6 +14,9 @@ import { useCallback, useRef } from "react";
 export function useNodeGroupDragHandlers() {
   const { getIntersectingNodes, getNodes, setNodes } = useReactFlow();
   const { saveToHistory, setDirty } = useWorkflowStore();
+  
+  // Ref to track if group attachment was handled (to skip syncPositionsToZustand)
+  const groupAttachmentHandled = useRef(false);
 
   /**
    * Handle when a node drag stops - attach to group if intersecting
@@ -146,9 +149,6 @@ export function useNodeGroupDragHandlers() {
     },
     [getIntersectingNodes, setNodes]
   );
-
-  // Ref to track if group attachment was handled (to skip syncPositionsToZustand)
-  const groupAttachmentHandled = useRef(false);
 
   return {
     onNodeDragStop,

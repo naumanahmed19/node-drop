@@ -2,7 +2,7 @@ import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
 import { NodeExecutionStatus } from '@/types/execution'
-import { useReactFlow } from '@xyflow/react'
+import { useReactFlow, useStore } from '@xyflow/react'
 import { LucideIcon } from 'lucide-react'
 import React, { ReactNode, useCallback, useMemo } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
@@ -227,19 +227,26 @@ export function BaseNodeWrapper({
     [nodeTypes, data.nodeType]
   )
 
-  // Import useReactFlow to check if node is in a group
-  const { getNode, getNodes } = useReactFlow()
-  const currentNode = getNode(id)
-  const isInGroup = !!currentNode?.parentId
+  // Use useStore for reactive updates when node's parentId changes
+  const { getNodes } = useReactFlow()
+  const isInGroup = useStore((state) => {
+    const node = state.nodeLookup.get(id)
+    return !!node?.parentId
+  })
 
-  // Check if we can group (need at least 1 selected node that isn't a group or in a group)
+  // Check if we can group - current node must not be in a group already
+  // and either the current node can be grouped, or there are selected nodes that can be grouped
+  // Note: data.nodeType contains the actual node type (e.g., 'http-request'), not the React Flow type
+  const currentNodeCanBeGrouped = !isInGroup && data.nodeType !== 'group'
   const selectedNodesForGrouping = getNodes().filter(
     (node) =>
       node.selected &&
       !node.parentId &&
       node.type !== 'group'
   )
-  const canGroup = selectedNodesForGrouping.length >= 1
+  // Can group only if current node is not already in a group
+  // AND (current node can be grouped OR there are selected nodes that can be grouped)
+  const canGroup = !isInGroup && (currentNodeCanBeGrouped || selectedNodesForGrouping.length >= 1)
 
   // Check if we can create template (need at least 1 selected node)
   const selectedNodesForTemplate = getNodes().filter(node => node.selected && node.type !== 'group')
