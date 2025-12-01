@@ -97,8 +97,6 @@ export function WorkflowEditorPage() {
   useEffect(() => {
     if (!id || id === 'new') return
 
-    console.log('[WorkflowEditor] Subscribing to workflow:', id)
-
     let isSubscribed = false;
     let subscriptionAttempts = 0;
     const maxAttempts = 3;
@@ -107,17 +105,13 @@ export function WorkflowEditorPage() {
     const subscribeToWorkflow = async () => {
       try {
         subscriptionAttempts++;
-        console.log(`[WorkflowEditor] Subscription attempt ${subscriptionAttempts} for workflow:`, id)
-
         await socketService.subscribeToWorkflow(id)
         isSubscribed = true;
-        console.log('[WorkflowEditor] ✅ Successfully subscribed to workflow:', id)
       } catch (error) {
         console.error('[WorkflowEditor] Failed to subscribe to workflow:', error)
 
         // Retry if not at max attempts
         if (subscriptionAttempts < maxAttempts) {
-          console.log(`[WorkflowEditor] Retrying subscription in 1 second...`)
           setTimeout(subscribeToWorkflow, 1000)
         }
       }
@@ -128,7 +122,6 @@ export function WorkflowEditorPage() {
 
     // Also re-subscribe when socket reconnects
     const handleSocketConnected = () => {
-      console.log('[WorkflowEditor] Socket reconnected, re-subscribing to workflow:', id)
       subscribeToWorkflow()
     }
 
@@ -152,8 +145,6 @@ export function WorkflowEditorPage() {
     return () => {
       // Only unsubscribe if we actually subscribed
       if (isSubscribed) {
-        console.log('[WorkflowEditor] Unsubscribing from workflow:', id)
-
         // Unsubscribe from workflow (async but don't wait)
         socketService.unsubscribeFromWorkflow(id).catch(error => {
           console.error('[WorkflowEditor] Failed to unsubscribe from workflow:', error)
@@ -193,12 +184,6 @@ export function WorkflowEditorPage() {
         // CRITICAL FIX: Use workflow snapshot from execution if available
         // This ensures we display the workflow state at the time of execution
         if (executionData.workflowSnapshot) {
-          console.log('Using workflow snapshot from execution', {
-            executionId,
-            snapshotNodes: executionData.workflowSnapshot.nodes.length,
-            snapshotConnections: executionData.workflowSnapshot.connections.length,
-          })
-
           // Load the current workflow to get basic metadata (name, description, etc.)
           let workflowMetadata: any = null
           if (id && id !== 'new') {

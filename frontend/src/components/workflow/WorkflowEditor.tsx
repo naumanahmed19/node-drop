@@ -214,7 +214,7 @@ export function WorkflowEditor({
                 addConnections(expandedConnections)
             }
 
-            console.log('✅ Template with variables expanded successfully')
+            // Template expanded successfully
         })
     }, [templateVariableDialogData])
 
@@ -310,7 +310,7 @@ export function WorkflowEditor({
     useEffect(() => {
         // Setup socket listeners when component mounts
         initializeRealTimeUpdates()
-        console.log('🔌 Initialized real-time socket listeners')
+        // Real-time socket listeners initialized
     }, [initializeRealTimeUpdates])
 
     useEffect(() => {

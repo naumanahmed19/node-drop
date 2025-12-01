@@ -268,16 +268,17 @@ export function BaseNodeWrapper({
     handleRetryNode
   } = useNodeExecution(id, data.nodeType)
 
-  // Debug logging for service nodes
-  React.useEffect(() => {
-    if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
-      console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
-        isExecuting: nodeExecutionState.isExecuting,
-        hasError: nodeExecutionState.hasError,
-        hasSuccess: nodeExecutionState.hasSuccess,
-      });
-    }
-  }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
+  // Debug logging for service nodes (disabled by default for performance)
+  // Uncomment if needed for debugging:
+  // React.useEffect(() => {
+  //   if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
+  //     console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
+  //       isExecuting: nodeExecutionState.isExecuting,
+  //       hasError: nodeExecutionState.hasError,
+  //       hasSuccess: nodeExecutionState.hasSuccess,
+  //     });
+  //   }
+  // }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
 
   // Get execution state and workflow from store
   const { executionState, workflow } = useWorkflowStore()
