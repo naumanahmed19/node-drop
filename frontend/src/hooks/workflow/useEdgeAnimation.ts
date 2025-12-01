@@ -12,8 +12,8 @@
  */
 
 import { useWorkflowStore } from "@/stores/workflow";
-import { useMemo } from "react";
 import type { Edge } from "@xyflow/react";
+import { useMemo } from "react";
 
 /**
  * Hook to get edge animation states based on execution state
@@ -193,7 +193,7 @@ export function useExecutionAwareEdges(edges: Edge[]): Edge[] {
 
       return {
         ...edge,
-        animated,
+        ...(animated && { animated: true }),
         style,
       };
     });

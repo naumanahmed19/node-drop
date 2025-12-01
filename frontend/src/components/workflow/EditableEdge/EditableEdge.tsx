@@ -1,25 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BaseEdge,
-  BuiltInNode,
-  useReactFlow,
-  useStore,
-  type Edge,
-  type EdgeProps,
-  type XYPosition,
+    BaseEdge,
+    BuiltInNode,
+    useReactFlow,
+    useStore,
+    type Edge,
+    type EdgeProps,
+    type XYPosition,
 } from '@xyflow/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useWorkflowStore, useReactFlowUIStore } from '@/stores';
 import { useReactFlowStyles } from '@/hooks/useReactFlowStyles';
+import { useReactFlowUIStore, useWorkflowStore } from '@/stores';
 import { EdgeButton } from '../edges/EdgeButton';
-import { ControlPoint, type ControlPointData } from './ControlPoint';
-import { getPath, getControlPoints } from './path';
 import { Algorithm } from './constants';
 import { ControlAnchor } from './ControlAnchor';
+import { ControlPoint, type ControlPointData } from './ControlPoint';
+import { getControlPoints, getPath } from './path';
 import {
-  getPointsBasedOnNodePositions,
-  getStepInitialPoints,
-  OFFSET,
+    getPointsBasedOnNodePositions,
+    getStepInitialPoints,
+    OFFSET,
 } from './path/step';
 
 // Debounce delay for syncing to store (only sync after user stops dragging)
@@ -285,12 +285,15 @@ export function EditableEdgeComponent({
     return { x: centerX, y: centerY };
   }, [sourceX, sourceY, targetX, targetY]);
 
+  // Filter out props that shouldn't be passed to DOM elements
+  const { pathOptions, selectable, deletable, ...validDelegatedProps } = delegated as any;
+
   return (
     <>
       <BaseEdge
         id={id}
         path={path}
-        {...delegated}
+        {...validDelegatedProps}
         markerStart={markerStart}
         markerEnd={markerEnd}
         style={{
