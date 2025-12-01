@@ -11,7 +11,6 @@ import { usePinnedOutputsStore } from '@/stores/pinnedOutputs'
 import { AlertCircle, Copy, Database, FileText, Pin, X } from 'lucide-react'
 import { memo, useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import './toolbar-buttons.css'
 
 interface OutputToolbarButtonProps {
   nodeId: string
@@ -143,16 +142,16 @@ export const OutputToolbarButton = memo(function OutputToolbarButton({
     <>
       <Popover open={open} onOpenChange={handleOpenChange} modal={false}>
         <PopoverTrigger asChild>
-          <button
-            className="toolbar-button"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
             disabled={disabled || !hasOutput}
             title={hasOutput ? 'View Output' : 'No output available'}
             aria-label="View node output"
-            tabIndex={0}
-            role="button"
           >
             <FileText className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </PopoverTrigger>
       <PopoverContent
         className="w-96 max-h-[600px] overflow-hidden p-0"

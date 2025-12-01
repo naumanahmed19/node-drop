@@ -61,7 +61,7 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
       align="center"
     >
       <div 
-        className="flex items-center gap-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-border/40 rounded-md shadow-sm p-1 node-toolbar-container" 
+        className="flex items-center gap-0.5 node-toolbar-container" 
         role="toolbar" 
         aria-label={`Controls for ${nodeLabel}`}
         aria-orientation="horizontal"
@@ -87,23 +87,19 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
         
         {/* Config button - visible when selected */}
         {nodeTypeDefinition && isNodeSelected && (
-          <div className="animate-in fade-in duration-200">
-            <ConfigToolbarButton
-              nodeId={nodeId}
-              nodeType={nodeTypeDefinition}
-              disabled={disabled}
-            />
-          </div>
+          <ConfigToolbarButton
+            nodeId={nodeId}
+            nodeType={nodeTypeDefinition}
+            disabled={disabled}
+          />
         )}
 
-        {/* Output button - visible on hover, when selected, or when pinned */}
+        {/* Output button - visible when selected or pinned */}
         {(isNodeSelected || hasPinnedOutput) && (
-          <div className="animate-in fade-in duration-200">
-            <OutputToolbarButton
-              nodeId={nodeId}
-              disabled={disabled}
-            />
-          </div>
+          <OutputToolbarButton
+            nodeId={nodeId}
+            disabled={disabled}
+          />
         )}
       </div>
     </NodeToolbar>

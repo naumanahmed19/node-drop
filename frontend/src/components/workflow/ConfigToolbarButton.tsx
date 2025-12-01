@@ -1,8 +1,8 @@
+import { Button } from '@/components/ui/button'
 import { useReactFlowUIStore } from '@/stores'
 import { NodeType } from '@/types'
 import { Sliders } from 'lucide-react'
 import { memo } from 'react'
-import './toolbar-buttons.css'
 
 interface ConfigToolbarButtonProps {
   nodeId: string
@@ -15,26 +15,30 @@ export const ConfigToolbarButton = memo(function ConfigToolbarButton({
   nodeType: _nodeType,
   disabled = false,
 }: ConfigToolbarButtonProps) {
-  const { openRightSidebar } = useReactFlowUIStore()
+  const { showRightSidebar, rightSidebarTab, openRightSidebar } = useReactFlowUIStore()
+
+  // Hide button when sidebar is already open with settings tab
+  if (showRightSidebar && rightSidebarTab === 'settings') {
+    return null
+  }
 
   const handleClick = () => {
     if (disabled) return
-    // Open the sidebar with settings tab
     openRightSidebar('settings')
   }
 
   return (
-    <button
-      className="toolbar-button"
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-6 w-6"
       disabled={disabled}
       onClick={handleClick}
       title="Quick Settings"
       aria-label="Quick Settings"
-      tabIndex={0}
-      role="button"
     >
       <Sliders className="h-3.5 w-3.5" />
-    </button>
+    </Button>
   )
 })
 

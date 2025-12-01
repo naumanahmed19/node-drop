@@ -1,7 +1,7 @@
-import { clsx } from 'clsx'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { AlertCircle, CheckCircle, Loader2, Play, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import './toolbar-buttons.css'
 import type { ExecuteToolbarButtonProps } from './types'
 
 export function ExecuteToolbarButton({
@@ -212,10 +212,16 @@ export function ExecuteToolbarButton({
 
   return (
     <>
-      <button
-        className={clsx(
-          'toolbar-button',
-          getButtonStyles(),
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          'h-6 w-6 relative',
+          showSuccess && 'text-green-600 hover:text-green-700 hover:bg-green-100',
+          hasError && !executionError?.isRetryable && 'text-red-600 hover:text-red-700 hover:bg-red-100',
+          hasError && executionError?.isRetryable && retryCountdown === 0 && 'text-amber-600 hover:text-amber-700 hover:bg-amber-100',
+          hasError && executionError?.isRetryable && retryCountdown > 0 && 'text-red-600',
+          isExecuting && 'text-blue-600',
           className
         )}
         onClick={handleClick}
@@ -225,17 +231,15 @@ export function ExecuteToolbarButton({
         aria-describedby={`execute-button-desc-${nodeId}`}
         aria-pressed={isExecuting ? 'true' : 'false'}
         title={getTooltip()}
-        tabIndex={0}
-        role="button"
       >
         {getIcon()}
         {/* Show countdown for retryable errors */}
         {hasError && executionError?.isRetryable && retryCountdown > 0 && (
-          <span className="retry-countdown" aria-hidden="true">
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-3.5 h-3.5 text-[10px] flex items-center justify-center font-bold" aria-hidden="true">
             {retryCountdown}
           </span>
         )}
-      </button>
+      </Button>
       
       {/* Hidden description for screen readers */}
       <div
