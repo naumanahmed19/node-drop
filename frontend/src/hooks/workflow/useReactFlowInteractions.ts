@@ -58,7 +58,7 @@ export function useReactFlowInteractions() {
   const reactFlowInstance = useReactFlow();
 
   // Get group drag handlers for adding nodes to groups
-  const { onNodeDrag: onNodeDragGroup, onNodeDragStop: onNodeDragStopGroup } =
+  const { onNodeDrag: onNodeDragGroup, onNodeDragStop: onNodeDragStopGroup, groupAttachmentHandled } =
     useNodeGroupDragHandlers();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -310,10 +310,21 @@ export function useReactFlowInteractions() {
       // First, call the group drag stop handler to attach to group if needed
       onNodeDragStopGroup(event, node, nodes);
 
+      // Skip syncPositionsToZustand if group attachment was handled
+      // (it already synced to Zustand directly)
+      if (groupAttachmentHandled.current) {
+        groupAttachmentHandled.current = false;
+        // Still reset the drag flags
+        blockSync.current = false;
+        isDragging.current = false;
+        dragSnapshotTaken.current = false;
+        return;
+      }
+
       // Then sync positions (which also resets flags)
       syncPositionsToZustand();
     },
-    [onNodeDragStopGroup, syncPositionsToZustand]
+    [onNodeDragStopGroup, syncPositionsToZustand, groupAttachmentHandled]
   );
 
   // Handle selection drag start - just set flags, don't save history yet

@@ -1,10 +1,11 @@
 import { useWorkflowStore } from "@/stores";
+import { WorkflowNode } from "@/types";
 import {
   getNodePositionInsideParent,
   sortNodes,
 } from "@/utils/workflow/nodeGrouping";
 import { Node, OnNodeDrag, useReactFlow } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 /**
  * Hook to handle dragging nodes into and out of groups
@@ -19,8 +20,8 @@ export function useNodeGroupDragHandlers() {
    */
   const onNodeDragStop: OnNodeDrag = useCallback(
     (_, node) => {
-      // Only handle regular nodes (not groups) or nodes that already have a parent
-      if (node.type === "group" && !node.parentId) {
+      // Skip group nodes - we don't want to add groups to other groups
+      if (node.type === "group") {
         return;
       }
 
@@ -32,10 +33,14 @@ export function useNodeGroupDragHandlers() {
 
       // When there is an intersection on drag stop, attach the node to its new parent
       if (intersections.length && node.parentId !== groupNode?.id) {
+        // Mark that we handled group attachment (to skip syncPositionsToZustand)
+        groupAttachmentHandled.current = true;
+        
         // Take snapshot for undo/redo
         saveToHistory("Add node to group");
 
-        const nextNodes: Node[] = getNodes()
+        const currentNodes = getNodes();
+        const nextNodes: Node[] = currentNodes
           .map((n) => {
             // Clear the active highlight from the group
             if (n.id === groupNode.id) {
@@ -63,7 +68,29 @@ export function useNodeGroupDragHandlers() {
           })
           .sort(sortNodes);
 
+        // Update React Flow state
         setNodes(nextNodes);
+        
+        // Also sync to Zustand immediately to prevent race condition
+        // with syncPositionsToZustand which runs right after this
+        const currentWorkflow = useWorkflowStore.getState().workflow;
+        const storeUpdateWorkflow = useWorkflowStore.getState().updateWorkflow;
+        if (currentWorkflow) {
+          const updatedWorkflowNodes: WorkflowNode[] = currentWorkflow.nodes.map((wfNode) => {
+            if (wfNode.id === node.id) {
+              const rfNode = nextNodes.find(n => n.id === node.id);
+              return {
+                ...wfNode,
+                position: rfNode?.position || wfNode.position,
+                parentId: groupNode.id,
+                extent: "parent" as const,
+              };
+            }
+            return wfNode;
+          });
+          storeUpdateWorkflow({ nodes: updatedWorkflowNodes }, true); // Skip history since we already saved
+        }
+        
         setDirty(true);
       }
     },
@@ -75,8 +102,8 @@ export function useNodeGroupDragHandlers() {
    */
   const onNodeDrag: OnNodeDrag = useCallback(
     (_, node, nodes) => {
-      // Only handle regular nodes (not groups) or nodes that already have a parent
-      if (node.type === "group" && !node.parentId) {
+      // Skip group nodes - we don't want to add groups to other groups
+      if (node.type === "group") {
         return;
       }
 
@@ -120,8 +147,12 @@ export function useNodeGroupDragHandlers() {
     [getIntersectingNodes, setNodes]
   );
 
+  // Ref to track if group attachment was handled (to skip syncPositionsToZustand)
+  const groupAttachmentHandled = useRef(false);
+
   return {
     onNodeDragStop,
     onNodeDrag,
+    groupAttachmentHandled,
   };
 }

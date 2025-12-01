@@ -351,19 +351,38 @@ export function WorkflowEditor({
             } else {
                 // Just update node data without touching selection
                 // Always use positions from Zustand for undo/redo to work
-                setNodes((currentNodes) =>
-                    currentNodes.map(currentNode => {
-                        const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
-                        if (updatedNode) {
-                            return {
-                                ...updatedNode,
-                                selected: currentNode.selected, // Preserve current selection
-                                position: updatedNode.position // Always use position from Zustand
-                            };
-                        }
-                        return currentNode;
-                    })
-                );
+                // Also check if parentId changed (for group operations)
+                const parentIdsChanged = currentNodes.some(currentNode => {
+                    const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
+                    return updatedNode && currentNode.parentId !== updatedNode.parentId;
+                });
+                
+                if (parentIdsChanged) {
+                    // Parent relationships changed, do a full update
+                    const nodesWithSelection = reactFlowNodes.map(node => {
+                        return {
+                            ...node,
+                            selected: selectedNodeIds.includes(node.id),
+                            position: node.position
+                        };
+                    });
+                    setNodes(nodesWithSelection);
+                    prevReactFlowNodesRef.current = reactFlowNodes;
+                } else {
+                    setNodes((currentNodes) =>
+                        currentNodes.map(currentNode => {
+                            const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
+                            if (updatedNode) {
+                                return {
+                                    ...updatedNode,
+                                    selected: currentNode.selected, // Preserve current selection
+                                    position: updatedNode.position // Always use position from Zustand
+                                };
+                            }
+                            return currentNode;
+                        })
+                    );
+                }
             }
 
             setEdges(reactFlowEdges);
