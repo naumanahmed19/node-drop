@@ -426,16 +426,22 @@ export function BaseNodeWrapper({
       return (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div>
+            <div className="flex flex-col items-center">
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <div className="relative">
                     <CollapsedNodeContent {...collapsedNodeProps} />
-                    {customMetadata && <div className="mt-1">{customMetadata}</div>}
                   </div>
                 </ContextMenuTrigger>
                 {contextMenu}
               </ContextMenu>
+              {/* Show label below node in compact mode (like n8n) */}
+              <div className={`mt-1 text-center max-w-[120px] ${small ? 'text-[8px]' : 'text-[10px]'}`}>
+                <span className="font-medium text-foreground truncate block">
+                  {data.label}
+                </span>
+              </div>
+              {customMetadata && <div className="mt-1">{customMetadata}</div>}
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className={`max-w-xs ${small ? 'text-xs' : ''}`}>
