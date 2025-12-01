@@ -47,6 +47,16 @@ interface ReactFlowUIState {
   toggleCodePanel: () => void;
   setShowCodePanel: (show: boolean) => void;
 
+  // Right sidebar state
+  showRightSidebar: boolean;
+  rightSidebarTab: 'settings' | 'copilot' | 'code';
+  rightSidebarSize: number;
+  toggleRightSidebar: () => void;
+  setRightSidebarTab: (tab: 'settings' | 'copilot' | 'code') => void;
+  setRightSidebarSize: (size: number) => void;
+  openRightSidebar: (tab?: 'settings' | 'copilot' | 'code') => void;
+  closeRightSidebar: () => void;
+
   // Toggle functions
   toggleMinimap: () => void;
   toggleBackground: () => void;
@@ -104,6 +114,11 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
       showCodePanel: false,
       isLoadingPreferences: false,
       isSavingPreferences: false,
+      
+      // Right sidebar
+      showRightSidebar: false,
+      rightSidebarTab: 'settings',
+      rightSidebarSize: 20,
 
       // Set ReactFlow instance
       setReactFlowInstance: (instance) => set({ reactFlowInstance: instance }),
@@ -160,6 +175,23 @@ export const useReactFlowUIStore = createWithEqualityFn<ReactFlowUIState>()(
 
       setShowCodePanel: (show) => {
         set({ showCodePanel: show });
+      },
+
+      // Right sidebar actions
+      toggleRightSidebar: () => {
+        set((state) => ({ showRightSidebar: !state.showRightSidebar }));
+      },
+      setRightSidebarTab: (tab) => {
+        set({ rightSidebarTab: tab, showRightSidebar: true });
+      },
+      setRightSidebarSize: (size) => {
+        set({ rightSidebarSize: size });
+      },
+      openRightSidebar: (tab) => {
+        set({ showRightSidebar: true, ...(tab && { rightSidebarTab: tab }) });
+      },
+      closeRightSidebar: () => {
+        set({ showRightSidebar: false });
       },
 
       // Setters

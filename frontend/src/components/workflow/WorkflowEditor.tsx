@@ -10,12 +10,8 @@ import {
     ResizablePanel,
     ResizablePanelGroup,
 } from '@/components/ui/resizable'
-import { Button } from '@/components/ui/button'
-import { JsonEditor } from '@/components/ui/json-editor'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useExecutionAwareEdges } from '@/hooks/workflow'
 import {
-    useCodePanel,
     useCopyPaste,
     useExecutionControls,
     useExecutionPanelData,
@@ -29,6 +25,7 @@ import { templateService } from '@/services'
 import { NodeType } from '@/types'
 import { useToast } from '@/hooks/useToast'
 import { AddNodeCommandDialog } from './AddNodeCommandDialog'
+import { RightSidebar } from './RightSidebar'
 
 import { ChatDialog } from './ChatDialog'
 import { CreateTemplateDialog } from './CreateTemplateDialog'
@@ -58,7 +55,6 @@ export function WorkflowEditor({
     // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
     // Only subscribe to the specific state slices we need
     const workflow = useWorkflowStore(state => state.workflow)
-    const updateWorkflow = useWorkflowStore(state => state.updateWorkflow)
     const showPropertyPanel = useWorkflowStore(state => state.showPropertyPanel)
     const propertyPanelNodeId = useWorkflowStore(state => state.propertyPanelNodeId)
     const showChatDialog = useWorkflowStore(state => state.showChatDialog)
@@ -166,25 +162,18 @@ export function WorkflowEditor({
         backgroundVariant,
         setReactFlowInstance,
         reactFlowInstance,
-        showCodePanel: isCodeMode,
+        showRightSidebar,
+        rightSidebarSize,
     } = useReactFlowUIStore()
 
     const {
         showNodePalette,
     } = useWorkflowToolbarStore()
 
-    // Code panel hook
-    const {
-        codeContent,
-        setCodeContent,
-        codeError,
-        setCodeError,
-        codeTab,
-        setCodeTab,
-        selectedNodes,
-        resetCodeContent,
-        validateCodeContent,
-    } = useCodePanel({ workflow, nodes, isCodeMode })
+    // Get selected nodes from React Flow nodes
+    const selectedNodes = useMemo(() => {
+        return nodes.filter(node => node.selected)
+    }, [nodes])
 
     // Execution panel data
     const { flowExecutionStatus } = useExecutionPanelData({
@@ -421,8 +410,8 @@ export function WorkflowEditor({
                 {/* Main Content Area with Resizable Panels */}
                 <div className="flex-1 flex h-full">
                     <ResizablePanelGroup direction="horizontal" className="flex-1">
-                        {/* Main Editor Area - Full Width in Execution Mode */}
-                        <ResizablePanel defaultSize={isCodeMode ? 60 : ((readOnly || !showNodePalette) ? 100 : 80)} minSize={30}>
+                        {/* Main Editor Area */}
+                        <ResizablePanel defaultSize={showRightSidebar ? (100 - rightSidebarSize) : ((readOnly || !showNodePalette) ? 100 : 80)} minSize={30}>
                             {/* Resizable Layout for Canvas and Execution Panel */}
                             <ResizablePanelGroup direction="vertical" className="h-full">
                                 {/* React Flow Canvas */}
@@ -486,82 +475,15 @@ export function WorkflowEditor({
                             </ResizablePanelGroup>
                         </ResizablePanel>
 
-                        {/* Code Editor Panel - Side by Side */}
-                        {isCodeMode && (
+                        {/* Right Sidebar - Settings, Copilot, Code */}
+                        {showRightSidebar && (
                             <>
                                 <ResizableHandle withHandle />
-                                <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                                    <Tabs value={codeTab} onValueChange={(value) => setCodeTab(value as 'full' | 'selected')} className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
-                                        <div className="flex items-center justify-between mb-3 flex-shrink-0 px-4">
-                                            <TabsList>
-                                                <TabsTrigger value="full">Full Workflow</TabsTrigger>
-                                                <TabsTrigger value="selected" disabled={selectedNodes.length === 0}>
-                                                    Selected ({selectedNodes.length})
-                                                </TabsTrigger>
-                                            </TabsList>
-                                            <div className="flex gap-2">
-                                                {codeTab === 'selected' && selectedNodes.length > 0 && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => useWorkflowStore.getState().openTemplateDialog()}
-                                                    >
-                                                        Create Template
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={resetCodeContent}
-                                                >
-                                                    Reset
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        const parsed = validateCodeContent()
-                                                        if (parsed) {
-                                                            updateWorkflow(parsed)
-                                                        }
-                                                    }}
-                                                >
-                                                    Apply
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => useReactFlowUIStore.getState().toggleCodePanel()}
-                                                    title="Close code panel"
-                                                >
-                                                    ×
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        <TabsContent value="full" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto">
-                                                <JsonEditor
-                                                    value={codeContent}
-                                                    onValueChange={(value) => {
-                                                        setCodeContent(value)
-                                                        setCodeError(null)
-                                                    }}
-                                                    error={codeError || undefined}
-                                                />
-                                            </div>
-                                        </TabsContent>
-                                        <TabsContent value="selected" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto">
-                                                <JsonEditor
-                                                    value={codeContent}
-                                                    onValueChange={(value) => {
-                                                        setCodeContent(value)
-                                                        setCodeError(null)
-                                                    }}
-                                                    error={codeError || undefined}
-                                                />
-                                            </div>
-                                        </TabsContent>
-                                    </Tabs>
+                                <ResizablePanel defaultSize={rightSidebarSize} minSize={15} maxSize={40}>
+                                    <RightSidebar 
+                                        selectedNodes={selectedNodes}
+                                        readOnly={readOnly}
+                                    />
                                 </ResizablePanel>
                             </>
                         )}
