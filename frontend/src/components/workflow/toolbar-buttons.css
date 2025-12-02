@@ -1,22 +1,21 @@
 /* Toolbar Button Base Styles */
 .toolbar-button {
   /* Ensure consistent sizing and positioning */
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
 
-  /* Base styling for high contrast */
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(4px);
+  /* Base styling matching ReactFlow toolbar */
+  background: transparent;
+  border: none;
   color: hsl(var(--foreground));
 
-  /* Shadow for depth and visibility */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  /* No shadow */
+  box-shadow: none;
 
   /* Smooth transitions */
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -27,62 +26,63 @@
 
 /* Dark theme base styles */
 .dark .toolbar-button {
-  background: rgba(31, 41, 55, 0.95);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: transparent;
+  border: none;
   color: hsl(var(--foreground));
 }
 
 /* Enhanced hover effects for better visual feedback */
 .toolbar-button:hover:not(:disabled) {
-  transform: scale(1.15);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 1);
-  border-color: rgba(0, 0, 0, 0.15);
+  transform: none;
+  box-shadow: none;
+  background: hsl(var(--accent));
+  border: none;
 }
 
 .dark .toolbar-button:hover:not(:disabled) {
-  background: rgba(31, 41, 55, 1);
-  border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  background: hsl(var(--accent));
+  border: none;
+  box-shadow: none;
 }
 
 /* Active state for click feedback */
 .toolbar-button:active:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  transform: none;
+  box-shadow: none;
+  background: hsl(var(--accent));
 }
 
 /* Focus styles for accessibility */
 .toolbar-button:focus {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
-  background: rgba(255, 255, 255, 1);
+  background: hsl(var(--accent));
 }
 
 .dark .toolbar-button:focus {
-  outline-color: #60a5fa;
-  background: rgba(31, 41, 55, 1);
+  outline-color: hsl(var(--ring));
+  background: hsl(var(--accent));
 }
 
 /* Disabled state with proper contrast */
 .toolbar-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
-  background: rgba(243, 244, 246, 0.9);
-  color: #9ca3af;
-  border-color: rgba(209, 213, 219, 0.8);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  border: none;
   transform: none;
 }
 
 .dark .toolbar-button:disabled {
-  background: rgba(55, 65, 81, 0.9);
-  color: #6b7280;
-  border-color: rgba(75, 85, 99, 0.8);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  border: none;
 }
 
 .toolbar-button:disabled:hover {
   transform: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
 }
 
 /* State-based styling for execute button */
@@ -178,7 +178,7 @@
   justify-content: center;
   line-height: 1;
   border: 1px solid white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 /* State-based styling for disable toggle button */
@@ -306,8 +306,8 @@
 
 /* Ensure icons are properly sized and centered */
 .toolbar-button svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 

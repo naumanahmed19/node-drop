@@ -112,7 +112,7 @@ router.get(
   "/:type",
   authenticateToken,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const nodeSchema = await getNodeService().getNodeSchema(req.params.identifier);
+    const nodeSchema = await getNodeService().getNodeSchema(req.params.type);
 
     if (!nodeSchema) {
       const response: ApiResponse = {
@@ -146,7 +146,7 @@ router.post(
     } = req.body;
 
     const result = await getNodeService().executeNode(
-      req.params.identifier,
+      req.params.type,
       parameters,
       inputData,
       credentials

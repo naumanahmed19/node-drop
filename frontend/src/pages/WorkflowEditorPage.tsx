@@ -1,14 +1,10 @@
 import { ExecutionToolbar, WorkflowEditorWrapper } from '@/components'
-import { AppSidebar } from '@/components/app-sidebar'
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+import { BaseLayout } from '@/components/layout/BaseLayout'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { WorkflowToolbar } from '@/components/workflow/WorkflowToolbar'
 import {
-  useWorkflowOperations
+    useWorkflowOperations
 } from '@/hooks/workflow'
 import { workflowService } from '@/services'
 import type { ExecutionDetails } from '@/services/execution'
@@ -17,12 +13,13 @@ import { socketService } from '@/services/socket'
 import { useAuthStore, useNodeTypes, useWorkflowStore } from '@/stores'
 import { Workflow } from '@/types'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 export function WorkflowEditorPage() {
   const { id, executionId } = useParams<{ id: string; executionId?: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     workflow,
     setWorkflow,
@@ -39,6 +36,7 @@ export function WorkflowEditorPage() {
   const [execution, setExecution] = useState<ExecutionDetails | null>(null)
   const [isLoadingExecution, setIsLoadingExecution] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [returnPath, setReturnPath] = useState<string | null>(null)
 
   // Workflow operations for toolbar
   const {
@@ -95,8 +93,6 @@ export function WorkflowEditorPage() {
   useEffect(() => {
     if (!id || id === 'new') return
 
-    console.log('[WorkflowEditor] Subscribing to workflow:', id)
-
     let isSubscribed = false;
     let subscriptionAttempts = 0;
     const maxAttempts = 3;
@@ -105,17 +101,13 @@ export function WorkflowEditorPage() {
     const subscribeToWorkflow = async () => {
       try {
         subscriptionAttempts++;
-        console.log(`[WorkflowEditor] Subscription attempt ${subscriptionAttempts} for workflow:`, id)
-
         await socketService.subscribeToWorkflow(id)
         isSubscribed = true;
-        console.log('[WorkflowEditor] ✅ Successfully subscribed to workflow:', id)
       } catch (error) {
         console.error('[WorkflowEditor] Failed to subscribe to workflow:', error)
 
         // Retry if not at max attempts
         if (subscriptionAttempts < maxAttempts) {
-          console.log(`[WorkflowEditor] Retrying subscription in 1 second...`)
           setTimeout(subscribeToWorkflow, 1000)
         }
       }
@@ -126,7 +118,6 @@ export function WorkflowEditorPage() {
 
     // Also re-subscribe when socket reconnects
     const handleSocketConnected = () => {
-      console.log('[WorkflowEditor] Socket reconnected, re-subscribing to workflow:', id)
       subscribeToWorkflow()
     }
 
@@ -150,8 +141,6 @@ export function WorkflowEditorPage() {
     return () => {
       // Only unsubscribe if we actually subscribed
       if (isSubscribed) {
-        console.log('[WorkflowEditor] Unsubscribing from workflow:', id)
-
         // Unsubscribe from workflow (async but don't wait)
         socketService.unsubscribeFromWorkflow(id).catch(error => {
           console.error('[WorkflowEditor] Failed to unsubscribe from workflow:', error)
@@ -191,12 +180,6 @@ export function WorkflowEditorPage() {
         // CRITICAL FIX: Use workflow snapshot from execution if available
         // This ensures we display the workflow state at the time of execution
         if (executionData.workflowSnapshot) {
-          console.log('Using workflow snapshot from execution', {
-            executionId,
-            snapshotNodes: executionData.workflowSnapshot.nodes.length,
-            snapshotConnections: executionData.workflowSnapshot.connections.length,
-          })
-
           // Load the current workflow to get basic metadata (name, description, etc.)
           let workflowMetadata: any = null
           if (id && id !== 'new') {
@@ -318,6 +301,10 @@ export function WorkflowEditorPage() {
       }
 
       if (id === 'new') {
+        // Get the return path from location state, or use /workflows as fallback
+        const fromPath = (location.state as any)?.from || '/workflows'
+        setReturnPath(fromPath)
+        
         // Show onboarding dialog for new workflows
         setShowOnboarding(true)
         // Create temporary workflow
@@ -361,93 +348,96 @@ export function WorkflowEditorPage() {
     loadWorkflow()
   }, [id, executionId, setWorkflow, setLoading, user?.id])
 
-  if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="flex items-center space-x-2">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="text-muted-foreground">
-            {isLoadingExecution ? 'Loading execution...' : isLoadingNodeTypes ? 'Loading node types...' : 'Loading workflow...'}
-          </span>
+  const renderContent = () => {
+    if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-muted-foreground">
+              {isLoadingExecution ? 'Loading execution...' : isLoadingNodeTypes ? 'Loading node types...' : 'Loading workflow...'}
+            </span>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Error Loading Workflow</h2>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <button
-            onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Back to Workflows
-          </button>
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Error Loading Workflow</h2>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <button
+              onClick={() => navigate('/workflows')}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Back to Workflows
+            </button>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (!workflow) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Workflow Not Found</h2>
-          <p className="text-muted-foreground mb-4">The requested workflow could not be found.</p>
-          <button
-            onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Back to Workflows
-          </button>
+    if (!workflow) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Workflow Not Found</h2>
+            <p className="text-muted-foreground mb-4">The requested workflow could not be found.</p>
+            <button
+              onClick={() => navigate('/workflows')}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Back to Workflows
+            </button>
+          </div>
         </div>
-      </div>
+      )
+    }
+
+    return (
+      <>
+        {/* Show execution toolbar when in execution mode */}
+        {executionId && execution ? (
+          <ExecutionToolbar
+            execution={execution}
+            onBack={() => navigate(`/workflows/${id}`, { replace: true })}
+          />
+        ) : (
+          <WorkflowToolbar
+            onSave={handleSave}
+          />
+        )}
+
+        <div className="flex flex-1 flex-col h-full overflow-hidden">
+          <WorkflowEditorWrapper
+            nodeTypes={nodeTypes}
+            readOnly={!!executionId}
+            executionMode={!!executionId}
+          />
+        </div>
+      </>
     )
   }
 
   return (
     <TooltipProvider>
-      <SidebarProvider
-        style={
-          {
-            "--sidebar-width": "356px",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar />
-        <SidebarInset>
-          {/* Show execution toolbar when in execution mode */}
-          {executionId && execution ? (
-            <ExecutionToolbar
-              execution={execution}
-              onBack={() => navigate(`/workflows/${id}`, { replace: true })}
-            />
-          ) : (
-            <WorkflowToolbar
-              onSave={handleSave}
-            />
-          )}
-
-          <div className="flex flex-1 flex-col h-full overflow-hidden">
-            <WorkflowEditorWrapper
-              nodeTypes={nodeTypes}
-              readOnly={!!executionId}
-              executionMode={!!executionId}
-            />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <BaseLayout>
+        {renderContent()}
+      </BaseLayout>
 
       {/* Onboarding Dialog */}
       <WorkflowOnboardingDialog
         isOpen={showOnboarding}
         onStartBuilding={handleOnboardingComplete}
-        onClose={() => navigate('/workflows')}
+        onClose={() => {
+          setShowOnboarding(false)
+          const targetPath = returnPath || '/workflows'
+          navigate(targetPath, { replace: true })
+        }}
       />
     </TooltipProvider>
   )

@@ -111,7 +111,7 @@ export const SplitNode: NodeDefinition = {
         {
             displayName: "Field Name",
             name: "splitField",
-            type: "string",
+            type: "expression",
             required: true,
             default: "type",
             placeholder: "e.g., status or category",

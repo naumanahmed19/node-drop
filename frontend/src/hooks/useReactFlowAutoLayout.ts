@@ -6,7 +6,7 @@ interface UseReactFlowAutoLayoutOptions {
   nodesCount: number;
   enabled?: boolean;
   delay?: number;
-  additionalRef?: RefObject<HTMLDivElement> | null;
+  additionalRef?: RefObject<HTMLDivElement | null> | null;
 }
 
 /**

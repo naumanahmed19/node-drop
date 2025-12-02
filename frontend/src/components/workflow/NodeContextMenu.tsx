@@ -32,7 +32,7 @@ export function NodeContextMenu({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        {children}
+        <div>{children}</div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
         {/* Properties option */}

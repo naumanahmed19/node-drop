@@ -4,10 +4,11 @@ import { workflowService } from '@/services'
 import { Workflow as WorkflowType } from '@/types'
 import { ArrowRight, Clock, FileText, Loader2, Settings, Star, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 export function WorkflowLandingPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { setOpen } = useSidebar()
   const { setActiveWorkflowItem } = useSidebarContext()
   const [workflows, setWorkflows] = useState<WorkflowType[]>([])
@@ -39,7 +40,7 @@ export function WorkflowLandingPage() {
       icon: <FileText className="w-5 h-5" />,
       title: "Create New Workflow",
       description: "Start from scratch",
-      action: () => navigate('/workflows/new')
+      action: () => navigate('/workflows/new', { state: { from: location.pathname } })
     },
     {
       icon: <Workflow className="w-5 h-5" />,
@@ -80,7 +81,7 @@ export function WorkflowLandingPage() {
           </p>
           <div className="flex items-center justify-center gap-3 mb-6">
             <button
-              onClick={() => navigate('/workflows/new')}
+              onClick={() => navigate('/workflows/new', { state: { from: location.pathname } })}
               className="inline-flex items-center px-6 py-3 bg-primary text-primary-foreground font-medium rounded-lg hover:bg-primary/90 transition-colors"
             >
               Create Your First Workflow

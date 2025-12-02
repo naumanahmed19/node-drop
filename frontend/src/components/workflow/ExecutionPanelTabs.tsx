@@ -1,6 +1,6 @@
-import { Activity, Clock, Search } from 'lucide-react'
+import { Activity, Clock } from 'lucide-react'
 
-type TabType = 'progress' | 'timeline' | 'logs' | 'results' | 'inspect'
+type TabType = 'progress' | 'timeline' | 'logs' | 'results'
 
 interface ExecutionPanelTabsProps {
   activeTab: TabType
@@ -53,14 +53,6 @@ export function ExecutionPanelTabs({
         className={getTabClassName('results')}
       >
         Results ({resultsCount})
-      </button>
-      
-      <button
-        onClick={() => onTabChange('inspect')}
-        className={`${getTabClassName('inspect')} flex items-center space-x-1`}
-      >
-        <Search className="w-4 h-4" />
-        <span>Inspect</span>
       </button>
     </div>
   )

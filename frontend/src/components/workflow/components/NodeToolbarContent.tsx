@@ -1,8 +1,12 @@
 import { canNodeExecuteIndividually, shouldShowExecuteButton } from '@/utils/nodeTypeClassification'
-import { NodeToolbar, Position } from '@xyflow/react'
-import { memo } from 'react'
+import { NodeToolbar, Position, useStore } from '@xyflow/react'
+import { memo, useMemo } from 'react'
 import { ExecuteToolbarButton } from '../ExecuteToolbarButton'
+import { ConfigToolbarButton } from '../ConfigToolbarButton'
+import { OutputToolbarButton } from '../OutputToolbarButton'
 import type { NodeExecutionError } from '../types'
+import { useNodeTypes } from '@/stores'
+import { usePinnedOutputsStore } from '@/stores/pinnedOutputs'
 
 interface NodeToolbarContentProps {
   nodeId: string
@@ -31,6 +35,24 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
   onExecute,
   onRetry
 }: NodeToolbarContentProps) {
+  const { nodeTypes } = useNodeTypes()
+  
+  // Get node type definition for config button
+  const nodeTypeDefinition = useMemo(
+    () => nodeTypes.find((nt) => nt.identifier === nodeType),
+    [nodeTypes, nodeType]
+  )
+
+  // Check if this node is selected using ReactFlow's store
+  const isNodeSelected = useStore((state) => {
+    const node = state.nodes.find(n => n.id === nodeId)
+    return node?.selected || false
+  })
+
+  // Check if this node has a pinned output
+  const { isPinned } = usePinnedOutputsStore()
+  const hasPinnedOutput = isPinned(nodeId)
+
   return (
     <NodeToolbar
       isVisible={true}
@@ -39,7 +61,7 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
       align="center"
     >
       <div 
-        className="flex gap-1" 
+        className="flex items-center gap-0.5 node-toolbar-container" 
         role="toolbar" 
         aria-label={`Controls for ${nodeLabel}`}
         aria-orientation="horizontal"
@@ -60,6 +82,23 @@ export const NodeToolbarContent = memo(function NodeToolbarContent({
             executionError={executionError}
             onExecute={() => onExecute(nodeId, nodeType)}
             onRetry={() => onRetry(nodeId, nodeType)}
+          />
+        )}
+        
+        {/* Config button - visible when selected */}
+        {nodeTypeDefinition && isNodeSelected && (
+          <ConfigToolbarButton
+            nodeId={nodeId}
+            nodeType={nodeTypeDefinition}
+            disabled={disabled}
+          />
+        )}
+
+        {/* Output button - visible when selected or pinned */}
+        {(isNodeSelected || hasPinnedOutput) && (
+          <OutputToolbarButton
+            nodeId={nodeId}
+            disabled={disabled}
           />
         )}
       </div>

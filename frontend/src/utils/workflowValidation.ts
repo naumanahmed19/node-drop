@@ -1,4 +1,5 @@
-import { Workflow } from '@/types'
+import { NodeType, Workflow, WorkflowNode } from '@/types'
+import { NodeValidator } from './nodeValidation'
 
 export interface NodeValidationError {
   nodeId: string
@@ -12,121 +13,203 @@ export interface ValidationResult {
 }
 
 /**
- * Validates a workflow and returns detailed error information
+ * Validate a node using the shared NodeValidator
+ * Returns array of error messages
  */
-export function validateWorkflowDetailed(workflow: Workflow | null): ValidationResult {
+function validateNodeWithType(
+  node: WorkflowNode,
+  nodeType: NodeType | undefined
+): string[] {
+  if (!nodeType) return []
+
+  // Use the existing NodeValidator for consistent validation
+  const result = NodeValidator.validateNode(node, nodeType.properties)
+  
+  // Convert ValidationError[] to string[]
+  const errors = result.errors.map(e => e.message)
+
+  // Also check credential selector if required
+  if (nodeType.credentialSelector?.required) {
+    const hasCredential = node.credentials && node.credentials.length > 0
+    if (!hasCredential) {
+      errors.push(`${nodeType.credentialSelector.displayName} is required`)
+    }
+  }
+
+  return errors
+}
+
+/**
+ * Validate required inputs are connected
+ * Checks inputsConfig for required: true and verifies connection exists
+ */
+function validateRequiredInputs(
+  nodeType: NodeType | undefined,
+  incomingConnections: { targetInput: string }[]
+): string[] {
+  if (!nodeType?.inputsConfig) return []
+
+  const errors: string[] = []
+  const connectedInputs = new Set(incomingConnections.map(c => c.targetInput))
+
+  // Check each input defined in inputsConfig
+  for (const [inputName, config] of Object.entries(nodeType.inputsConfig)) {
+    if (config.required && !connectedInputs.has(inputName)) {
+      const displayName = config.displayName || inputName
+      errors.push(`"${displayName}" input is required`)
+    }
+  }
+
+  return errors
+}
+
+/**
+ * Validates a workflow and returns detailed error information
+ * 
+ * OPTIMIZATION: 
+ * - Pre-builds connection lookup maps to avoid O(n*m) filtering
+ * - Uses for loops instead of forEach for better performance
+ * - Minimizes object creation
+ */
+export function validateWorkflowDetailed(
+  workflow: Workflow | null,
+  nodeTypes?: NodeType[]
+): ValidationResult {
   const nodeErrors = new Map<string, string[]>()
   const connectionErrors = new Map<string, string[]>()
 
   if (!workflow) {
-    return {
-      isValid: true,
-      nodeErrors,
-      connectionErrors,
-    }
+    return { isValid: true, nodeErrors, connectionErrors }
   }
 
-  // Create a map of nodes for quick lookup
-  const nodeMap = new Map(workflow.nodes.map(node => [node.id, node]))
+  const { nodes, connections } = workflow
+
+  // Create lookup maps once
+  const nodeMap = new Map(nodes.map(node => [node.id, node]))
+  const nodeTypeMap = nodeTypes 
+    ? new Map(nodeTypes.map(nt => [nt.identifier, nt]))
+    : null
+
+  // Pre-build connection lookup maps for O(1) access
+  const incomingConnectionsMap = new Map<string, typeof connections>()
+  const outgoingConnectionsMap = new Map<string, typeof connections>()
+  
+  for (let i = 0; i < connections.length; i++) {
+    const conn = connections[i]
+    
+    // Build incoming connections map
+    const incoming = incomingConnectionsMap.get(conn.targetNodeId) || []
+    incoming.push(conn)
+    incomingConnectionsMap.set(conn.targetNodeId, incoming)
+    
+    // Build outgoing connections map
+    const outgoing = outgoingConnectionsMap.get(conn.sourceNodeId) || []
+    outgoing.push(conn)
+    outgoingConnectionsMap.set(conn.sourceNodeId, outgoing)
+  }
 
   // Validate connections
-  workflow.connections.forEach((connection, index) => {
+  for (let i = 0; i < connections.length; i++) {
+    const connection = connections[i]
     const errors: string[] = []
     const sourceNode = nodeMap.get(connection.sourceNodeId)
     const targetNode = nodeMap.get(connection.targetNodeId)
 
-    // Check if source node exists
     if (!sourceNode) {
-      errors.push(`Source node "${connection.sourceNodeId}" not found`)
+      errors.push(`Source node not found`)
     }
 
-    // Check if target node exists
     if (!targetNode) {
-      errors.push(`Target node "${connection.targetNodeId}" not found`)
+      errors.push(`Target node not found`)
     }
 
-    // Check if sourceOutput is defined
     if (!connection.sourceOutput) {
-      errors.push(`Missing sourceOutput handle`)
-      
-      // Add error to source node
+      errors.push(`Missing output handle`)
       if (sourceNode) {
-        const nodeErrorList = nodeErrors.get(connection.sourceNodeId) || []
-        nodeErrorList.push(`Connection #${index + 1}: Missing output handle`)
-        nodeErrors.set(connection.sourceNodeId, nodeErrorList)
+        const list = nodeErrors.get(connection.sourceNodeId) || []
+        list.push(`Connection: Missing output handle`)
+        nodeErrors.set(connection.sourceNodeId, list)
       }
     }
 
-    // Check if targetInput is defined
     if (!connection.targetInput) {
-      errors.push(`Missing targetInput handle`)
-      
-      // Add error to target node
+      errors.push(`Missing input handle`)
       if (targetNode) {
-        const nodeErrorList = nodeErrors.get(connection.targetNodeId) || []
-        nodeErrorList.push(`Connection #${index + 1}: Missing input handle`)
-        nodeErrors.set(connection.targetNodeId, nodeErrorList)
+        const list = nodeErrors.get(connection.targetNodeId) || []
+        list.push(`Connection: Missing input handle`)
+        nodeErrors.set(connection.targetNodeId, list)
       }
     }
 
     if (errors.length > 0) {
       connectionErrors.set(connection.id, errors)
     }
-  })
+  }
 
   // Validate nodes
-  workflow.nodes.forEach(node => {
-    const errors: string[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    let errors = nodeErrors.get(node.id) || []
 
-    // Check if node has a type
+    // Check basic node properties (type only - name is checked by NodeValidator)
     if (!node.type) {
       errors.push('Missing node type')
     }
 
-    // Check if node has a name
-    if (!node.name || node.name.trim() === '') {
-      errors.push('Missing node name')
+    // Get incoming connections for this node (used for multiple validations)
+    const incoming = incomingConnectionsMap.get(node.id) || []
+
+    // Validate using NodeValidator (same as ConfigTab - includes name check)
+    if (nodeTypeMap && node.type) {
+      const nodeType = nodeTypeMap.get(node.type)
+      if (nodeType) {
+        // Validate node properties
+        const nodeValidationErrors = validateNodeWithType(node, nodeType)
+        if (nodeValidationErrors.length > 0) {
+          errors = errors.concat(nodeValidationErrors)
+        }
+
+        // Validate required inputs are connected
+        const inputErrors = validateRequiredInputs(nodeType, incoming)
+        if (inputErrors.length > 0) {
+          errors = errors.concat(inputErrors)
+        }
+      }
     }
 
-    // Check for orphaned connections (connections referencing this node that have errors)
-    const incomingConnections = workflow.connections.filter(
-      conn => conn.targetNodeId === node.id
-    )
-    const outgoingConnections = workflow.connections.filter(
-      conn => conn.sourceNodeId === node.id
-    )
-
-    incomingConnections.forEach(conn => {
-      if (connectionErrors.has(conn.id)) {
-        const connErrors = connectionErrors.get(conn.id)!
-        connErrors.forEach(err => {
-          if (!errors.includes(err)) {
-            errors.push(`Incoming connection: ${err}`)
+    // Add connection errors using pre-built maps (O(1) lookup)
+    if (incoming.length > 0) {
+      for (let j = 0; j < incoming.length; j++) {
+        const connErrors = connectionErrors.get(incoming[j].id)
+        if (connErrors) {
+          for (let k = 0; k < connErrors.length; k++) {
+            const err = `Incoming: ${connErrors[k]}`
+            if (!errors.includes(err)) errors.push(err)
           }
-        })
+        }
       }
-    })
+    }
 
-    outgoingConnections.forEach(conn => {
-      if (connectionErrors.has(conn.id)) {
-        const connErrors = connectionErrors.get(conn.id)!
-        connErrors.forEach(err => {
-          if (!errors.includes(err)) {
-            errors.push(`Outgoing connection: ${err}`)
+    const outgoing = outgoingConnectionsMap.get(node.id)
+    if (outgoing) {
+      for (let j = 0; j < outgoing.length; j++) {
+        const connErrors = connectionErrors.get(outgoing[j].id)
+        if (connErrors) {
+          for (let k = 0; k < connErrors.length; k++) {
+            const err = `Outgoing: ${connErrors[k]}`
+            if (!errors.includes(err)) errors.push(err)
           }
-        })
+        }
       }
-    })
+    }
 
     if (errors.length > 0) {
       nodeErrors.set(node.id, errors)
     }
-  })
-
-  const isValid = nodeErrors.size === 0 && connectionErrors.size === 0
+  }
 
   return {
-    isValid,
+    isValid: nodeErrors.size === 0 && connectionErrors.size === 0,
     nodeErrors,
     connectionErrors,
   }
@@ -137,8 +220,9 @@ export function validateWorkflowDetailed(workflow: Workflow | null): ValidationR
  */
 export function getNodeValidationErrors(
   workflow: Workflow | null,
-  nodeId: string
+  nodeId: string,
+  nodeTypes?: NodeType[]
 ): string[] {
-  const validation = validateWorkflowDetailed(workflow)
+  const validation = validateWorkflowDetailed(workflow, nodeTypes)
   return validation.nodeErrors.get(nodeId) || []
 }

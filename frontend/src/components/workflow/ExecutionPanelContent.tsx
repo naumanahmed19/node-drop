@@ -1,6 +1,5 @@
 import { ExecutionFlowStatus, ExecutionState, NodeExecutionResult, WorkflowExecutionResult } from '@/types'
 import { TabType } from './ExecutionPanelTabs'
-import { InspectTabContent } from './tabs/InspectTabContent'
 import { LogsTabContent } from './tabs/LogsTabContent'
 import { ProgressTabContent } from './tabs/ProgressTabContent'
 import { ResultsTabContent } from './tabs/ResultsTabContent'
@@ -54,10 +53,6 @@ export function ExecutionPanelContent({
       
       {activeTab === 'results' && (
         <ResultsTabContent displayResults={displayResults} />
-      )}
-      
-      {activeTab === 'inspect' && (
-        <InspectTabContent displayResults={displayResults} />
       )}
     </div>
   )

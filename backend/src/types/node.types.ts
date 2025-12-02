@@ -81,7 +81,8 @@ export interface NodeProperty {
     | "credential" // New: Support for credential selector
     | "custom" // New: Support for custom components
     | "conditionRow" // New: Support for condition row (key-expression-value)
-    | "columnsMap"; // New: Support for columns map (dynamic column-to-value mapping)
+    | "columnsMap" // New: Support for columns map (dynamic column-to-value mapping)
+    | "expression";
   required?: boolean;
   default?: any;
   description?: string;

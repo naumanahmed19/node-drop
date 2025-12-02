@@ -1,8 +1,8 @@
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCopyPasteStore, useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
+import { useReactFlowUIStore, useWorkflowStore, useNodeTypes } from '@/stores'
 import { NodeExecutionStatus } from '@/types/execution'
-import { useReactFlow } from '@xyflow/react'
+import { useReactFlow, useStore } from '@xyflow/react'
 import { LucideIcon } from 'lucide-react'
 import React, { ReactNode, useCallback, useMemo } from 'react'
 import { NodeContextMenu } from '../components/NodeContextMenu'
@@ -212,11 +212,13 @@ export function BaseNodeWrapper({
     handleOutputClick,
     handleServiceInputClick,
     handleToggleDisabled,
-    handleToggleDisabledFromContext
+    handleToggleDisabledFromContext,
+    handleCopyFromContext,
+    handleCutFromContext,
+    paste,
+    canCopy,
+    canPaste,
   } = useNodeActions(id)
-
-  // Get copy/paste functions from store
-  const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore()
 
   // Get node type definition for context menu
   const { nodeTypes } = useNodeTypes()
@@ -225,19 +227,26 @@ export function BaseNodeWrapper({
     [nodeTypes, data.nodeType]
   )
 
-  // Import useReactFlow to check if node is in a group
-  const { getNode, getNodes } = useReactFlow()
-  const currentNode = getNode(id)
-  const isInGroup = !!currentNode?.parentId
+  // Use useStore for reactive updates when node's parentId changes
+  const { getNodes } = useReactFlow()
+  const isInGroup = useStore((state) => {
+    const node = state.nodeLookup.get(id)
+    return !!node?.parentId
+  })
 
-  // Check if we can group (need at least 1 selected node that isn't a group or in a group)
+  // Check if we can group - current node must not be in a group already
+  // and either the current node can be grouped, or there are selected nodes that can be grouped
+  // Note: data.nodeType contains the actual node type (e.g., 'http-request'), not the React Flow type
+  const currentNodeCanBeGrouped = !isInGroup && data.nodeType !== 'group'
   const selectedNodesForGrouping = getNodes().filter(
     (node) =>
       node.selected &&
       !node.parentId &&
       node.type !== 'group'
   )
-  const canGroup = selectedNodesForGrouping.length >= 1
+  // Can group only if current node is not already in a group
+  // AND (current node can be grouped OR there are selected nodes that can be grouped)
+  const canGroup = !isInGroup && (currentNodeCanBeGrouped || selectedNodesForGrouping.length >= 1)
 
   // Check if we can create template (need at least 1 selected node)
   const selectedNodesForTemplate = getNodes().filter(node => node.selected && node.type !== 'group')
@@ -259,16 +268,17 @@ export function BaseNodeWrapper({
     handleRetryNode
   } = useNodeExecution(id, data.nodeType)
 
-  // Debug logging for service nodes
-  React.useEffect(() => {
-    if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
-      console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
-        isExecuting: nodeExecutionState.isExecuting,
-        hasError: nodeExecutionState.hasError,
-        hasSuccess: nodeExecutionState.hasSuccess,
-      });
-    }
-  }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
+  // Debug logging for service nodes (disabled by default for performance)
+  // Uncomment if needed for debugging:
+  // React.useEffect(() => {
+  //   if (data.nodeType === 'openai-model' || data.nodeType === 'anthropic-model' || data.nodeType === 'redis-memory') {
+  //     console.log(`[BaseNodeWrapper] ${data.nodeType} (${id}) execution state changed:`, {
+  //       isExecuting: nodeExecutionState.isExecuting,
+  //       hasError: nodeExecutionState.hasError,
+  //       hasSuccess: nodeExecutionState.hasSuccess,
+  //     });
+  //   }
+  // }, [nodeExecutionState.isExecuting, nodeExecutionState.hasError, nodeExecutionState.hasSuccess, data.nodeType, id]);
 
   // Get execution state and workflow from store
   const { executionState, workflow } = useWorkflowStore()
@@ -393,8 +403,8 @@ export function BaseNodeWrapper({
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
         onToggleDisabled={handleToggleDisabledFromContext}
-        onCopy={copy || undefined}
-        onCut={cut || undefined}
+        onCopy={handleCopyFromContext}
+        onCut={handleCutFromContext}
         onPaste={paste || undefined}
         onUngroup={isInGroup ? handleUngroup : undefined}
         onGroup={canGroup ? handleGroup : undefined}
@@ -417,16 +427,22 @@ export function BaseNodeWrapper({
       return (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div>
+            <div className="flex flex-col items-center">
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <div className="relative">
                     <CollapsedNodeContent {...collapsedNodeProps} />
-                    {customMetadata && <div className="mt-1">{customMetadata}</div>}
                   </div>
                 </ContextMenuTrigger>
                 {contextMenu}
               </ContextMenu>
+              {/* Show label below node in compact mode (like n8n) */}
+              <div className={`mt-1 text-center max-w-[120px] ${small ? 'text-[8px]' : 'text-[10px]'}`}>
+                <span className="font-medium text-foreground truncate block">
+                  {data.label}
+                </span>
+              </div>
+              {customMetadata && <div className="mt-1">{customMetadata}</div>}
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className={`max-w-xs ${small ? 'text-xs' : ''}`}>
@@ -529,8 +545,8 @@ export function BaseNodeWrapper({
         onToggleLock={handleToggleLock}
         onToggleCompact={handleToggleCompact}
         onToggleDisabled={handleToggleDisabledFromContext}
-        onCopy={copy || undefined}
-        onCut={cut || undefined}
+        onCopy={handleCopyFromContext}
+        onCut={handleCutFromContext}
         onPaste={paste || undefined}
         onUngroup={isInGroup ? handleUngroup : undefined}
         onGroup={canGroup ? handleGroup : undefined}

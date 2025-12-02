@@ -495,7 +495,9 @@ export class NodeService {
     userId?: string,
     options?: SecureExecutionOptions,
     workflowId?: string,
-    settings?: NodeSettingsConfig
+    settings?: NodeSettingsConfig,
+    nodeOutputs?: Map<string, any>, // Map of nodeId -> output data for $node expressions
+    nodeIdToName?: Map<string, string> // Map of nodeId -> nodeName for $node["Name"] support
   ): Promise<NodeExecutionResult> {
     const execId =
       executionId ||
@@ -533,7 +535,9 @@ export class NodeService {
         options,
         workflowId,
         settings,
-        options?.nodeId // Pass nodeId for state management
+        options?.nodeId, // Pass nodeId for state management
+        nodeOutputs, // Pass node outputs for $node expression resolution
+        nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
       );
 
       // Merge context with node definition methods (for nodes with private methods)
@@ -784,6 +788,7 @@ export class NodeService {
       "custom", // Support for custom components
       "conditionRow", // Support for condition row (key-expression-value)
       "columnsMap", // Support for columns map (dynamic column-to-value mapping)
+      "expression", // Support for expression fields
     ];
     if (!validTypes.includes(property.type)) {
       errors.push({

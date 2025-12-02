@@ -16,6 +16,7 @@ export interface ExecutionContext {
   startedAt: Date;
   nodeExecutions: Map<string, NodeExecution>;
   nodeOutputs: Map<string, NodeOutputData[]>;
+  nodeIdToName: Map<string, string>; // Map nodeId -> nodeName for $node["Name"] support
   cancelled: boolean;
 }
 

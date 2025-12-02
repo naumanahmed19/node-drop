@@ -1,8 +1,10 @@
 import { useDetachNodes, useDeleteNodes } from "@/hooks/workflow";
 import { useAddNodeDialogStore } from "@/stores/addNodeDialog";
+import { useCopyPasteStore } from "@/stores/copyPaste";
 import { useWorkflowStore } from "@/stores/workflow";
 import { WorkflowNode } from "@/types";
 import { useReactFlow } from "@xyflow/react";
+import { useCallback } from "react";
 
 export function useNodeActions(nodeId: string) {
   const executeNode = useWorkflowStore((state) => state.executeNode);
@@ -18,9 +20,36 @@ export function useNodeActions(nodeId: string) {
   const setDirty = useWorkflowStore((state) => state.setDirty);
 
   const { openDialog } = useAddNodeDialogStore();
+  const { copy, cut, paste, canCopy, canPaste } = useCopyPasteStore();
   const detachNodes = useDetachNodes();
   const deleteNodes = useDeleteNodes();
   const { getNodes, setNodes, getNodesBounds } = useReactFlow();
+
+  // Wrapper to select this node before copying (for context menu)
+  const handleCopyFromContext = useCallback(() => {
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        selected: node.id === nodeId,
+      }))
+    );
+    setTimeout(() => {
+      copy?.();
+    }, 50);
+  }, [nodeId, setNodes, copy]);
+
+  // Wrapper to select this node before cutting (for context menu)
+  const handleCutFromContext = useCallback(() => {
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        selected: node.id === nodeId,
+      }))
+    );
+    setTimeout(() => {
+      cut?.();
+    }, 50);
+  }, [nodeId, setNodes, cut]);
 
   const handleToggleDisabled = (nodeId: string, disabled: boolean) => {
     updateNode(nodeId, { disabled });
@@ -48,7 +77,7 @@ export function useNodeActions(nodeId: string) {
       const clonedNode = {
         ...nodeToClone,
         id: `node-${Date.now()}`,
-        name: `${nodeToClone.name} (Copy)`,
+        name: nodeToClone.name, // addNode will ensure unique name
         position: {
           x: nodeToClone.position.x + 50,
           y: nodeToClone.position.y + 50,
@@ -185,6 +214,16 @@ export function useNodeActions(nodeId: string) {
     }
   };
 
+  /**
+   * Handle clicking the + button on a node's output handle
+   * Opens the add node dialog to insert a new node after this one
+   * 
+   * Position calculation:
+   * - We don't pass screen coordinates to openDialog()
+   * - Instead, calculateCanvasDropPosition() will automatically place the new node
+   *   to the right of this node with proper spacing and alignment
+   * - This ensures consistent horizontal layout and prevents positioning issues
+   */
   const handleOutputClick = (
     event: React.MouseEvent<HTMLDivElement>,
     outputHandle: string
@@ -192,13 +231,8 @@ export function useNodeActions(nodeId: string) {
     event.preventDefault();
     event.stopPropagation();
 
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const position = {
-      x: rect.right + 10,
-      y: rect.top + rect.height / 2,
-    };
-
-    openDialog(position, {
+    // Pass undefined position - let auto-layout handle positioning
+    openDialog(undefined, {
       sourceNodeId: nodeId,
       targetNodeId: "",
       sourceOutput: outputHandle,
@@ -206,6 +240,20 @@ export function useNodeActions(nodeId: string) {
     });
   };
 
+  /**
+   * Handle clicking the + button on a node's service input handle (bottom/top handles)
+   * Opens the add node dialog to insert a service provider node (model, tool, memory)
+   * 
+   * Position calculation:
+   * - We don't pass screen coordinates to openDialog()
+   * - Instead, calculateServiceInputPosition() will automatically place the new node
+   *   below this node with proper spacing
+   * - This ensures consistent vertical layout for service connections
+   * 
+   * Connection direction:
+   * - The new node will be the SOURCE (provides the service)
+   * - This node will be the TARGET (consumes the service)
+   */
   const handleServiceInputClick = (
     event: React.MouseEvent<HTMLDivElement>,
     inputHandle: string
@@ -213,15 +261,8 @@ export function useNodeActions(nodeId: string) {
     event.preventDefault();
     event.stopPropagation();
 
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const position = {
-      x: rect.left - 10,
-      y: rect.top + rect.height / 2,
-    };
-
-    // For service inputs, the new node will be the SOURCE and this node will be the TARGET
-    // We pass targetNodeId and targetInput to indicate where to connect TO
-    openDialog(position, {
+    // Pass undefined position - let auto-layout handle positioning
+    openDialog(undefined, {
       sourceNodeId: "", // New node will be source
       targetNodeId: nodeId, // This node is the target
       sourceOutput: inputHandle, // The output type we need (model, memory, tool)
@@ -242,5 +283,10 @@ export function useNodeActions(nodeId: string) {
     handleGroup,
     handleOutputClick,
     handleServiceInputClick,
+    handleCopyFromContext,
+    handleCutFromContext,
+    paste,
+    canCopy,
+    canPaste,
   };
 }

@@ -21,6 +21,7 @@ import {
 } from "../types/execution.types";
 import { NodeInputData, NodeOutputData } from "../types/node.types";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { NodeService } from "./NodeService";
 
 export class ExecutionEngine extends EventEmitter {
@@ -109,6 +110,12 @@ export class ExecutionEngine extends EventEmitter {
         },
       });
 
+      // Build nodeId -> nodeName mapping for $node["Name"] expression support
+      const workflowNodes = Array.isArray(workflow.nodes)
+        ? workflow.nodes
+        : JSON.parse(workflow.nodes as string);
+      const nodeIdToName = buildNodeIdToNameMap(workflowNodes);
+
       // Create execution context
       const context: ExecutionContext = {
         executionId: execution.id,
@@ -118,6 +125,7 @@ export class ExecutionEngine extends EventEmitter {
         startedAt: execution.startedAt,
         nodeExecutions: new Map(),
         nodeOutputs: new Map(),
+        nodeIdToName, // Map nodeId -> nodeName for $node["Name"] support
         cancelled: false,
       };
 
@@ -479,7 +487,10 @@ export class ExecutionEngine extends EventEmitter {
         executionId,
         context.userId, // userId
         { ...executionOptions, nodeId }, // options with nodeId for state management
-        context.workflowId // workflowId
+        context.workflowId, // workflowId
+        undefined, // settings
+        context.nodeOutputs, // Pass node outputs for $node expression resolution
+        context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
       );
 
       if (!result.success) {

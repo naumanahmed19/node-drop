@@ -38,7 +38,8 @@ export interface FormFieldConfig {
   | "keyValueRow"
   | "columnsMap"
   | "hidden"
-  | "button";
+  | "button"
+  | "expression";
   required?: boolean;
   default?: any;
   description?: string;

@@ -1,4 +1,5 @@
 import { useCopyPasteStore, useWorkflowStore } from "@/stores";
+import { ensureUniqueNodeName } from "@/utils/nodeReferenceUtils";
 import {
   Edge,
   Node,
@@ -36,6 +37,10 @@ export function useCopyPaste() {
   // Set up the paste buffers to store the copied nodes and edges
   const [bufferedNodes, setBufferedNodes] = useState<Node[]>([]);
   const [bufferedEdges, setBufferedEdges] = useState<Edge[]>([]);
+  // Store workflow node data separately (has full properties like icon, color, etc.)
+  const [bufferedWorkflowNodes, setBufferedWorkflowNodes] = useState<
+    Map<string, any>
+  >(new Map());
 
   // Initialize the copy/paste hook
   // 1. Track mouse position for paste location
@@ -116,8 +121,46 @@ export function useCopyPaste() {
       }
     );
 
+    // Store workflow node data for full properties (icon, color, etc.)
+    const { workflow } = useWorkflowStore.getState();
+    const workflowNodeMap = new Map<string, any>();
+    const workflowNodesToShare: any[] = [];
+    const connectionsToShare: any[] = [];
+
+    if (workflow) {
+      nodeToCopyIds.forEach((nodeId) => {
+        const workflowNode = workflow.nodes.find((n) => n.id === nodeId);
+        if (workflowNode) {
+          workflowNodeMap.set(nodeId, { ...workflowNode });
+          workflowNodesToShare.push({ ...workflowNode });
+        }
+      });
+
+      // Get connections for clipboard
+      selectedEdges.forEach((edge) => {
+        const conn = workflow.connections.find((c) => c.id === edge.id);
+        if (conn) {
+          connectionsToShare.push({ ...conn });
+        }
+      });
+    }
+
     setBufferedNodes(nodesToCopy);
     setBufferedEdges(selectedEdges);
+    setBufferedWorkflowNodes(workflowNodeMap);
+
+    // Also write to system clipboard for cross-window paste
+    const clipboardData = {
+      nodes: workflowNodesToShare,
+      connections: connectionsToShare,
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    try {
+      navigator.clipboard.writeText(JSON.stringify(clipboardData));
+    } catch (e) {
+      console.warn("Failed to write to system clipboard:", e);
+    }
 
     console.log(
       `📋 Copied ${nodesToCopy.length} nodes (${selectedNodes.length} selected + ${childNodes.length} children) and ${selectedEdges.length} edges`
@@ -161,14 +204,51 @@ export function useCopyPaste() {
       }
     );
 
+    // Store workflow node data BEFORE removing (for full properties like icon, color, etc.)
+    const { workflow, updateWorkflow } = useWorkflowStore.getState();
+    const workflowNodeMap = new Map<string, any>();
+    const workflowNodesToShare: any[] = [];
+    const connectionsToShare: any[] = [];
+
+    if (workflow) {
+      nodeToCutIds.forEach((nodeId) => {
+        const workflowNode = workflow.nodes.find((n) => n.id === nodeId);
+        if (workflowNode) {
+          workflowNodeMap.set(nodeId, { ...workflowNode });
+          workflowNodesToShare.push({ ...workflowNode });
+        }
+      });
+
+      // Get connections for clipboard
+      selectedEdges.forEach((edge) => {
+        const conn = workflow.connections.find((c) => c.id === edge.id);
+        if (conn) {
+          connectionsToShare.push({ ...conn });
+        }
+      });
+    }
+
     setBufferedNodes(nodesToCut);
     setBufferedEdges(selectedEdges);
+    setBufferedWorkflowNodes(workflowNodeMap);
+
+    // Also write to system clipboard for cross-window paste
+    const clipboardData = {
+      nodes: workflowNodesToShare,
+      connections: connectionsToShare,
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    try {
+      navigator.clipboard.writeText(JSON.stringify(clipboardData));
+    } catch (e) {
+      console.warn("Failed to write to system clipboard:", e);
+    }
 
     // Get node IDs for removal from workflow
     const selectedNodeIds = nodesToCut.map((node) => node.id);
 
     // Update Zustand workflow store - remove nodes and connections
-    const { workflow, updateWorkflow } = useWorkflowStore.getState();
     if (workflow) {
       // Skip history in updateWorkflow since we save it explicitly below
       updateWorkflow({
@@ -196,54 +276,213 @@ export function useCopyPaste() {
   }, [getNodes, setNodes, getEdges, setEdges, saveToHistory]);
 
   /**
+   * Paste nodes from clipboard data (for cross-window paste)
+   */
+  const pasteFromClipboard = useCallback(
+    async (
+      clipboardData: { nodes: any[]; connections: any[] },
+      position?: XYPosition
+    ) => {
+      const { workflow, updateWorkflow } = useWorkflowStore.getState();
+      if (!workflow) return;
+
+      const topLevelNodes = clipboardData.nodes.filter((n) => !n.parentId);
+      // If no top-level nodes, use all nodes for position calculation
+      const nodesForPosition =
+        topLevelNodes.length > 0 ? topLevelNodes : clipboardData.nodes;
+      if (nodesForPosition.length === 0) return;
+
+      const minX = Math.min(...nodesForPosition.map((n) => n.position.x));
+      const minY = Math.min(...nodesForPosition.map((n) => n.position.y));
+
+      // Calculate paste position
+      let pastePosition = position;
+      if (!pastePosition) {
+        try {
+          const converted = screenToFlowPosition({
+            x: mousePosRef.current.x,
+            y: mousePosRef.current.y,
+          });
+          if (
+            converted &&
+            typeof converted.x === "number" &&
+            typeof converted.y === "number" &&
+            !isNaN(converted.x) &&
+            !isNaN(converted.y) &&
+            isFinite(converted.x) &&
+            isFinite(converted.y)
+          ) {
+            pastePosition = converted;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (!pastePosition || pastePosition.x == null || pastePosition.y == null) {
+        pastePosition = { x: minX + 50, y: minY + 50 };
+      }
+
+      const now = Date.now();
+      const existingNames = new Set(workflow.nodes.map((n) => n.name));
+
+      // Check which parent groups are being copied
+      const copiedNodeIds = new Set(clipboardData.nodes.map((n) => n.id));
+
+      // Create new nodes
+      const newNodes = clipboardData.nodes.map((node) => {
+        const id = `${node.id}-${now}`;
+        const uniqueName = ensureUniqueNodeName(node.name, existingNames);
+        existingNames.add(uniqueName);
+
+        // Determine parentId: only keep if parent group is also being copied
+        let newParentId: string | undefined;
+        if (node.parentId && copiedNodeIds.has(node.parentId)) {
+          // Parent group is also being copied, update the reference
+          newParentId = `${node.parentId}-${now}`;
+        }
+        // If parent is NOT being copied, node becomes top-level (no parentId)
+
+        let x, y;
+        if (newParentId) {
+          // Node's parent is also copied, keep relative position within group
+          x = node.position.x;
+          y = node.position.y;
+        } else {
+          // Top-level node - use paste position
+          x = pastePosition!.x + (node.position.x - minX);
+          y = pastePosition!.y + (node.position.y - minY);
+        }
+
+        return {
+          ...node,
+          id,
+          name: uniqueName,
+          position: { x, y },
+          parentId: newParentId,
+        };
+      });
+
+      // Create new connections
+      const newConnections = (clipboardData.connections || []).map((conn) => ({
+        ...conn,
+        id: `${conn.id}-${now}`,
+        sourceNodeId: `${conn.sourceNodeId}-${now}`,
+        targetNodeId: `${conn.targetNodeId}-${now}`,
+      }));
+
+      saveToHistory(`Paste ${newNodes.length} node(s)`);
+
+      updateWorkflow(
+        {
+          nodes: [...workflow.nodes, ...newNodes],
+          connections: [...workflow.connections, ...newConnections],
+        },
+        true
+      );
+
+      console.log(
+        `📌 Pasted ${newNodes.length} nodes from clipboard (cross-window)`
+      );
+    },
+    [screenToFlowPosition, saveToHistory]
+  );
+
+  /**
    * Paste buffered nodes at the specified position (or mouse position)
    * Creates new IDs for pasted nodes and updates edge connections
    * Maintains relative positions of nodes
    */
   const paste = useCallback(
-    (position?: XYPosition) => {
+    async (position?: XYPosition) => {
+      // If local buffer is empty, try to read from system clipboard (cross-window paste)
       if (bufferedNodes.length === 0) {
+        try {
+          const clipboardText = await navigator.clipboard.readText();
+          const clipboardData = JSON.parse(clipboardText);
+          if (
+            clipboardData.nodes &&
+            Array.isArray(clipboardData.nodes) &&
+            clipboardData.nodes.length > 0
+          ) {
+            // Use cross-window paste logic
+            await pasteFromClipboard(clipboardData, position);
+            return;
+          }
+        } catch {
+          // Not valid clipboard data, ignore
+        }
         console.log("📌 No nodes in buffer to paste");
         return;
       }
 
-      // Use provided position or convert mouse position to flow coordinates
-      const pastePosition =
-        position ||
-        screenToFlowPosition({
-          x: mousePosRef.current.x,
-          y: mousePosRef.current.y,
-        });
-
-      // Find the top-left corner of ONLY top-level nodes (not children)
-      // Child nodes have relative positions and shouldn't be included in this calculation
+      // Find the top-left corner of nodes for position calculation
+      // If copying nodes from a group (no top-level nodes), use all nodes
       const topLevelNodes = bufferedNodes.filter((node) => !node.parentId);
-      const minX = Math.min(...topLevelNodes.map((node) => node.position.x));
-      const minY = Math.min(...topLevelNodes.map((node) => node.position.y));
+      const nodesForPosition =
+        topLevelNodes.length > 0 ? topLevelNodes : bufferedNodes;
+      const minX = Math.min(...nodesForPosition.map((node) => node.position.x));
+      const minY = Math.min(...nodesForPosition.map((node) => node.position.y));
+
+      // Use provided position or convert mouse position to flow coordinates
+      let pastePosition = position;
+      if (!pastePosition) {
+        try {
+          const converted = screenToFlowPosition({
+            x: mousePosRef.current.x,
+            y: mousePosRef.current.y,
+          });
+          // Check if position is valid (not null/undefined/NaN and finite)
+          if (
+            converted &&
+            typeof converted.x === "number" &&
+            typeof converted.y === "number" &&
+            !isNaN(converted.x) &&
+            !isNaN(converted.y) &&
+            isFinite(converted.x) &&
+            isFinite(converted.y)
+          ) {
+            pastePosition = converted;
+          }
+        } catch {
+          // screenToFlowPosition can throw if called outside canvas
+        }
+      }
+      // Fallback: paste with offset from original position
+      if (!pastePosition || pastePosition.x == null || pastePosition.y == null) {
+        pastePosition = { x: minX + 50, y: minY + 50 };
+      }
 
       // Use timestamp to create unique IDs
       const now = Date.now();
+
+      // Check which parent groups are being copied
+      const copiedNodeIds = new Set(bufferedNodes.map((n) => n.id));
 
       // Create new nodes with updated IDs and positions
       // Also update parentId references for child nodes
       const newNodes: Node[] = bufferedNodes.map((node) => {
         const id = `${node.id}-${now}`;
-        
-        // For child nodes, keep their relative position unchanged
-        // For top-level nodes, calculate new absolute position
+
+        // Determine parentId: only keep if parent group is also being copied
+        let newParentId: string | undefined;
+        if (node.parentId && copiedNodeIds.has(node.parentId)) {
+          // Parent group is also being copied, update the reference
+          newParentId = `${node.parentId}-${now}`;
+        }
+        // If parent is NOT being copied, node becomes top-level (no parentId)
+        // This allows pasting nodes from groups to anywhere on canvas
+
+        // Calculate position
         let x, y;
-        if (node.parentId) {
-          // Child node - keep relative position as-is
+        if (newParentId) {
+          // Node's parent is also copied, keep relative position within group
           x = node.position.x;
           y = node.position.y;
         } else {
-          // Top-level node - calculate new absolute position
+          // Top-level node (or node removed from group) - use paste position
           x = pastePosition.x + (node.position.x - minX);
           y = pastePosition.y + (node.position.y - minY);
         }
-
-        // Update parentId if the node has one (child of a group)
-        const newParentId = node.parentId ? `${node.parentId}-${now}` : undefined;
 
         return {
           ...node,
@@ -290,6 +529,9 @@ export function useCopyPaste() {
 
         // Get all current nodes from React Flow (including the newly pasted ones)
         const allCurrentNodes = getNodes();
+
+        // Track existing names to ensure uniqueness for pasted nodes
+        const existingNames = new Set(workflow.nodes.map((n) => n.name));
         
         // Convert React Flow nodes to workflow nodes
         const workflowNodes = allCurrentNodes.map((node) => {
@@ -299,22 +541,40 @@ export function useCopyPaste() {
           if (isNewNode) {
             // For new nodes, find the original to copy properties
             const originalId = node.id.replace(`-${now}`, "");
-            const originalNode = workflow.nodes.find((n) => n.id === originalId);
+            // First check buffered workflow nodes (for cut operations where node is removed)
+            // Then fall back to current workflow nodes (for copy operations)
+            const bufferedNode = bufferedWorkflowNodes.get(originalId);
+            const originalNode =
+              bufferedNode || workflow.nodes.find((n) => n.id === originalId);
 
-            // Base workflow node
+            // Get position from newNodes array (has correct calculated position)
+            const newNodeData = newNodes.find((n) => n.id === node.id);
+            const nodePosition = newNodeData?.position || node.position;
+
+            // Get the original name and ensure it's unique
+            const originalName =
+              (typeof originalNode?.name === "string" ? originalNode.name : "") ||
+              (typeof node.data?.label === "string" ? node.data.label : "") ||
+              node.id;
+            const uniqueName = ensureUniqueNodeName(originalName, existingNames);
+            existingNames.add(uniqueName); // Track for subsequent pasted nodes
+
+            // Base workflow node - copy all properties from original
             const baseNode = {
               id: node.id,
               type: originalNode?.type || node.type || "default",
-              name: (typeof originalNode?.name === 'string' ? originalNode.name : '') || 
-                    (typeof node.data?.label === 'string' ? node.data.label : '') || 
-                    node.id,
-              position: node.position,
+              name: uniqueName,
+              position: nodePosition,
               parameters: originalNode?.parameters || {},
               disabled: originalNode?.disabled || false,
               credentials: originalNode?.credentials,
               locked: originalNode?.locked,
               mockData: originalNode?.mockData,
               mockDataPinned: originalNode?.mockDataPinned,
+              settings: originalNode?.settings,
+              icon: originalNode?.icon,
+              color: originalNode?.color,
+              description: originalNode?.description,
             };
 
             // Add parentId and extent for child nodes
@@ -391,9 +651,12 @@ export function useCopyPaste() {
     [
       bufferedNodes,
       bufferedEdges,
+      bufferedWorkflowNodes,
       screenToFlowPosition,
       setNodes,
       setEdges,
+      getNodes,
+      getEdges,
       saveToHistory,
     ]
   );

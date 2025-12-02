@@ -59,8 +59,11 @@ export {
 export { useExecutionControls } from "./useExecutionControls";
 export { useExecutionPanelData } from "./useExecutionPanelData";
 export { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+export { useNodeConnection } from "./useNodeConnection";
+export { useNodeFiltering } from "./useNodeFiltering";
 export { useNodeGroupDragHandlers } from "./useNodeGroupDragHandlers";
-export { useNodeValidation } from "./useNodeValidation";
+export { useNodePositioning } from "./useNodePositioning";
+export { useNodeValidation, invalidateValidationCache } from "./useNodeValidation";
 export { useReactFlowInteractions } from "./useReactFlowInteractions";
 export { useTemplateExpansion } from "./useTemplateExpansion";
 export { useWorkflowEditorUI } from "./useWorkflowEditorUI";

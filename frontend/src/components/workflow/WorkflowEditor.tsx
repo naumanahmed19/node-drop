@@ -10,12 +10,8 @@ import {
     ResizablePanel,
     ResizablePanelGroup,
 } from '@/components/ui/resizable'
-import { Button } from '@/components/ui/button'
-import { JsonEditor } from '@/components/ui/json-editor'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useExecutionAwareEdges } from '@/hooks/workflow'
 import {
-    useCodePanel,
     useCopyPaste,
     useExecutionControls,
     useExecutionPanelData,
@@ -29,6 +25,7 @@ import { templateService } from '@/services'
 import { NodeType } from '@/types'
 import { useToast } from '@/hooks/useToast'
 import { AddNodeCommandDialog } from './AddNodeCommandDialog'
+import { RightSidebar } from './RightSidebar'
 
 import { ChatDialog } from './ChatDialog'
 import { CreateTemplateDialog } from './CreateTemplateDialog'
@@ -58,7 +55,6 @@ export function WorkflowEditor({
     // OPTIMIZATION: Use Zustand selectors to prevent unnecessary re-renders
     // Only subscribe to the specific state slices we need
     const workflow = useWorkflowStore(state => state.workflow)
-    const updateWorkflow = useWorkflowStore(state => state.updateWorkflow)
     const showPropertyPanel = useWorkflowStore(state => state.showPropertyPanel)
     const propertyPanelNodeId = useWorkflowStore(state => state.propertyPanelNodeId)
     const showChatDialog = useWorkflowStore(state => state.showChatDialog)
@@ -83,22 +79,22 @@ export function WorkflowEditor({
 
     // Create dynamic nodeTypes object that includes both built-in and uploaded nodes
     const nodeTypes = useMemo(() => {
-        const baseNodeTypes = {
-            custom: CustomNode,
-            chat: ChatInterfaceNode,
-            'image-preview': ImagePreviewNode,
-            'data-preview': DataPreviewNode,
-            'forms': FormGeneratorNode,
-            group: GroupNode,
-            annotation: AnnotationNode,
+        const baseNodeTypes: NodeTypes = {
+            custom: CustomNode as any,
+            chat: ChatInterfaceNode as any,
+            'image-preview': ImagePreviewNode as any,
+            'data-preview': DataPreviewNode as any,
+            'forms': FormGeneratorNode as any,
+            group: GroupNode as any,
+            annotation: AnnotationNode as any,
           //  'ai-agent': AIAgentNode,
-        } as NodeTypes
+        }
 
         // For dynamically uploaded nodes, they all use the CustomNode component
         // The CustomNode component handles different node types based on the data.nodeType
         storeNodeTypes.forEach(nodeType => {
             if (!baseNodeTypes[nodeType.identifier]) {
-                baseNodeTypes[nodeType.identifier] = CustomNode
+                baseNodeTypes[nodeType.identifier] = CustomNode as any
             }
         })
 
@@ -152,7 +148,6 @@ export function WorkflowEditor({
         realTimeResults,
         executionLogs,
         getNodeResult,
-        getFlowStatus,
         clearLogs,
     } = useExecutionControls()
 
@@ -166,30 +161,22 @@ export function WorkflowEditor({
         backgroundVariant,
         setReactFlowInstance,
         reactFlowInstance,
-        showCodePanel: isCodeMode,
+        showRightSidebar,
+        rightSidebarSize,
     } = useReactFlowUIStore()
 
     const {
         showNodePalette,
     } = useWorkflowToolbarStore()
 
-    // Code panel hook
-    const {
-        codeContent,
-        setCodeContent,
-        codeError,
-        setCodeError,
-        codeTab,
-        setCodeTab,
-        selectedNodes,
-        resetCodeContent,
-        validateCodeContent,
-    } = useCodePanel({ workflow, nodes, isCodeMode })
+    // Get selected nodes from React Flow nodes
+    const selectedNodes = useMemo(() => {
+        return nodes.filter(node => node.selected)
+    }, [nodes])
 
     // Execution panel data
     const { flowExecutionStatus } = useExecutionPanelData({
         executionId: executionState.executionId,
-        getFlowStatus,
     })
 
     // Sync ReactFlow instance to store (hook gets it automatically via useReactFlow)
@@ -227,7 +214,7 @@ export function WorkflowEditor({
                 addConnections(expandedConnections)
             }
 
-            console.log('✅ Template with variables expanded successfully')
+            // Template expanded successfully
         })
     }, [templateVariableDialogData])
 
@@ -314,7 +301,7 @@ export function WorkflowEditor({
     // Sync Zustand workflow â†’ React Flow
     // Only sync when workflow ID changes (new workflow loaded) OR when blockSync is false
     const workflowId = workflow?.id;
-    const prevWorkflowIdRef = useRef<string | undefined>();
+    const prevWorkflowIdRef = useRef<string | undefined>(undefined);
     const prevReactFlowNodesRef = useRef<any[]>([]);
     
     // Initialize socket listeners for real-time updates
@@ -323,7 +310,7 @@ export function WorkflowEditor({
     useEffect(() => {
         // Setup socket listeners when component mounts
         initializeRealTimeUpdates()
-        console.log('🔌 Initialized real-time socket listeners')
+        // Real-time socket listeners initialized
     }, [initializeRealTimeUpdates])
 
     useEffect(() => {
@@ -364,22 +351,65 @@ export function WorkflowEditor({
             } else {
                 // Just update node data without touching selection
                 // Always use positions from Zustand for undo/redo to work
-                setNodes((currentNodes) =>
-                    currentNodes.map(currentNode => {
-                        const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
-                        if (updatedNode) {
-                            return {
-                                ...updatedNode,
-                                selected: currentNode.selected, // Preserve current selection
-                                position: updatedNode.position // Always use position from Zustand
-                            };
-                        }
-                        return currentNode;
-                    })
-                );
+                // Also check if parentId changed (for group operations)
+                const parentIdsChanged = currentNodes.some(currentNode => {
+                    const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
+                    return updatedNode && currentNode.parentId !== updatedNode.parentId;
+                });
+                
+                if (parentIdsChanged) {
+                    // Parent relationships changed, do a full update
+                    const nodesWithSelection = reactFlowNodes.map(node => {
+                        return {
+                            ...node,
+                            selected: selectedNodeIds.includes(node.id),
+                            position: node.position
+                        };
+                    });
+                    setNodes(nodesWithSelection);
+                    prevReactFlowNodesRef.current = reactFlowNodes;
+                } else {
+                    setNodes((currentNodes) =>
+                        currentNodes.map(currentNode => {
+                            const updatedNode = reactFlowNodes.find(n => n.id === currentNode.id);
+                            if (updatedNode) {
+                                return {
+                                    ...updatedNode,
+                                    selected: currentNode.selected, // Preserve current selection
+                                    position: updatedNode.position // Always use position from Zustand
+                                };
+                            }
+                            return currentNode;
+                        })
+                    );
+                }
             }
 
-            setEdges(reactFlowEdges);
+            // For edges, preserve local control points data to avoid resetting during drag
+            // Only do a full edge reset when workflow changes
+            if (workflowChanged) {
+                setEdges(reactFlowEdges);
+            } else {
+                // Merge edges: keep local edge data (control points) but update structure
+                setEdges((currentEdges) => {
+                    const currentEdgeMap = new Map(currentEdges.map(e => [e.id, e]));
+                    return reactFlowEdges.map(newEdge => {
+                        const currentEdge = currentEdgeMap.get(newEdge.id);
+                        const currentPoints = (currentEdge?.data as any)?.points;
+                        if (currentEdge && Array.isArray(currentPoints) && currentPoints.length > 0) {
+                            // Preserve local control points if they exist
+                            return {
+                                ...newEdge,
+                                data: {
+                                    ...newEdge.data,
+                                    points: currentPoints,
+                                },
+                            };
+                        }
+                        return newEdge;
+                    });
+                });
+            }
             prevWorkflowIdRef.current = workflowId;
         } else {
             console.log('â¸ï¸  Sync blocked - drag in progress');
@@ -421,8 +451,8 @@ export function WorkflowEditor({
                 {/* Main Content Area with Resizable Panels */}
                 <div className="flex-1 flex h-full">
                     <ResizablePanelGroup direction="horizontal" className="flex-1">
-                        {/* Main Editor Area - Full Width in Execution Mode */}
-                        <ResizablePanel defaultSize={isCodeMode ? 60 : ((readOnly || !showNodePalette) ? 100 : 80)} minSize={30}>
+                        {/* Main Editor Area */}
+                        <ResizablePanel defaultSize={showRightSidebar ? (100 - rightSidebarSize) : ((readOnly || !showNodePalette) ? 100 : 80)} minSize={30}>
                             {/* Resizable Layout for Canvas and Execution Panel */}
                             <ResizablePanelGroup direction="vertical" className="h-full">
                                 {/* React Flow Canvas */}
@@ -486,74 +516,15 @@ export function WorkflowEditor({
                             </ResizablePanelGroup>
                         </ResizablePanel>
 
-                        {/* Code Editor Panel - Side by Side */}
-                        {isCodeMode && (
+                        {/* Right Sidebar - Settings, Copilot, Code */}
+                        {showRightSidebar && (
                             <>
                                 <ResizableHandle withHandle />
-                                <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                                    <Tabs value={codeTab} onValueChange={(value) => setCodeTab(value as 'full' | 'selected')} className="flex flex-col h-full py-4 bg-background border-l overflow-hidden">
-                                        <div className="flex items-center justify-between mb-3 flex-shrink-0 px-4">
-                                            <TabsList>
-                                                <TabsTrigger value="full">Full Workflow</TabsTrigger>
-                                                <TabsTrigger value="selected" disabled={selectedNodes.length === 0}>
-                                                    Selected ({selectedNodes.length})
-                                                </TabsTrigger>
-                                            </TabsList>
-                                            <div className="flex gap-2">
-                                                {codeTab === 'selected' && selectedNodes.length > 0 && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => useWorkflowStore.getState().openTemplateDialog()}
-                                                    >
-                                                        Create Template
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={resetCodeContent}
-                                                >
-                                                    Reset
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        const parsed = validateCodeContent()
-                                                        if (parsed) {
-                                                            updateWorkflow(parsed)
-                                                        }
-                                                    }}
-                                                >
-                                                    Apply
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        <TabsContent value="full" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto px-4">
-                                                <JsonEditor
-                                                    value={codeContent}
-                                                    onValueChange={(value) => {
-                                                        setCodeContent(value)
-                                                        setCodeError(null)
-                                                    }}
-                                                    error={codeError || undefined}
-                                                />
-                                            </div>
-                                        </TabsContent>
-                                        <TabsContent value="selected" className="flex-1 min-h-0 relative">
-                                            <div className="absolute inset-0 overflow-auto px-4">
-                                                <JsonEditor
-                                                    value={codeContent}
-                                                    onValueChange={(value) => {
-                                                        setCodeContent(value)
-                                                        setCodeError(null)
-                                                    }}
-                                                    error={codeError || undefined}
-                                                />
-                                            </div>
-                                        </TabsContent>
-                                    </Tabs>
+                                <ResizablePanel defaultSize={rightSidebarSize} minSize={15} maxSize={40}>
+                                    <RightSidebar 
+                                        selectedNodes={selectedNodes}
+                                        readOnly={readOnly}
+                                    />
                                 </ResizablePanel>
                             </>
                         )}

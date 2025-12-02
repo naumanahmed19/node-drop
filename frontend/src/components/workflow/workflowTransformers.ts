@@ -195,7 +195,8 @@ export function transformWorkflowNodesToReactFlow(
       id: node.id,
       type: reactFlowNodeType,
       position: node.position,
-      draggable: !node.locked,
+      // Note: draggable, selectable, deletable should not be set as boolean props
+      // They are controlled by ReactFlow component props (nodesDraggable, elementsSelectable, etc.)
       data: {
         label: node.name,
         nodeType: node.type,
@@ -246,11 +247,14 @@ export function transformWorkflowEdgesToReactFlow(
       target: conn.targetNodeId,
       sourceHandle: conn.sourceOutput,
       targetHandle: conn.targetInput,
-      type: "smoothstep",
+      type: "editable-edge",
       data: {
         label: conn.sourceOutput !== "main" ? conn.sourceOutput : undefined,
         // Add execution state key to force edge re-render when execution completes
         executionStateKey,
+        // Editable edge configuration - use saved algorithm or default to Step
+        algorithm: conn.algorithm || "Step",
+        points: conn.controlPoints || [],
       },
     };
   });

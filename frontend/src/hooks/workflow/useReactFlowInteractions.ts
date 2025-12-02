@@ -1,4 +1,4 @@
-import { useAddNodeDialogStore, useWorkflowStore } from "@/stores";
+import { useAddNodeDialogStore, useReactFlowUIStore, useWorkflowStore } from "@/stores";
 import { NodeType, WorkflowConnection, WorkflowNode } from "@/types";
 import {
   Connection,
@@ -58,7 +58,7 @@ export function useReactFlowInteractions() {
   const reactFlowInstance = useReactFlow();
 
   // Get group drag handlers for adding nodes to groups
-  const { onNodeDrag: onNodeDragGroup, onNodeDragStop: onNodeDragStopGroup } =
+  const { onNodeDrag: onNodeDragGroup, onNodeDragStop: onNodeDragStopGroup, groupAttachmentHandled } =
     useNodeGroupDragHandlers();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -310,10 +310,21 @@ export function useReactFlowInteractions() {
       // First, call the group drag stop handler to attach to group if needed
       onNodeDragStopGroup(event, node, nodes);
 
+      // Skip syncPositionsToZustand if group attachment was handled
+      // (it already synced to Zustand directly)
+      if (groupAttachmentHandled.current) {
+        groupAttachmentHandled.current = false;
+        // Still reset the drag flags
+        blockSync.current = false;
+        isDragging.current = false;
+        dragSnapshotTaken.current = false;
+        return;
+      }
+
       // Then sync positions (which also resets flags)
       syncPositionsToZustand();
     },
-    [onNodeDragStopGroup, syncPositionsToZustand]
+    [onNodeDragStopGroup, syncPositionsToZustand, groupAttachmentHandled]
   );
 
   // Handle selection drag start - just set flags, don't save history yet
@@ -367,6 +378,10 @@ export function useReactFlowInteractions() {
     }
   }, []);
 
+  // Get connection line path for editable edges (free drawing with spacebar)
+  const connectionLinePath = useReactFlowUIStore((state) => state.connectionLinePath);
+  const setConnectionLinePath = useReactFlowUIStore((state) => state.setConnectionLinePath);
+
   // Handle new connections
   const handleConnect: OnConnect = useCallback(
     (connection) => {
@@ -375,12 +390,21 @@ export function useReactFlowInteractions() {
       // Mark that a connection was successfully made
       connectionMadeRef.current = true;
 
+      // Convert connectionLinePath to control points for editable edge
+      const controlPoints = connectionLinePath.map((point, index) => ({
+        ...point,
+        id: `cp-${index}`,
+        active: true,
+      }));
+
       const newConnection: WorkflowConnection = {
         id: `${connection.source}-${connection.target}-${Date.now()}`,
         sourceNodeId: connection.source,
         sourceOutput: connection.sourceHandle || "main",
         targetNodeId: connection.target,
         targetInput: connection.targetHandle || "main",
+        // Store control points in the connection for persistence
+        controlPoints: controlPoints.length > 0 ? controlPoints : undefined,
       };
 
       addConnection(newConnection);
@@ -391,11 +415,19 @@ export function useReactFlowInteractions() {
         target: connection.target,
         sourceHandle: connection.sourceHandle ?? undefined,
         targetHandle: connection.targetHandle ?? undefined,
+        type: 'editable-edge',
+        data: {
+          algorithm: 'Step',
+          points: controlPoints,
+        },
       };
 
       setEdges((edges) => addEdge(newEdge as Edge, edges));
+      
+      // Clear the connection line path after connection is made
+      setConnectionLinePath([]);
     },
-    [addConnection, setEdges]
+    [addConnection, setEdges, connectionLinePath, setConnectionLinePath]
   );
 
   // Handle drag over for node dropping
@@ -405,18 +437,15 @@ export function useReactFlowInteractions() {
   }, []);
 
   // Handle node drop from palette
+  /**
+   * Handle dropping a node from the sidebar onto the canvas
+   * Uses React Flow's standard drag and drop pattern
+   */
   const handleDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
 
       if (!reactFlowInstance) return;
-
-      // Get the ReactFlow wrapper element from the DOM
-      const reactFlowWrapper = document.querySelector(
-        ".react-flow"
-      ) as HTMLElement;
-      const reactFlowBounds = reactFlowWrapper?.getBoundingClientRect();
-      if (!reactFlowBounds) return;
 
       const nodeTypeData = event.dataTransfer.getData("application/reactflow");
       if (!nodeTypeData) return;
@@ -424,49 +453,37 @@ export function useReactFlowInteractions() {
       try {
         const nodeType: NodeType & { isTemplate?: boolean; templateData?: any } = JSON.parse(nodeTypeData);
 
-        console.log('🎯 Node dropped:', {
-          type: nodeType.identifier,
-          isTemplate: nodeType.isTemplate,
-          hasTemplateData: !!nodeType.templateData,
-          templateData: nodeType.templateData
-        });
-
+        // Convert screen coordinates to flow coordinates
         const position = reactFlowInstance.screenToFlowPosition({
-          x: event.clientX - reactFlowBounds.left,
-          y: event.clientY - reactFlowBounds.top,
+          x: event.clientX,
+          y: event.clientY,
         });
 
-        // Check if this is a template node
+        // Handle template nodes
         if (isTemplateNode(nodeType)) {
           handleTemplateExpansion(nodeType, position);
-          return; // Exit early for templates
-        } else {
-          // Regular node drop (not a template)
-          // Initialize parameters with defaults from node type and properties
-          const parameters: Record<string, any> = { ...nodeType.defaults };
-
-          // Add default values from properties
-          nodeType.properties.forEach((property) => {
-            if (
-              property.default !== undefined &&
-              parameters[property.name] === undefined
-            ) {
-              parameters[property.name] = property.default;
-            }
-          });
-
-          const newNode: WorkflowNode = {
-            id: `node-${Date.now()}`,
-            type: nodeType.identifier,
-            name: nodeType.displayName,
-            parameters,
-            position,
-            credentials: [],
-            disabled: false,
-          };
-
-          addNode(newNode);
+          return;
         }
+
+        // Create regular node with default parameters
+        const parameters: Record<string, any> = { ...nodeType.defaults };
+        nodeType.properties.forEach((property) => {
+          if (property.default !== undefined && parameters[property.name] === undefined) {
+            parameters[property.name] = property.default;
+          }
+        });
+
+        const newNode: WorkflowNode = {
+          id: `node-${Date.now()}`,
+          type: nodeType.identifier,
+          name: nodeType.displayName,
+          parameters,
+          position,
+          credentials: [],
+          disabled: false,
+        };
+
+        addNode(newNode);
       } catch (error) {
         console.error("Failed to parse dropped node data:", error);
       }

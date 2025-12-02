@@ -3,53 +3,53 @@ import { CredentialsList } from "@/components/credential/CredentialsList"
 import { ExecutionsList, ScheduledExecutionsList } from "@/components/execution"
 import { NavUser } from "@/components/nav-user"
 import { NodeTypesList } from "@/components/node/NodeTypesList"
-import { TeamSwitcher } from "@/components/team/TeamSwitcher"
-import { TeamsList } from "@/components/team/TeamsList"
-import { CreateTeamModal } from "@/components/team/CreateTeamModal"
 import { AddMemberModal } from "@/components/team/AddMemberModal"
+import { CreateTeamModal } from "@/components/team/CreateTeamModal"
 import { ManageMembersDialog } from "@/components/team/ManageMembersDialog"
 import { TeamSettingsModal } from "@/components/team/TeamSettingsModal"
+import { TeamsList } from "@/components/team/TeamsList"
+import { TeamSwitcher } from "@/components/team/TeamSwitcher"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/components/ui/ConfirmDialog"
 import {
-    Sidebar,
-    SidebarContent,
-    SidebarFooter,
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarHeader,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
-    SidebarSeparator,
-    useSidebar
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarSeparator,
+  useSidebar
 } from "@/components/ui/sidebar"
 import { Switch } from "@/components/ui/switch"
 import { VariablesList } from "@/components/variable/VariablesList"
 import { WorkflowsList } from "@/components/workflow/WorkflowsList"
-import { useSidebarContext, useTheme, useTeam } from "@/contexts"
+import { useSidebarContext, useTeam, useTheme } from "@/contexts"
 import { useAuthStore, useReactFlowUIStore, useWorkflowStore } from "@/stores"
 import {
-    Activity,
-    ArrowLeft,
-    CalendarClock,
-    Database,
-    Home,
-    Key,
-    Maximize,
-    Monitor,
-    Moon,
-    Plus,
-    Settings,
-    Sun,
-    Users,
-    Variable,
-    Workflow,
-    ZoomIn,
-    ZoomOut,
+  Activity,
+  ArrowLeft,
+  CalendarClock,
+  Database,
+  Home,
+  Key,
+  Maximize,
+  Monitor,
+  Moon,
+  Plus,
+  Settings,
+  Sun,
+  Users,
+  Variable,
+  Workflow,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react"
 import * as React from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 
 // This is sample data for the workflow editor
 const data = {
@@ -133,6 +133,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { open, setOpen } = useSidebar()
   const { user } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const { id: workflowId } = useParams<{ id: string }>()
   const { 
     activeWorkflowItem, 
@@ -178,7 +179,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       if (!confirmed) return
     }
 
-    navigate(url)
+    // Pass current location as state when navigating to /workflows/new
+    if (url === "/workflows/new") {
+      navigate(url, { state: { from: location.pathname } })
+    } else {
+      navigate(url)
+    }
   }
 
   return (
@@ -199,7 +205,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0">
-                <a href="#">
+                <div 
+                  className="cursor-pointer flex items-center gap-2"
+                  onClick={() => navigate("/")}
+                >
                   <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                     <Workflow className="size-4" />
                   </div>
@@ -207,7 +216,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span className="truncate font-medium">node drop</span>
                     <span className="truncate text-xs">Workflow</span>
                   </div>
-                </a>
+                </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -597,11 +606,13 @@ function CanvasViewSettings() {
     showControls,
     panOnDrag,
     zoomOnScroll,
+    editableConnections,
     toggleMinimap,
     toggleBackground,
     toggleControls,
     togglePanOnDrag,
     toggleZoomOnScroll,
+    toggleEditableConnections,
     changeBackgroundVariant,
   } = useReactFlowUIStore()
 
@@ -626,6 +637,10 @@ function CanvasViewSettings() {
       <div className="flex justify-between items-center">
         <span>Zoom on Scroll</span>
         <Switch checked={zoomOnScroll} onCheckedChange={toggleZoomOnScroll} />
+      </div>
+      <div className="flex justify-between items-center">
+        <span>Editable Connections</span>
+        <Switch checked={editableConnections} onCheckedChange={toggleEditableConnections} />
       </div>
       
       {/* Background Pattern Selector */}

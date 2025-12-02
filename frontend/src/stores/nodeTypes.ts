@@ -56,9 +56,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
     set({ isLoading: true, error: null });
 
     try {
-      console.log("Fetching node types from store...");
       const response = await nodeService.getNodeTypes();
-      console.log(`Fetched ${response.length} node types`);
 
       // Update the classification cache with fresh data
       updateNodeTypesCache(response);
@@ -88,9 +86,7 @@ export const useNodeTypesStore = createWithEqualityFn<NodeTypesState>((set, get)
     set({ isRefetching: true, error: null });
 
     try {
-      console.log("Refetching node types from store...");
       const response = await nodeService.getNodeTypes();
-      console.log(`Refetched ${response.length} node types`);
 
       // Update the classification cache with fresh data
       updateNodeTypesCache(response);

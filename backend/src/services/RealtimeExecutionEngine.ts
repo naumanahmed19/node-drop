@@ -9,7 +9,9 @@ import { PrismaClient } from "@prisma/client";
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import { ExecutionStatus, NodeExecutionStatus } from "../types/database";
+import { buildCredentialsMapping, extractCredentialProperties } from "../utils/credentialHelpers";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { NodeService } from "./NodeService";
 
 interface WorkflowNode {
@@ -37,6 +39,7 @@ interface ExecutionContext {
     userId: string;
     triggerData: any;
     nodeOutputs: Map<string, any>;
+    nodeIdToName: Map<string, string>; // Map nodeId -> nodeName for $node["Name"] support
     connections: WorkflowConnection[]; // Store connections for branch checking
     nodes: any[]; // Store nodes for service input resolution
     status: "running" | "completed" | "failed" | "cancelled";
@@ -62,11 +65,9 @@ export class RealtimeExecutionEngine extends EventEmitter {
     /**
      * Build credentials mapping from node's credential IDs
      * Maps credential type to credential ID for node execution
-     * This matches the approach used in FlowExecutionEngine
+     * Uses shared utility from credentialHelpers
      */
-    private async buildCredentialsMapping(node: WorkflowNode, userId: string): Promise<Record<string, string>> {
-        const credentialsMapping: Record<string, string> = {};
-
+    private async buildNodeCredentialsMapping(node: WorkflowNode, userId: string): Promise<Record<string, string>> {
         logger.info(`[RealtimeExecution] Building credentials mapping for node ${node.id}`, {
             nodeType: node.type,
             nodeParameters: Object.keys(node.parameters || {}),
@@ -74,108 +75,37 @@ export class RealtimeExecutionEngine extends EventEmitter {
             credentialsLength: node.credentials?.length || 0,
         });
 
-        // PRIMARY METHOD: Get node type definition and extract credentials from parameters
-        // This is how FlowExecutionEngine does it and is the correct approach
+        // Get node type definition for credential properties
+        let nodeTypeProperties: any[] = [];
         try {
             const allNodeTypes = await this.nodeService.getNodeTypes();
             const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
-
-            if (nodeTypeInfo && nodeTypeInfo.properties) {
-                const properties = Array.isArray(nodeTypeInfo.properties)
-                    ? nodeTypeInfo.properties
-                    : [];
-
-                // Find credential-type properties and extract their values from node parameters
-                for (const property of properties) {
-                    if (
-                        property.type === "credential" &&
-                        property.allowedTypes &&
-                        property.allowedTypes.length > 0
-                    ) {
-                        // Get the credential ID from parameters using the field name
-                        const credentialId = node.parameters?.[property.name];
-
-                        if (credentialId && typeof credentialId === "string") {
-                            // Verify credential exists and belongs to user
-                            const cred = await this.prisma.credential.findUnique({
-                                where: { id: credentialId },
-                                select: { type: true, userId: true }
-                            });
-
-                            if (cred) {
-                                if (cred.userId !== userId) {
-                                    logger.warn(`[RealtimeExecution] Credential ${credentialId} does not belong to user ${userId}`);
-                                    continue;
-                                }
-                                // Map the actual credential type from the database to the credential ID
-                                // This ensures the node can request credentials by their actual type
-                                credentialsMapping[cred.type] = credentialId;
-                                logger.info(`[RealtimeExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
-                            } else {
-                                logger.warn(`[RealtimeExecution] Credential ${credentialId} not found in database`);
-                            }
-                        }
-                    }
-                }
-            } else {
-                logger.warn(`[RealtimeExecution] Node type info not found for ${node.type}`);
-            }
+            nodeTypeProperties = extractCredentialProperties(nodeTypeInfo);
         } catch (error) {
-            logger.error(`[RealtimeExecution] Failed to build credentials mapping from node type definition`, { error });
+            logger.error(`[RealtimeExecution] Failed to get node type definition`, { error });
         }
 
-        // FALLBACK 1: Check if credentials are stored in node.credentials array (legacy format)
-        if (Object.keys(credentialsMapping).length === 0 && node.credentials && Array.isArray(node.credentials) && node.credentials.length > 0) {
-            logger.info(`[RealtimeExecution] No credentials found via node type, checking node.credentials array`);
-            
-            for (const credId of node.credentials) {
-                try {
-                    const cred = await this.prisma.credential.findUnique({
-                        where: { id: credId },
-                        select: { type: true, userId: true }
-                    });
-                    if (cred) {
-                        if (cred.userId !== userId) {
-                            logger.warn(`[RealtimeExecution] Credential ${credId} does not belong to user ${userId}`);
-                            continue;
-                        }
-                        credentialsMapping[cred.type] = credId;
-                        logger.info(`[RealtimeExecution] Mapped credential type '${cred.type}' to ID '${credId}' from credentials array`);
-                    }
-                } catch (error) {
-                    logger.error(`[RealtimeExecution] Failed to fetch credential ${credId}`, { error });
-                }
-            }
-        }
+        // Use shared utility for credential mapping
+        const { mapping, warnings } = await buildCredentialsMapping({
+            nodeParameters: node.parameters || {},
+            nodeTypeProperties,
+            userId,
+            prisma: this.prisma,
+            legacyCredentials: node.credentials,
+            logPrefix: "[RealtimeExecution]",
+        });
 
-        // FALLBACK 2: Scan all parameters for credential IDs (last resort)
-        if (Object.keys(credentialsMapping).length === 0 && node.parameters) {
-            logger.info(`[RealtimeExecution] No credentials found, scanning all parameters for credential IDs`);
-            
-            for (const [key, value] of Object.entries(node.parameters)) {
-                if (typeof value === 'string' && value.startsWith('cred_')) {
-                    try {
-                        const cred = await this.prisma.credential.findUnique({
-                            where: { id: value },
-                            select: { type: true, userId: true }
-                        });
-                        if (cred && cred.userId === userId) {
-                            credentialsMapping[cred.type] = value;
-                            logger.info(`[RealtimeExecution] Found credential in parameter '${key}': type '${cred.type}' -> ID '${value}'`);
-                        }
-                    } catch (error) {
-                        // Silently ignore - not all parameters are credentials
-                    }
-                }
-            }
+        // Log any warnings
+        if (warnings.length > 0) {
+            logger.warn(`[RealtimeExecution] Credential mapping warnings for node ${node.id}:`, { warnings });
         }
 
         logger.info(`[RealtimeExecution] Final credentials mapping for node ${node.id}:`, {
-            mappingKeys: Object.keys(credentialsMapping),
-            mapping: credentialsMapping,
+            mappingKeys: Object.keys(mapping),
+            mapping,
         });
 
-        return credentialsMapping;
+        return mapping;
     }
 
     /**
@@ -223,12 +153,16 @@ export class RealtimeExecutionEngine extends EventEmitter {
         // Create execution context
         const saveToDatabase = options?.saveToDatabase !== false; // Default to true
         
+        // Build nodeId -> nodeName mapping for $node["Name"] expression support
+        const nodeIdToName = buildNodeIdToNameMap(nodes);
+        
         const context: ExecutionContext = {
             executionId,
             workflowId,
             userId,
             triggerData,
             nodeOutputs: new Map(),
+            nodeIdToName, // Map nodeId -> nodeName for $node["Name"] support
             connections, // Store connections for branch checking
             nodes, // Store nodes for service input resolution
             status: "running",
@@ -449,6 +383,42 @@ export class RealtimeExecutionEngine extends EventEmitter {
             return;
         }
 
+        // ⚠️ CRITICAL FIX: Wait for ALL upstream nodes to complete before executing
+        // This prevents race conditions where a node executes before all its inputs are ready
+        // Example: If a node uses {{ $node["A"].value }} and {{ $node["B"].value }},
+        // we must wait for BOTH A and B to complete, not just one of them
+        const incomingConnections = context.connections.filter(
+            (conn) => conn.targetNodeId === nodeId
+        );
+        
+        if (incomingConnections.length > 0) {
+            const upstreamNodeIds = [...new Set(incomingConnections.map(conn => conn.sourceNodeId))];
+            const missingUpstreamNodes = upstreamNodeIds.filter(
+                upstreamId => !context.nodeOutputs.has(upstreamId)
+            );
+            
+            if (missingUpstreamNodes.length > 0) {
+                logger.info(`[RealtimeExecution] Node ${nodeId} waiting for upstream nodes to complete`, {
+                    nodeId,
+                    nodeName: node.name,
+                    totalUpstream: upstreamNodeIds.length,
+                    missingUpstream: missingUpstreamNodes.length,
+                    missingNodeIds: missingUpstreamNodes,
+                    completedNodeIds: upstreamNodeIds.filter(id => context.nodeOutputs.has(id)),
+                });
+                
+                // Don't execute yet - upstream nodes will trigger this node when they complete
+                return;
+            }
+            
+            logger.info(`[RealtimeExecution] All upstream nodes completed for ${nodeId}`, {
+                nodeId,
+                nodeName: node.name,
+                upstreamCount: upstreamNodeIds.length,
+                upstreamNodeIds,
+            });
+        }
+
         context.currentNodeId = nodeId;
 
         logger.info(`[RealtimeExecution] Executing node ${nodeId} (${node.name})`);
@@ -483,7 +453,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
             const startTime = Date.now();
 
             // Build credentials mapping from node's credential IDs
-            const credentialsMapping = await this.buildCredentialsMapping(node, context.userId);
+            const credentialsMapping = await this.buildNodeCredentialsMapping(node, context.userId);
 
             const result = await this.nodeService.executeNode(
                 node.type,
@@ -494,7 +464,9 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 context.userId,
                 { timeout: 30000, nodeId }, // Pass nodeId for logging
                 context.workflowId,
-                node.settings // Pass node settings (includes continueOnFail)
+                node.settings, // Pass node settings (includes continueOnFail)
+                context.nodeOutputs, // Pass node outputs for $node expression resolution
+                context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
             );
 
             const duration = Date.now() - startTime;
@@ -730,7 +702,7 @@ export class RealtimeExecutionEngine extends EventEmitter {
                 const startTime = Date.now();
 
                 // Build credentials mapping from node's credential IDs
-                const credentialsMapping = await this.buildCredentialsMapping(node, context.userId);
+                const credentialsMapping = await this.buildNodeCredentialsMapping(node, context.userId);
 
                 const result = await this.nodeService.executeNode(
                     node.type,
@@ -741,7 +713,8 @@ export class RealtimeExecutionEngine extends EventEmitter {
                     context.userId,
                     { timeout: 30000, nodeId }, // Pass nodeId for state management
                     context.workflowId,
-                    node.settings
+                    node.settings,
+                    context.nodeOutputs // Pass node outputs for $node expression resolution
                 );
 
                 const duration = Date.now() - startTime;

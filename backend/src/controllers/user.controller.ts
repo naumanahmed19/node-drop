@@ -113,6 +113,8 @@ export const patchPreferences = asyncHandler(
         ...(currentPrefs.canvas || {}),
         ...(preferences.canvas || {}),
       },
+      // pinnedNodes is a simple array, so direct replacement is fine
+      ...(preferences.pinnedNodes !== undefined && { pinnedNodes: preferences.pinnedNodes }),
     };
 
     const user = await prisma.user.update({

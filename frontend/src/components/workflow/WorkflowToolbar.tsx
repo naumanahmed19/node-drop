@@ -23,11 +23,11 @@ import { getEnvironmentLabel } from '@/types/environment'
 import { validateImportFile } from '@/utils/errorHandling'
 import {
   ChevronDown,
-  Code2,
   Download,
   Loader2,
   MoreHorizontal,
   Package,
+  PanelRight,
   RefreshCw,
   Save,
   Settings,
@@ -55,8 +55,8 @@ export function WorkflowToolbar({
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
   const { selectedEnvironment, summaries } = useEnvironmentStore()
   
-  // Code mode from ReactFlowUI store
-  const { showCodePanel: isCodeMode, toggleCodePanel } = useReactFlowUIStore()
+  // Sidebar from ReactFlowUI store
+  const { showRightSidebar, toggleRightSidebar } = useReactFlowUIStore()
   
   // Add Node Dialog store
   const { openDialog } = useAddNodeDialogStore()
@@ -407,9 +407,9 @@ export function WorkflowToolbar({
               Workflow Settings
             </DropdownMenuItem>
             
-            <DropdownMenuItem onClick={toggleCodePanel} className="text-xs">
-              <Code2 className="mr-2 h-3.5 w-3.5" />
-              {isCodeMode ? 'Hide Code Panel' : 'Show Code Panel'}
+            <DropdownMenuItem onClick={toggleRightSidebar} className="text-xs">
+              <PanelRight className="mr-2 h-3.5 w-3.5" />
+              {showRightSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
             </DropdownMenuItem>
             
             <DropdownMenuSeparator />

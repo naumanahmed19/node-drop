@@ -15,6 +15,7 @@ import {
   QueueConfig,
 } from "../types/execution.types";
 import { logger } from "../utils/logger";
+import { buildExpressionContext } from "../utils/nodeHelpers";
 import { ExecutionEngine } from "./ExecutionEngine";
 import ExecutionHistoryService from "./ExecutionHistoryService";
 import {
@@ -1457,6 +1458,26 @@ export class ExecutionService {
           // For single node execution, always execute the actual node (skip mock data)
           // Mock data should only be used in test scenarios, not for real single node execution
 
+          // Build expression context (nodeIdToName and nodeOutputs) using shared utility
+          const { nodeIdToName, nodeOutputs } = buildExpressionContext(workflowNodes, {
+            targetNodeId: nodeId,
+            connections: workflowData?.connections,
+            inputData: nodeInputData,
+          });
+
+          // Log nodeOutputs for debugging
+          if (nodeOutputs.size > 0) {
+            logger.info('Single node execution with nodeOutputs', {
+              nodeId,
+              nodeOutputsKeys: Array.from(nodeOutputs.keys()),
+            });
+          } else {
+            logger.warn('Single node execution without nodeOutputs - expressions referencing other nodes may not resolve', {
+              nodeId,
+              hasInputData: !!nodeInputData,
+              hasNodeOutputsInInput: !!nodeInputData?.nodeOutputs,
+            });
+          }
 
           // Execute the actual node (credentials mapping already built earlier)
           nodeResult = await this.nodeService.executeNode(
@@ -1468,7 +1489,9 @@ export class ExecutionService {
             userId, // Pass the actual userId so credentials can be looked up
             undefined, // options
             workflowId, // Pass workflowId for variable resolution
-            (node as any).settings || {} // Pass node settings
+            (node as any).settings || {}, // Pass node settings
+            nodeOutputs.size > 0 ? nodeOutputs : undefined, // Pass nodeOutputs for expression resolution
+            nodeIdToName // Always pass nodeIdToName for $node["Name"] support
           );
 
           const endTime = Date.now();

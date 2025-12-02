@@ -33,6 +33,9 @@ export function TimelineTabContent({
 }: TimelineTabContentProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
+  
+  // Get execution state for accurate total duration
+  const executionState = useWorkflowStore((state) => state.executionState)
   const { workflow } = useWorkflowStore()
 
   const timelineData = useMemo(() => {
@@ -40,31 +43,56 @@ export function TimelineTabContent({
     if (nodeResults.length === 0) return null
 
     const now = Date.now()
+    const isCompleted = flowExecutionStatus?.overallStatus === 'completed' || 
+                        flowExecutionStatus?.overallStatus === 'failed'
+    
     const events: TimelineEvent[] = nodeResults
       .map(([nodeId, result], index) => {
         const node = workflow?.nodes.find((n) => n.id === nodeId)
-        const startTime = result.startTime
-          ? new Date(result.startTime).getTime()
-          : 0
         
-        // Handle endTime - if it's before startTime, treat as still running
+        // Parse startTime - handle both number and string formats
+        const startTime = typeof result.startTime === 'number' 
+          ? result.startTime 
+          : (result.startTime ? new Date(result.startTime).getTime() : 0)
+        
+        // Handle endTime
         let endTime: number | null = null
         let duration = 0
         
         if (result.endTime) {
-          const parsedEndTime = new Date(result.endTime).getTime()
+          // Parse endTime - handle both number and string formats
+          const parsedEndTime = typeof result.endTime === 'number'
+            ? result.endTime
+            : new Date(result.endTime).getTime()
+          
           // Check if endTime is valid (after startTime)
           if (parsedEndTime > startTime) {
             endTime = parsedEndTime
             duration = endTime - startTime
           } else {
-            // Invalid endTime (before startTime), treat as running
-            endTime = null
-            duration = now - startTime
+            // endTime is before startTime (backend bug) - use execution endTime or estimate
+            const execEnd = executionState.endTime 
+              ? new Date(executionState.endTime).getTime() 
+              : now
+            // For completed nodes with invalid endTime, estimate duration based on execution end
+            if (result.status === 'success' || result.status === 'error') {
+              endTime = Math.min(execEnd, startTime + 60000) // Cap at 1 minute or exec end
+              duration = endTime - startTime
+            } else {
+              duration = now - startTime
+            }
           }
         } else {
-          // No endTime, still running
-          duration = now - startTime
+          // No endTime - check if execution is complete
+          if (isCompleted && (result.status === 'success' || result.status === 'error')) {
+            const execEnd = executionState.endTime 
+              ? new Date(executionState.endTime).getTime() 
+              : now
+            endTime = execEnd
+            duration = endTime - startTime
+          } else {
+            duration = now - startTime
+          }
         }
 
         return {
@@ -82,12 +110,24 @@ export function TimelineTabContent({
 
     if (events.length === 0) return null
 
-    const minTime = Math.min(...events.map((e) => e.startTime))
-    const maxTime = Math.max(...events.map((e) => e.endTime || now))
+    // Use executionState times as source of truth for total duration
+    // This matches what Progress tab shows
+    const execStartTime = executionState.startTime 
+      ? new Date(executionState.startTime).getTime() 
+      : Math.min(...events.map((e) => e.startTime))
+    
+    const execEndTime = executionState.endTime
+      ? new Date(executionState.endTime).getTime()
+      : (isCompleted 
+          ? Math.max(...events.map((e) => e.endTime || e.startTime + e.duration))
+          : now)
+    
+    const minTime = execStartTime
+    const maxTime = execEndTime
     const totalDuration = maxTime - minTime
 
     return { events, minTime, maxTime, totalDuration }
-  }, [realTimeResults, workflow])
+  }, [realTimeResults, workflow, flowExecutionStatus?.overallStatus, executionState.startTime, executionState.endTime])
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
@@ -170,32 +210,6 @@ export function TimelineTabContent({
   const numTicks = Math.max(6, Math.floor(chartWidth / 150))
   const timeStep = displayDuration / numTicks
   const timeTicks = Array.from({ length: numTicks + 1 }, (_, i) => displayMinTime + i * timeStep)
-
-  // Debug logging
-  console.log('=== Timeline Debug ===')
-  console.log('Chart dimensions:', {
-    chartWidth,
-    effectiveChartWidth,
-    chartPadding,
-    baseChartWidth,
-    zoom,
-  })
-  console.log('Time range:', {
-    minTime: new Date(minTime).toISOString(),
-    maxTime: new Date(maxTime).toISOString(),
-    totalDuration,
-    displayMinTime: new Date(displayMinTime).toISOString(),
-    displayMaxTime: new Date(displayMaxTime).toISOString(),
-    displayDuration,
-  })
-  console.log('Events:', events.map(e => ({
-    nodeName: e.nodeName,
-    startTime: new Date(e.startTime).toISOString(),
-    endTime: e.endTime ? new Date(e.endTime).toISOString() : 'null',
-    duration: e.duration,
-    x: chartPadding + ((e.startTime - displayMinTime) / displayDuration) * effectiveChartWidth,
-    width: Math.max(4, (e.duration / displayDuration) * effectiveChartWidth),
-  })))
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden bg-background">

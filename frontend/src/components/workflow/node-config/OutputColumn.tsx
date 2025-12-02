@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useNodeConfigDialogStore, useWorkflowStore } from '@/stores'
 import { useNodeTypesStore } from '@/stores/nodeTypes'
 import { WorkflowNode } from '@/types'
+import { extractNodeOutputData, isBranchingOutput, hasDownloadableContent } from '@/utils/nodeOutputUtils'
 import {
   AlertCircle,
   Copy,
@@ -73,70 +74,12 @@ export function OutputColumn({ node }: OutputColumnProps) {
     toast.success('Mock data cleared')
   }
 
-  // Helper function to safely extract node output data
-  const extractNodeOutputData = (nodeExecutionResult: any) => {
-    try {
-      // Handle the new standardized format from backend
-      if (nodeExecutionResult?.data?.main || nodeExecutionResult?.data?.branches) {
-        const { main, branches, metadata } = nodeExecutionResult.data;
-
-        // For branching nodes (like IF), return the branches structure for separate display
-        if (metadata?.hasMultipleBranches && branches) {
-          return {
-            type: 'branches',
-            branches: branches,
-            metadata: metadata
-          };
-        }
-
-        // For regular nodes, extract the JSON data from main
-        if (main && main.length > 0) {
-          // If main contains objects with 'json' property, extract that
-          if (main[0]?.json) {
-            // If there are multiple items, return array of unwrapped json
-            if (main.length > 1) {
-              return main.map((item: any) => item.json);
-            }
-            // Single item: return just the json content
-            return main[0].json;
-          }
-          // Otherwise return the main array directly
-          return main.length > 1 ? main : main[0];
-        }
-      }
-
-      // Fallback for legacy format handling
-      if (nodeExecutionResult?.data?.[0]?.main?.[0]?.json) {
-        return nodeExecutionResult.data[0].main[0].json;
-      }
-
-      if (Array.isArray(nodeExecutionResult?.data) && nodeExecutionResult.data.length > 0) {
-        return nodeExecutionResult.data[0];
-      }
-
-      if (nodeExecutionResult?.data && typeof nodeExecutionResult.data === 'object') {
-        return nodeExecutionResult.data;
-      }
-
-      return null;
-    } catch (error) {
-      console.warn('Failed to extract node output data:', error);
-      return null;
-    }
-  }
-
   // Determine what data to show - mock data if pinned and available, otherwise execution result
   const displayData = mockDataPinned && mockData
     ? mockData
     : extractNodeOutputData(nodeExecutionResult)
   const isShowingMockData = mockDataPinned && mockData
-  const isBranchingNode = displayData?.type === 'branches'
-
-  // Helper to detect if data contains downloadable content
-  const hasDownloadableContent = (data: any): boolean => {
-    if (!data || isBranchingNode) return false
-    return !!(data?.content && data?.contentType)
-  }
+  const isBranchingNode = isBranchingOutput(displayData)
 
   // Download file from content field
   const handleDownload = () => {
@@ -191,7 +134,7 @@ export function OutputColumn({ node }: OutputColumnProps) {
           </Button>
 
           {/* Download Button - Show if data has downloadable content */}
-          {hasDownloadableContent(displayData) && (
+          {hasDownloadableContent(displayData) && !isBranchingNode && (
             <Button
               size="sm"
               variant="outline"

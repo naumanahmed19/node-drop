@@ -1,4 +1,5 @@
 import { ExecutionState } from '@/types'
+import { Play } from 'lucide-react'
 
 interface ProgressTabContentProps {
   executionState: ExecutionState
@@ -9,6 +10,19 @@ export function ProgressTabContent({ executionState }: ProgressTabContentProps) 
     if (ms < 1000) return `${ms}ms`
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
     return `${(ms / 60000).toFixed(1)}m`
+  }
+
+  // Show placeholder if no execution has started
+  if (!executionState.startTime && executionState.status === 'idle') {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Play className="h-12 w-12 text-muted-foreground/50 mb-4" />
+        <h3 className="font-medium text-sm mb-2">No Execution Data</h3>
+        <p className="text-xs text-muted-foreground max-w-[250px]">
+          Execute the workflow to see progress information
+        </p>
+      </div>
+    )
   }
 
   return (

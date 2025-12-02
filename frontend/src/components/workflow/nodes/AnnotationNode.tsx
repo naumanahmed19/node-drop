@@ -186,35 +186,35 @@ function AnnotationNode({ id, data, selected, parentId }: NodeProps) {
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    // Custom components for better styling
-                    h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-2" {...props} />,
-                    h2: ({node, ...props}) => <h2 className="text-xl font-bold mb-2" {...props} />,
-                    h3: ({node, ...props}) => <h3 className="text-lg font-bold mb-1" {...props} />,
-                    h4: ({node, ...props}) => <h4 className="text-base font-bold mb-1" {...props} />,
-                    h5: ({node, ...props}) => <h5 className="text-sm font-bold mb-1" {...props} />,
-                    h6: ({node, ...props}) => <h6 className="text-xs font-bold mb-1" {...props} />,
-                    p: ({node, ...props}) => <p className="mb-2" {...props} />,
-                    ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
-                    ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                    li: ({node, ...props}) => <li className="ml-2" {...props} />,
-                    code: ({node, inline, ...props}: any) => 
+                    // Custom components for better styling - exclude ref to fix React 19 compatibility
+                    h1: ({node, ref, ...props}) => <h1 className="text-2xl font-bold mb-2" {...props} />,
+                    h2: ({node, ref, ...props}) => <h2 className="text-xl font-bold mb-2" {...props} />,
+                    h3: ({node, ref, ...props}) => <h3 className="text-lg font-bold mb-1" {...props} />,
+                    h4: ({node, ref, ...props}) => <h4 className="text-base font-bold mb-1" {...props} />,
+                    h5: ({node, ref, ...props}) => <h5 className="text-sm font-bold mb-1" {...props} />,
+                    h6: ({node, ref, ...props}) => <h6 className="text-xs font-bold mb-1" {...props} />,
+                    p: ({node, ref, ...props}) => <p className="mb-2" {...props} />,
+                    ul: ({node, ref, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
+                    ol: ({node, ref, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                    li: ({node, ref, ...props}) => <li className="ml-2" {...props} />,
+                    code: ({node, ref, inline, ...props}: any) => 
                       inline ? (
                         <code className="bg-purple-100 dark:bg-purple-900/30 px-1 rounded text-sm" {...props} />
                       ) : (
                         <code className="block bg-purple-100 dark:bg-purple-900/30 p-2 rounded text-sm my-2 overflow-x-auto" {...props} />
                       ),
-                    pre: ({node, ...props}) => <pre className="my-2" {...props} />,
-                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-purple-500 pl-3 italic my-2" {...props} />,
-                    a: ({node, ...props}) => <a className="text-purple-600 dark:text-purple-400 underline hover:text-purple-800 dark:hover:text-purple-300" {...props} />,
-                    strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
-                    em: ({node, ...props}) => <em className="italic" {...props} />,
-                    hr: ({node, ...props}) => <hr className="my-2 border-purple-300 dark:border-purple-700" {...props} />,
-                    table: ({node, ...props}) => <table className="border-collapse border border-purple-300 dark:border-purple-700 my-2" {...props} />,
-                    thead: ({node, ...props}) => <thead className="bg-purple-100 dark:bg-purple-900/30" {...props} />,
-                    tbody: ({node, ...props}) => <tbody {...props} />,
-                    tr: ({node, ...props}) => <tr className="border-b border-purple-200 dark:border-purple-800" {...props} />,
-                    th: ({node, ...props}) => <th className="border border-purple-300 dark:border-purple-700 px-2 py-1 font-semibold" {...props} />,
-                    td: ({node, ...props}) => <td className="border border-purple-300 dark:border-purple-700 px-2 py-1" {...props} />,
+                    pre: ({node, ref, ...props}) => <pre className="my-2" {...props} />,
+                    blockquote: ({node, ref, ...props}) => <blockquote className="border-l-4 border-purple-500 pl-3 italic my-2" {...props} />,
+                    a: ({node, ref, ...props}) => <a className="text-purple-600 dark:text-purple-400 underline hover:text-purple-800 dark:hover:text-purple-300" {...props} />,
+                    strong: ({node, ref, ...props}) => <strong className="font-bold" {...props} />,
+                    em: ({node, ref, ...props}) => <em className="italic" {...props} />,
+                    hr: ({node, ref, ...props}) => <hr className="my-2 border-purple-300 dark:border-purple-700" {...props} />,
+                    table: ({node, ref, ...props}) => <table className="border-collapse border border-purple-300 dark:border-purple-700 my-2" {...props} />,
+                    thead: ({node, ref, ...props}) => <thead className="bg-purple-100 dark:bg-purple-900/30" {...props} />,
+                    tbody: ({node, ref, ...props}) => <tbody {...props} />,
+                    tr: ({node, ref, ...props}) => <tr className="border-b border-purple-200 dark:border-purple-800" {...props} />,
+                    th: ({node, ref, ...props}) => <th className="border border-purple-300 dark:border-purple-700 px-2 py-1 font-semibold" {...props} />,
+                    td: ({node, ref, ...props}) => <td className="border border-purple-300 dark:border-purple-700 px-2 py-1" {...props} />,
                   }}
                 >
                   {currentLabel}

@@ -79,6 +79,19 @@ export const CreateWorkflowSchema = z.object({
         sourceOutput: z.string(),
         targetNodeId: z.string(),
         targetInput: z.string(),
+        // Edge algorithm type (Step, Linear, CatmullRom, BezierCatmullRom)
+        algorithm: z.string().optional(),
+        // Control points for editable edges (visual routing)
+        controlPoints: z
+          .array(
+            z.object({
+              id: z.string(),
+              x: z.number(),
+              y: z.number(),
+              active: z.boolean().optional(),
+            })
+          )
+          .optional(),
       })
     )
     .default([]),

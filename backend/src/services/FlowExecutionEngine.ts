@@ -3,7 +3,9 @@ import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import { Workflow } from "../types/database";
 import { NodeInputData, StandardizedNodeOutput } from "../types/node.types";
+import { buildCredentialsMapping, extractCredentialProperties } from "../utils/credentialHelpers";
 import { logger } from "../utils/logger";
+import { buildNodeIdToNameMap } from "../utils/nodeHelpers";
 import { DependencyResolver } from "./DependencyResolver";
 import ExecutionHistoryService from "./ExecutionHistoryService";
 import { NodeService } from "./NodeService";
@@ -16,6 +18,8 @@ export interface FlowExecutionContext {
   triggerData?: any;
   executionOptions: FlowExecutionOptions;
   nodeStates: Map<string, NodeExecutionState>;
+  nodeOutputs: Map<string, any>; // Map of nodeId -> output data for $node expressions
+  nodeIdToName: Map<string, string>; // Map nodeId -> nodeName for $node["Name"] support
   executionPath: string[];
   startTime: number;
   cancelled: boolean;
@@ -347,6 +351,8 @@ export class FlowExecutionEngine extends EventEmitter {
         ...options,
       },
       nodeStates: new Map(),
+      nodeOutputs: new Map(), // Initialize node outputs map for $node expressions
+      nodeIdToName: new Map(), // Initialize nodeId -> nodeName map for $node["Name"] support
       executionPath: [],
       startTime: Date.now(),
       cancelled: false,
@@ -400,6 +406,12 @@ export class FlowExecutionEngine extends EventEmitter {
     workflow: Workflow,
     startNodeId: string
   ): Promise<void> {
+    // Build nodeId -> nodeName mapping for $node["Name"] expression support
+    const nodeIdToName = buildNodeIdToNameMap(workflow.nodes);
+    for (const [id, name] of nodeIdToName) {
+      context.nodeIdToName.set(id, name);
+    }
+    
     // Validate workflow structure before execution with enhanced safety checks
     const nodeIds = workflow.nodes.map((node) => node.id);
 
@@ -634,6 +646,11 @@ export class FlowExecutionEngine extends EventEmitter {
         executedNodes.push(nodeId);
         context.executionPath.push(nodeId);
 
+        // Store node output for $node expression resolution in downstream nodes
+        if (result.data) {
+          context.nodeOutputs.set(nodeId, result.data);
+        }
+
         nodeState.status = result.status;
         nodeState.endTime = Date.now();
         nodeState.duration =
@@ -795,54 +812,18 @@ export class FlowExecutionEngine extends EventEmitter {
       );
       nodeState.inputData = inputData;
 
-      // Build credentials mapping: need to map credential types to IDs
-      // For custom nodes, credentials are stored in parameters with credential type fields
-      let credentialsMapping: Record<string, string> | undefined;
-
-      // Get all node types and find the one we need
+      // Build credentials mapping using shared utility
       const allNodeTypes = await this.nodeService.getNodeTypes();
       const nodeTypeInfo = allNodeTypes.find((nt) => nt.identifier === node.type);
+      const nodeTypeProperties = extractCredentialProperties(nodeTypeInfo);
 
-      if (nodeTypeInfo && nodeTypeInfo.properties) {
-        credentialsMapping = {};
-
-        const properties = Array.isArray(nodeTypeInfo.properties)
-          ? nodeTypeInfo.properties
-          : [];
-
-        // Find credential-type properties and extract their values from node parameters
-        for (const property of properties) {
-          if (
-            property.type === "credential" &&
-            property.allowedTypes &&
-            property.allowedTypes.length > 0
-          ) {
-            // Get the credential ID from parameters using the field name
-            const credentialId = node.parameters?.[property.name];
-
-            if (credentialId && typeof credentialId === "string") {
-              // Verify credential exists and get its actual type
-              const cred = await this.prisma.credential.findUnique({
-                where: { id: credentialId },
-                select: { type: true, userId: true }
-              });
-
-              if (cred) {
-                if (cred.userId !== context.userId) {
-                  logger.warn(`Credential ${credentialId} does not belong to user ${context.userId}`);
-                  continue;
-                }
-                // Map the actual credential type from the database to the credential ID
-                // This ensures the node can request credentials by their actual type
-                credentialsMapping[cred.type] = credentialId;
-                logger.info(`[FlowExecution] Mapped credential type '${cred.type}' to ID '${credentialId}' from parameter '${property.name}'`);
-              } else {
-                logger.warn(`[FlowExecution] Credential ${credentialId} not found in database`);
-              }
-            }
-          }
-        }
-      }
+      const { mapping: credentialsMapping } = await buildCredentialsMapping({
+        nodeParameters: node.parameters || {},
+        nodeTypeProperties,
+        userId: context.userId,
+        prisma: this.prisma,
+        logPrefix: "[FlowExecution]",
+      });
 
       const nodeResult = await this.nodeService.executeNode(
         node.type,
@@ -853,7 +834,9 @@ export class FlowExecutionEngine extends EventEmitter {
         context.userId, // Pass the userId from context
         undefined, // options
         context.workflowId, // Pass workflowId for variable resolution
-        undefined // settings - not stored on node object currently
+        undefined, // settings - not stored on node object currently
+        context.nodeOutputs, // Pass node outputs for $node expression resolution
+        context.nodeIdToName // Pass nodeId -> nodeName mapping for $node["Name"] support
       );
 
       if (!nodeResult.success) {
@@ -910,8 +893,16 @@ export class FlowExecutionEngine extends EventEmitter {
 
     // If we have workflow context and multiple incoming connections, use branch-aware checking
     if (workflow && incomingConnections.length > 1) {
+      // ⚠️ CRITICAL FIX: For nodes with multiple inputs, we must wait for ALL upstream nodes
+      // to complete before executing. This prevents race conditions where expressions like
+      // {{ $node["A"].value }} and {{ $node["B"].value }} would fail because only A completed.
+      //
+      // Previous logic allowed execution if "at least one dependency completed with data",
+      // which caused the race condition in your workflow where Posts node executed when
+      // JSON node completed but Indexs node hadn't completed yet.
+      
+      let allUpstreamNodesCompleted = true;
       let hasAtLeastOneCompletedWithData = false;
-      let allRelevantDependenciesCompleted = true;
 
       for (const depNodeId of nodeState.dependencies) {
         const depState = context.nodeStates.get(depNodeId);
@@ -922,7 +913,7 @@ export class FlowExecutionEngine extends EventEmitter {
             dependencyNodeId: depNodeId,
             executionId: context.executionId,
           });
-          allRelevantDependenciesCompleted = false;
+          allUpstreamNodesCompleted = false;
           continue;
         }
 
@@ -965,20 +956,26 @@ export class FlowExecutionEngine extends EventEmitter {
           }
         } else if (depState.status !== FlowNodeStatus.SKIPPED) {
           // If dependency is not completed and not skipped, we need to wait
-          allRelevantDependenciesCompleted = false;
+          allUpstreamNodesCompleted = false;
+          
+          logger.debug("Waiting for upstream dependency to complete", {
+            nodeId,
+            dependencyNodeId: depNodeId,
+            dependencyStatus: depState.status,
+            executionId: context.executionId,
+          });
         }
       }
 
-      // For multi-branch scenarios, we're satisfied if:
-      // 1. At least one dependency completed with data, OR
-      // 2. All dependencies have completed/skipped (even if no data)
-      const satisfied = hasAtLeastOneCompletedWithData || 
-        (allRelevantDependenciesCompleted && nodeState.dependencies.length > 0);
+      // NEW LOGIC: We're satisfied ONLY if ALL upstream nodes have completed (or skipped)
+      // This ensures expressions referencing multiple nodes work correctly
+      const satisfied = allUpstreamNodesCompleted && nodeState.dependencies.length > 0;
 
-      logger.debug("Multi-branch dependency check", {
+      logger.debug("Multi-input dependency check", {
         nodeId,
+        totalDependencies: nodeState.dependencies.length,
+        allUpstreamNodesCompleted,
         hasAtLeastOneCompletedWithData,
-        allRelevantDependenciesCompleted,
         satisfied,
         executionId: context.executionId,
       });

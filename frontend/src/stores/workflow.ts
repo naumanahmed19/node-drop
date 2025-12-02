@@ -34,6 +34,10 @@ import {
   updateWorkflowTitle,
   validateMetadata,
 } from "@/utils/workflowMetadata";
+import {
+  ensureUniqueNodeName,
+  updateNodeNameReferences,
+} from "@/utils/nodeReferenceUtils";
 import { devtools } from "zustand/middleware";
 import { createWithEqualityFn } from "zustand/traditional";
 
@@ -105,6 +109,7 @@ interface WorkflowStore extends WorkflowEditorState {
 
   addConnection: (connection: WorkflowConnection) => void;
   addConnections: (connections: WorkflowConnection[]) => void;
+  updateConnection: (connectionId: string, updates: Partial<WorkflowConnection>) => void;
   removeConnection: (connectionId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -430,21 +435,38 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const current = get().workflow;
         if (!current) return;
 
+        // Ensure unique node name
+        const uniqueName = ensureUniqueNodeName(
+          node.name,
+          undefined,
+          undefined,
+          current.nodes
+        );
+        const nodeWithUniqueName = { ...node, name: uniqueName };
+
         const updated = {
           ...current,
-          nodes: [...current.nodes, node],
+          nodes: [...current.nodes, nodeWithUniqueName],
         };
         set({ workflow: updated, isDirty: true });
-        get().saveToHistory(`Add node: ${node.name}`);
+        get().saveToHistory(`Add node: ${uniqueName}`);
       },
 
       addNodes: (nodes) => {
         const current = get().workflow;
         if (!current) return;
 
+        // Ensure unique names for all nodes being added
+        const existingNames = new Set(current.nodes.map((n) => n.name));
+        const nodesWithUniqueNames = nodes.map((node) => {
+          const uniqueName = ensureUniqueNodeName(node.name, existingNames);
+          existingNames.add(uniqueName); // Track for subsequent nodes in batch
+          return { ...node, name: uniqueName };
+        });
+
         const updated = {
           ...current,
-          nodes: [...current.nodes, ...nodes],
+          nodes: [...current.nodes, ...nodesWithUniqueNames],
         };
         set({ workflow: updated, isDirty: true });
         get().saveToHistory(`Add ${nodes.length} nodes`);
@@ -454,11 +476,37 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const current = get().workflow;
         if (!current) return;
 
+        // Check if node name is being changed
+        const existingNode = current.nodes.find((n) => n.id === nodeId);
+        const oldName = existingNode?.name;
+        let newName = updates.name;
+
+        // If name is being changed, ensure it's unique
+        if (newName && oldName !== newName) {
+          newName = ensureUniqueNodeName(
+            newName,
+            undefined,
+            nodeId,
+            current.nodes
+          );
+          updates = { ...updates, name: newName };
+        }
+
+        const isNameChange = oldName && newName && oldName !== newName;
+
+        // First, apply the update to the target node
+        let updatedNodes = current.nodes.map((node) =>
+          node.id === nodeId ? { ...node, ...updates } : node
+        );
+
+        // If name changed, update all $node["OldName"] references in other nodes
+        if (isNameChange && oldName && newName) {
+          updatedNodes = updateNodeNameReferences(updatedNodes, oldName, newName);
+        }
+
         const updated = {
           ...current,
-          nodes: current.nodes.map((node) =>
-            node.id === nodeId ? { ...node, ...updates } : node
-          ),
+          nodes: updatedNodes,
         };
         set({ workflow: updated, isDirty: true });
 
@@ -522,6 +570,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         };
         set({ workflow: updated, isDirty: true });
         get().saveToHistory("Remove connection");
+      },
+
+      updateConnection: (connectionId, updates) => {
+        const current = get().workflow;
+        if (!current) return;
+
+        const updated = {
+          ...current,
+          connections: current.connections.map((conn) =>
+            conn.id === connectionId ? { ...conn, ...updates } : conn
+          ),
+        };
+        
+        set({ workflow: updated, isDirty: true });
+        // Don't save to history for control point updates to avoid cluttering history
       },
 
       setSelectedNode: (nodeId) => {
@@ -666,13 +729,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
           return;
         }
 
-        console.log('🚀 Starting export workflow...', { 
-          workflowId: workflow.id, 
-          workflowName: workflow.name,
-          nodeCount: workflow.nodes?.length || 0,
-          connectionCount: workflow.connections?.length || 0
-        });
-
         set({
           isExporting: true,
           exportProgress: 0,
@@ -684,7 +740,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
           set({ exportProgress: 25 });
 
           // Validate workflow before export (but only check for critical errors)
-          console.log('🔍 Validating workflow...');
           const validation = get().validateWorkflow();
           
           // Filter out metadata-only errors - we'll fix those during export
@@ -701,21 +756,13 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               `Cannot export workflow with errors: ${criticalErrors.join(", ")}`
             );
           }
-          
-          if (validation.errors.length > 0) {
-            console.warn('⚠️ Non-critical validation warnings (will be fixed during export):', validation.errors);
-          } else {
-            console.log('✅ Validation passed');
-          }
 
           set({ exportProgress: 50 });
 
           // Export using the file service (which will ensure metadata is complete)
-          console.log('📤 Calling workflowFileService.exportWorkflow...');
           await workflowFileService.exportWorkflow(workflow);
 
           set({ exportProgress: 100 });
-          console.log('✅ Export completed successfully');
 
           // Clear progress after a short delay
           setTimeout(() => {
@@ -850,14 +897,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const { progressTracker, executionState, flowExecutionState, executionManager } = get();
         const executionId = executionState.executionId || flowExecutionState.selectedExecution || "current";
 
-        console.log(`[updateNodeExecutionState] Updating node ${nodeId} to ${status}`, {
-          executionId,
-          nodeId,
-          status,
-          currentExecutionId: executionState.executionId,
-          selectedExecution: flowExecutionState.selectedExecution,
-        });
-
         // Update execution context manager
         switch (status) {
           case NodeExecutionStatus.QUEUED:
@@ -865,25 +904,14 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             break;
           case NodeExecutionStatus.RUNNING:
             executionManager.setNodeRunning(executionId, nodeId);
-            console.log(`[updateNodeExecutionState] Set node ${nodeId} to RUNNING in execution ${executionId}`);
             break;
           case NodeExecutionStatus.COMPLETED:
             executionManager.setNodeCompleted(executionId, nodeId);
             break;
           case NodeExecutionStatus.FAILED:
             executionManager.setNodeFailed(executionId, nodeId);
-            console.log(`[updateNodeExecutionState] Set node ${nodeId} to FAILED in execution ${executionId}`);
             break;
         }
-
-        // Verify the state was set
-        const nodeStatus = executionManager.getNodeStatus(nodeId);
-        console.log(`[updateNodeExecutionState] Verified node status:`, {
-          nodeId,
-          status: nodeStatus.status,
-          executionId: nodeStatus.executionId,
-          isExecutingInCurrent: executionManager.isNodeExecutingInCurrent(nodeId),
-        });
 
         // Increment version to trigger re-renders (executionManager is mutated in place)
         set({ executionStateVersion: get().executionStateVersion + 1 });
@@ -962,7 +990,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
         // ExecutionContextManager is already initialized in subscribeToExecution
         // No need to initialize again here
-        console.log(`[initializeFlowExecution] Initializing progress tracker for execution ${executionId} with ${nodeIds.length} nodes`);
 
         // FIXED: Set this as the current execution context in ProgressTracker
         // This ensures that subsequent updates affect the correct execution's state
@@ -2305,7 +2332,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         const updatedResult: NodeExecutionResult = {
           nodeId,
           nodeName: result.nodeName || existingResult?.nodeName || "Unknown",
-          status: result.status || existingResult?.status || "skipped", // Use "skipped" instead of "error" as default
+          status: result.status || existingResult?.status || "skipped",
           startTime:
             result.startTime || existingResult?.startTime || Date.now(),
           endTime: result.endTime || existingResult?.endTime || Date.now(),
@@ -2379,11 +2406,8 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       // Real-time execution updates
       subscribeToExecution: async (executionId: string) => {
         try {
-          console.log('🔵 subscribeToExecution called for:', executionId);
-
           // Connect to WebSocket if not already connected
           if (!executionWebSocket.isConnected()) {
-            console.log('🔵 Connecting to WebSocket...');
             await executionWebSocket.connect();
           }
 
@@ -2397,7 +2421,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             );
             const triggerNodeId = triggerNode?.id || nodeIds[0]; // Fallback to first node
             
-            console.log(`🔵 Initializing executionManager for ${executionId} with ${nodeIds.length} nodes, trigger: ${triggerNodeId}`);
             executionManager.startExecution(executionId, triggerNodeId, nodeIds);
           }
 
@@ -2405,7 +2428,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
           // This ensures isActiveExecution check passes when events arrive
           const currentFlowState = get().flowExecutionState;
           if (!currentFlowState.activeExecutions.has(executionId)) {
-            console.log('🔵 Adding execution to activeExecutions:', executionId);
             currentFlowState.activeExecutions.set(executionId, {
               executionId,
               overallStatus: "running",
@@ -2423,17 +2445,14 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
 
           // CRITICAL: Add event listener BEFORE subscribing
           // This ensures we catch events that arrive immediately after subscription
-          console.log('🔵 Adding event listener for:', executionId);
           executionWebSocket.addEventListener(
             executionId,
             (data: ExecutionEventData) => {
-              console.log('🔵 Event listener triggered for:', data.type, data.executionId);
               get().handleExecutionEvent(data);
             }
           );
 
           // Subscribe to execution updates (this triggers backend to send events)
-          console.log('🔵 Subscribing to execution:', executionId);
           await executionWebSocket.subscribeToExecution(executionId);
 
           // Safety timeout: If no updates received for 5 minutes, mark as failed
@@ -2585,21 +2604,19 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         switch (data.type) {
           case "node-started":
             if (data.nodeId && data.executionId) {
-              console.log('🔵 [Frontend] node-started event received:', {
-                nodeId: data.nodeId,
-                nodeName,
-                nodeType: data.data?.nodeType,
-                executionId: data.executionId,
-                timestamp: data.timestamp,
-              });
-              
               get().progressTracker.setCurrentExecution(data.executionId);
               get().updateNodeExecutionState(data.nodeId, NodeExecutionStatus.RUNNING, {
-                startTime: Date.now(),
+                startTime: timestamp, // Use backend timestamp for consistency with endTime
                 progress: 0,
               });
               
-              console.log('✅ [Frontend] Updated node state to RUNNING for:', data.nodeId);
+              // Also update realTimeResults with startTime
+              get().updateNodeExecutionResult(data.nodeId, {
+                nodeId: data.nodeId,
+                nodeName,
+                startTime: timestamp,
+                status: "success", // Will be updated on completion
+              });
               
               // Get node details for logging
               const workflow = get().workflow;
@@ -2700,14 +2717,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             if (data.nodeId && data.executionId) {
               const errorMessage = data.error?.message || "Node execution failed";
               
-              console.log('🔴 [Frontend] node-failed event received:', {
-                nodeId: data.nodeId,
-                nodeName,
-                error: data.error,
-                executionId: data.executionId,
-                timestamp: data.timestamp,
-              });
-              
               // Update node execution result with error message
               get().updateNodeExecutionResult(data.nodeId, {
                 nodeId: data.nodeId,
@@ -2722,8 +2731,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 error: data.error,
                 errorMessage: errorMessage,
               });
-              
-              console.log('✅ [Frontend] Updated node state to FAILED for:', data.nodeId);
               
               get().addExecutionLog({
                 timestamp: new Date().toISOString(),
@@ -2828,6 +2835,9 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 // Create new Sets to ensure React detects the change
                 flowStatus.activeEdges = new Set(activeEdges);
                 flowStatus.completedEdges = new Set(completedEdges);
+                
+                // Update overallStatus to reflect completion
+                flowStatus.overallStatus = data.error ? "failed" : "completed";
 
                 activeExecutions.set(data.executionId, flowStatus);
                 set({
@@ -2887,6 +2897,21 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               error: data.error?.message || "Execution failed",
             });
 
+            // Update flowStatus.overallStatus to "failed"
+            if (data.executionId) {
+              const failedFlowStatus = activeExecutions.get(data.executionId);
+              if (failedFlowStatus) {
+                failedFlowStatus.overallStatus = "failed";
+                activeExecutions.set(data.executionId, failedFlowStatus);
+                set({
+                  flowExecutionState: {
+                    ...get().flowExecutionState,
+                    activeExecutions: new Map(activeExecutions),
+                  },
+                });
+              }
+            }
+
             if (data.executionId && get().executionManager) {
               // Mark execution as failed but preserve node states
               const context = get().executionManager.getExecution(data.executionId);
@@ -2920,14 +2945,6 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 data: data.data,
               };
 
-              console.log('📝 [Frontend] execution-log event received:', {
-                executionId: logEntry.executionId,
-                nodeId: logEntry.nodeId,
-                level: logEntry.level,
-                message: logEntry.message,
-                hasToolCall: !!logEntry.data?.toolCall,
-              });
-
               get().addExecutionLog(logEntry);
             }
             break;
@@ -2935,13 +2952,9 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       },
 
       setupSocketListeners: () => {
-        console.log('[WorkflowStore] setupSocketListeners called');
-        
         const setupListeners = async () => {
           try {
-            console.log('[WorkflowStore] Importing socketService...');
             const { socketService } = await import("@/services/socket");
-            console.log('[WorkflowStore] socketService imported, registering listeners...');
 
             // Handle execution progress updates
             socketService.on("execution-progress", (progress: any) => {
@@ -3003,30 +3016,17 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
             });
 
             // Handle execution events (for service nodes and regular nodes)
-            console.log('[WorkflowStore] Registering execution-event listener');
             socketService.on("execution-event", (event: any) => {
-              console.log('[WorkflowStore] Received execution-event:', event);
-              
               const { executionState } = get();
 
               // Only process events for the current execution
               if (event.executionId !== executionState.executionId) {
-                console.log('[WorkflowStore] Ignoring event - wrong execution ID:', {
-                  eventExecutionId: event.executionId,
-                  currentExecutionId: executionState.executionId,
-                });
                 return;
               }
 
               const nodeName =
                 get().workflow?.nodes.find((n) => n.id === event.nodeId)
                   ?.name || "Unknown";
-
-              console.log('[WorkflowStore] Processing execution-event:', {
-                type: event.type,
-                nodeId: event.nodeId,
-                nodeName,
-              });
 
               switch (event.type) {
                 case "node-started":
@@ -3466,7 +3466,7 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
       // Helper function to gather input data from connected nodes
       gatherInputDataFromConnectedNodes: (nodeId: string) => {
         const { workflow } = get();
-        if (!workflow) return { main: [[]] };
+        if (!workflow) return { main: [[]], nodeOutputs: {} };
 
         // Find all connections where this node is the target
         const inputConnections = workflow.connections.filter(
@@ -3474,23 +3474,27 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
         );
 
         if (inputConnections.length === 0) {
-          return { main: [[]] };
+          return { main: [[]], nodeOutputs: {} };
         }
 
         const inputData: any = { main: [] };
+        // Also collect nodeOutputs for $node expression resolution
+        const nodeOutputs: Record<string, any> = {};
 
         for (const connection of inputConnections) {
           const sourceNodeId = connection.sourceNodeId;
+          const sourceNode = workflow.nodes.find((n) => n.id === sourceNodeId);
           const sourceNodeResult = get().getNodeExecutionResult(sourceNodeId);
 
-          if (
-            sourceNodeResult &&
+          // Check if we have execution results or pinned mock data
+          const hasExecutionData = sourceNodeResult &&
             sourceNodeResult.data &&
             (sourceNodeResult.status === "success" ||
-              sourceNodeResult.status === "skipped")
-          ) {
+              sourceNodeResult.status === "skipped");
+
+          if (hasExecutionData && sourceNodeResult) {
             let sourceData;
-            if (sourceNodeResult.data.main) {
+            if (sourceNodeResult.data?.main) {
               sourceData = sourceNodeResult.data.main;
             } else if (
               Array.isArray(sourceNodeResult.data) &&
@@ -3498,11 +3502,29 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
               sourceNodeResult.data[0].main
             ) {
               sourceData = sourceNodeResult.data[0].main;
-            } else if (sourceNodeResult.status === "skipped") {
+            } else if (sourceNodeResult.status === "skipped" && sourceNodeResult.data) {
               sourceData = [{ json: sourceNodeResult.data }];
             }
 
-            if (Array.isArray(sourceData) && sourceData.length > 0) {
+            // Store node output for $node expression resolution
+            // Extract the actual data from the source node result
+            if (sourceData && Array.isArray(sourceData) && sourceData.length > 0) {
+              // Extract json data from items
+              const extractedData = sourceData.map((item: any) => {
+                if (item && item.json !== undefined) {
+                  return item.json;
+                }
+                return item;
+              });
+              // Store by node ID
+              nodeOutputs[sourceNodeId] = extractedData.length === 1 ? extractedData[0] : extractedData;
+              // Also store by node name for $node["Name"] syntax
+              if (sourceNode?.name) {
+                nodeOutputs[sourceNode.name] = nodeOutputs[sourceNodeId];
+              }
+            }
+            // Also add to inputData.main for the node's input
+            if (sourceData && Array.isArray(sourceData) && sourceData.length > 0) {
               for (const item of sourceData) {
                 if (item && item.json !== undefined) {
                   if (Array.isArray(item.json)) {
@@ -3523,12 +3545,30 @@ export const useWorkflowStore = createWithEqualityFn<WorkflowStore>()(
                 }
               }
             }
+          } else if (sourceNode?.mockData) {
+            // Fallback: use unpinned mock data if no execution results
+            // This allows expressions to be resolved even if upstream nodes haven't been executed
+            nodeOutputs[sourceNodeId] = sourceNode.mockData;
+            if (sourceNode.name) {
+              nodeOutputs[sourceNode.name] = sourceNode.mockData;
+            }
+            // Also add mock data to inputData.main
+            if (Array.isArray(sourceNode.mockData)) {
+              for (const item of sourceNode.mockData) {
+                inputData.main.push({ json: item });
+              }
+            } else {
+              inputData.main.push({ json: sourceNode.mockData });
+            }
           }
         }
 
         if (inputData.main.length === 0) {
           inputData.main.push([]);
         }
+
+        // Include nodeOutputs in the return value
+        inputData.nodeOutputs = nodeOutputs;
 
         return inputData;
       },

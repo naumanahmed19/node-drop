@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { ExpressionInput } from './ExpressionInput'
+import { WorkflowExpressionField } from './WorkflowExpressionField'
 
 export interface ConditionRowValue {
   key: string
@@ -75,17 +75,13 @@ export function ConditionRow({
         error && 'border-destructive'
       )}>
         {/* Key Field */}
-        <div className="relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible [&>div>div[class*='absolute']]:z-[100]">
-          <ExpressionInput
+        <div className="relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible [&>div>div[class*='absolute']]:z-[100] [&>div>div]:border-0 [&>div>div]:rounded-none">
+          <WorkflowExpressionField
             value={value.key || ''}
             onChange={handleKeyChange}
             onBlur={onBlur}
             placeholder={keyPlaceholder}
-            disabled={disabled}
-            error={false}
             nodeId={nodeId}
-            singleLine={true}
-            hideHelperText={true}
           />
         </div>
 
@@ -113,17 +109,13 @@ export function ConditionRow({
         {!shouldHideValue && (
           <>
             <div className="h-px bg-border" />
-            <div className="relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible [&>div>div[class*='absolute']]:z-[100]">
-              <ExpressionInput
+            <div className="relative [&_textarea]:border-0 [&_textarea]:focus-visible:ring-0 [&_textarea]:focus-visible:ring-offset-0 [&_textarea]:rounded-none [&>div]:space-y-0 [&>div]:overflow-visible [&>div>div[class*='absolute']]:z-[100] [&>div>div]:border-0 [&>div>div]:rounded-none">
+              <WorkflowExpressionField
                 value={value.value || ''}
                 onChange={handleValueChange}
                 onBlur={onBlur}
                 placeholder={valuePlaceholder}
-                disabled={disabled}
-                error={false}
                 nodeId={nodeId}
-                singleLine={true}
-                hideHelperText={true}
               />
             </div>
           </>

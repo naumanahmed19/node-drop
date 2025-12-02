@@ -8,12 +8,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChatInterfaceNode } from '@/components/workflow/nodes'
-import { ReactFlow,  Background, Controls, ReactFlowProvider } from '@xyflow/react'
+import { ReactFlow,  Background, Controls, ReactFlowProvider, NodeTypes } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import '../reactflow-theme.css'
 
-const nodeTypes = {
-  chatInterface: ChatInterfaceNode,
+const nodeTypes: NodeTypes = {
+  chatInterface: ChatInterfaceNode as any,
 }
 
 // Test Case 1: Basic Empty Chat

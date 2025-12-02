@@ -81,13 +81,11 @@ export class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('✅ Connected to Socket.io server');
       this.reconnectAttempts = 0;
       this.emit('socket-connected', { timestamp: new Date() });
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('❌ Disconnected from Socket.io server:', reason);
       this.emit('socket-disconnected', { reason, timestamp: new Date() });
     });
 
@@ -103,7 +101,7 @@ export class SocketService {
 
     // Server confirmation events
     this.socket.on('connected', (data) => {
-      console.log('Socket.io connection confirmed:', data);
+      // Connection confirmed
     });
 
     // Execution events
@@ -129,28 +127,23 @@ export class SocketService {
 
     // Subscription confirmation events
     this.socket.on('execution-subscribed', (data) => {
-      console.log('Subscribed to execution:', data.executionId);
       this.emit('execution-subscribed', data);
     });
 
     this.socket.on('execution-unsubscribed', (data) => {
-      console.log('Unsubscribed from execution:', data.executionId);
       this.emit('execution-unsubscribed', data);
     });
 
     this.socket.on('workflow-subscribed', (data) => {
-      console.log('Subscribed to workflow:', data.workflowId);
       this.emit('workflow-subscribed', data);
     });
 
     this.socket.on('workflow-unsubscribed', (data) => {
-      console.log('Unsubscribed from workflow:', data.workflowId);
       this.emit('workflow-unsubscribed', data);
     });
 
     // Webhook test mode event
     this.socket.on('webhook-test-triggered', (data) => {
-      console.log('🧪 Webhook test triggered (socket.ts):', data);
       this.emit('webhook-test-triggered', data);
     });
   }
@@ -166,7 +159,6 @@ export class SocketService {
       return;
     }
 
-    console.log('Subscribing to execution:', executionId);
     this.socket.emit('subscribe-execution', executionId);
   }
 
@@ -180,7 +172,6 @@ export class SocketService {
       return;
     }
 
-    console.log('Unsubscribing from execution:', executionId);
     this.socket.emit('unsubscribe-execution', executionId);
   }
 
@@ -195,7 +186,6 @@ export class SocketService {
       return;
     }
 
-    console.log('🔔 Subscribing to workflow:', workflowId);
     this.socket.emit('subscribe-workflow', workflowId);
   }
 
@@ -209,7 +199,6 @@ export class SocketService {
       return;
     }
 
-    console.log('🔕 Unsubscribing from workflow:', workflowId);
     this.socket.emit('unsubscribe-workflow', workflowId);
   }
 
