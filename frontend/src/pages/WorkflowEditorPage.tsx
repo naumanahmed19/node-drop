@@ -1,14 +1,10 @@
 import { ExecutionToolbar, WorkflowEditorWrapper } from '@/components'
-import { AppSidebar } from '@/components/app-sidebar'
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+import { BaseLayout } from '@/components/layout/BaseLayout'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkflowOnboardingDialog } from '@/components/workflow/WorkflowOnboardingDialog'
 import { WorkflowToolbar } from '@/components/workflow/WorkflowToolbar'
 import {
-  useWorkflowOperations
+    useWorkflowOperations
 } from '@/hooks/workflow'
 import { workflowService } from '@/services'
 import type { ExecutionDetails } from '@/services/execution'
@@ -17,7 +13,7 @@ import { socketService } from '@/services/socket'
 import { useAuthStore, useNodeTypes, useWorkflowStore } from '@/stores'
 import { Workflow } from '@/types'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 export function WorkflowEditorPage() {
@@ -352,87 +348,86 @@ export function WorkflowEditorPage() {
     loadWorkflow()
   }, [id, executionId, setWorkflow, setLoading, user?.id])
 
-  if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="flex items-center space-x-2">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="text-muted-foreground">
-            {isLoadingExecution ? 'Loading execution...' : isLoadingNodeTypes ? 'Loading node types...' : 'Loading workflow...'}
-          </span>
+  const renderContent = () => {
+    if (isLoading || isLoadingNodeTypes || isLoadingExecution) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-muted-foreground">
+              {isLoadingExecution ? 'Loading execution...' : isLoadingNodeTypes ? 'Loading node types...' : 'Loading workflow...'}
+            </span>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Error Loading Workflow</h2>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <button
-            onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Back to Workflows
-          </button>
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Error Loading Workflow</h2>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <button
+              onClick={() => navigate('/workflows')}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Back to Workflows
+            </button>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (!workflow) {
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Workflow Not Found</h2>
-          <p className="text-muted-foreground mb-4">The requested workflow could not be found.</p>
-          <button
-            onClick={() => navigate('/workflows')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Back to Workflows
-          </button>
+    if (!workflow) {
+      return (
+        <div className="flex items-center justify-center h-full w-full bg-background">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Workflow Not Found</h2>
+            <p className="text-muted-foreground mb-4">The requested workflow could not be found.</p>
+            <button
+              onClick={() => navigate('/workflows')}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Back to Workflows
+            </button>
+          </div>
         </div>
-      </div>
+      )
+    }
+
+    return (
+      <>
+        {/* Show execution toolbar when in execution mode */}
+        {executionId && execution ? (
+          <ExecutionToolbar
+            execution={execution}
+            onBack={() => navigate(`/workflows/${id}`, { replace: true })}
+          />
+        ) : (
+          <WorkflowToolbar
+            onSave={handleSave}
+          />
+        )}
+
+        <div className="flex flex-1 flex-col h-full overflow-hidden">
+          <WorkflowEditorWrapper
+            nodeTypes={nodeTypes}
+            readOnly={!!executionId}
+            executionMode={!!executionId}
+          />
+        </div>
+      </>
     )
   }
 
   return (
     <TooltipProvider>
-      <SidebarProvider
-        style={
-          {
-            "--sidebar-width": "356px",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar />
-        <SidebarInset>
-          {/* Show execution toolbar when in execution mode */}
-          {executionId && execution ? (
-            <ExecutionToolbar
-              execution={execution}
-              onBack={() => navigate(`/workflows/${id}`, { replace: true })}
-            />
-          ) : (
-            <WorkflowToolbar
-              onSave={handleSave}
-            />
-          )}
-
-          <div className="flex flex-1 flex-col h-full overflow-hidden">
-            <WorkflowEditorWrapper
-              nodeTypes={nodeTypes}
-              readOnly={!!executionId}
-              executionMode={!!executionId}
-            />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <BaseLayout>
+        {renderContent()}
+      </BaseLayout>
 
       {/* Onboarding Dialog */}
       <WorkflowOnboardingDialog
